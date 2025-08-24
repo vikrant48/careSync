@@ -4,6 +4,7 @@ import com.vikrant.careSync.entity.Patient;
 import com.vikrant.careSync.entity.MedicalHistory;
 import com.vikrant.careSync.dto.UpdatePatientRequest;
 import com.vikrant.careSync.dto.CreateMedicalHistoryRequest;
+import com.vikrant.careSync.dto.PatientDto;
 import com.vikrant.careSync.service.PatientService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -46,10 +47,11 @@ public class PatientController {
 
     @GetMapping("/profile/{username}")
     @PreAuthorize("hasRole('PATIENT')")
-    public ResponseEntity<Patient> getPatientProfile(@PathVariable String username) {
+    public ResponseEntity<PatientDto> getPatientProfile(@PathVariable String username) {
         try {
             Patient patient = patientService.getPatientProfile(username);
-            return ResponseEntity.ok(patient);
+            PatientDto patientDto = new PatientDto(patient);
+            return ResponseEntity.ok(patientDto);
         } catch (Exception e) {
             return ResponseEntity.notFound().build();
         }
@@ -172,4 +174,4 @@ public class PatientController {
             return ResponseEntity.badRequest().build();
         }
     }
-} 
+}

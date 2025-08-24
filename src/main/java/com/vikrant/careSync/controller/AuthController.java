@@ -1,7 +1,9 @@
 package com.vikrant.careSync.controller;
 
 import com.vikrant.careSync.security.dto.*;
+import com.vikrant.careSync.dto.UserDto;
 import com.vikrant.careSync.service.AuthenticationService;
+import com.vikrant.careSync.service.UserService;
 import com.vikrant.careSync.security.service.RefreshTokenService;
 import com.vikrant.careSync.security.service.SecurityService;
 import com.vikrant.careSync.security.JwtService;
@@ -9,6 +11,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -26,6 +30,7 @@ public class AuthController {
     private final RefreshTokenService refreshTokenService;
     private final SecurityService securityService;
     private final JwtService jwtService;
+    private final UserService userService;
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
@@ -145,6 +150,26 @@ public class AuthController {
         }
     }
 
+    @GetMapping("/current-user")
+    public ResponseEntity<?> getCurrentUser() {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || !authentication.isAuthenticated()) {
+                Map<String, String> errorResponse = new HashMap<>();
+                errorResponse.put("error", "User not authenticated");
+                return ResponseEntity.status(401).body(errorResponse);
+            }
+            
+            String username = authentication.getName();
+            UserDto userDto = userService.getUserByUsername(username);
+            return ResponseEntity.ok(userDto);
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
     private String getClientIPAddress(HttpServletRequest request) {
         String xForwardedFor = request.getHeader("X-Forwarded-For");
         if (xForwardedFor != null && !xForwardedFor.isEmpty() && !"unknown".equalsIgnoreCase(xForwardedFor)) {
@@ -169,4 +194,4 @@ public class AuthController {
         final String jwt = authHeader.substring(7);
         return jwtService.extractUsername(jwt);
     }
-} 
+}

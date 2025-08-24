@@ -2,8 +2,13 @@ package com.vikrant.careSync.service;
 
 import com.vikrant.careSync.entity.MedicalHistory;
 import com.vikrant.careSync.entity.Patient;
+import com.vikrant.careSync.entity.Doctor;
+import com.vikrant.careSync.entity.Appointment;
+import com.vikrant.careSync.dto.MedicalHistoryWithDoctorDto;
 import com.vikrant.careSync.repository.MedicalHistoryRepository;
 import com.vikrant.careSync.repository.PatientRepository;
+import com.vikrant.careSync.repository.DoctorRepository;
+import com.vikrant.careSync.repository.AppointmentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -12,6 +17,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 import java.util.stream.Collectors;
 
 @Service
@@ -20,6 +26,8 @@ public class MedicalHistoryService {
 
     private final MedicalHistoryRepository medicalHistoryRepository;
     private final PatientRepository patientRepository;
+    private final DoctorRepository doctorRepository;
+    private final AppointmentRepository appointmentRepository;
 
     public MedicalHistory createMedicalHistory(MedicalHistory medicalHistory) {
         // Validate medical history
@@ -41,6 +49,35 @@ public class MedicalHistoryService {
                 .orElseThrow(() -> new RuntimeException("Patient not found"));
 
         medicalHistory.setPatient(patient);
+        return medicalHistoryRepository.save(medicalHistory);
+    }
+
+    public MedicalHistory createMedicalHistoryWithDoctor(MedicalHistory medicalHistory, Long doctorId) {
+        // Validate medical history
+        if (medicalHistory.getPatient() == null || medicalHistory.getPatient().getId() == null) {
+            throw new RuntimeException("Patient is required");
+        }
+        if (doctorId == null) {
+            throw new RuntimeException("Doctor is required");
+        }
+        if (medicalHistory.getVisitDate() == null) {
+            throw new RuntimeException("Visit date is required");
+        }
+        if (medicalHistory.getSymptoms() == null || medicalHistory.getSymptoms().trim().isEmpty()) {
+            throw new RuntimeException("Symptoms are required");
+        }
+        if (medicalHistory.getDiagnosis() == null || medicalHistory.getDiagnosis().trim().isEmpty()) {
+            throw new RuntimeException("Diagnosis is required");
+        }
+
+        // Validate patient and doctor exist
+        Patient patient = patientRepository.findById(medicalHistory.getPatient().getId())
+                .orElseThrow(() -> new RuntimeException("Patient not found"));
+        Doctor doctor = doctorRepository.findById(doctorId)
+                .orElseThrow(() -> new RuntimeException("Doctor not found"));
+
+        medicalHistory.setPatient(patient);
+        medicalHistory.setDoctor(doctor);
         return medicalHistoryRepository.save(medicalHistory);
     }
 
@@ -138,4 +175,36 @@ public class MedicalHistoryService {
                 .filter(history -> history.getDiagnosis().toLowerCase().contains(diagnosis.toLowerCase()))
                 .toList();
     }
-} 
+
+    public List<MedicalHistoryWithDoctorDto> getMedicalHistoryWithDoctorByPatient(Long patientId) {
+        // Get all completed appointments for the patient
+        List<Appointment> completedAppointments = appointmentRepository.findByPatientIdAndStatus(patientId, Appointment.Status.COMPLETED);
+        
+        // Get all medical histories for the patient
+        List<MedicalHistory> medicalHistories = medicalHistoryRepository.findByPatientId(patientId);
+        
+        List<MedicalHistoryWithDoctorDto> result = new ArrayList<>();
+        
+        // For each medical history, try to find a matching completed appointment
+        for (MedicalHistory history : medicalHistories) {
+            // Find the closest completed appointment by date
+            Appointment matchingAppointment = completedAppointments.stream()
+                    .filter(appointment -> appointment.getAppointmentDateTime().toLocalDate().equals(history.getVisitDate()) ||
+                                         appointment.getAppointmentDateTime().toLocalDate().isEqual(history.getVisitDate()))
+                    .findFirst()
+                    .orElse(null);
+            
+            if (matchingAppointment != null) {
+                MedicalHistoryWithDoctorDto dto = new MedicalHistoryWithDoctorDto(
+                    history,
+                    matchingAppointment.getDoctor(),
+                    matchingAppointment.getId(),
+                    matchingAppointment.getAppointmentDateTime().toString()
+                );
+                result.add(dto);
+            }
+        }
+        
+        return result;
+    }
+}

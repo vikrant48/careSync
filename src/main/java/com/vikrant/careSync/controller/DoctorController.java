@@ -31,14 +31,7 @@ public class DoctorController {
         return ResponseEntity.ok(doctors);
     }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<Doctor> getDoctorById(@PathVariable Long id) {
-        Optional<Doctor> doctor = doctorService.getDoctorById(id);
-        return doctor.map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
-    }
-
-    @GetMapping("/username/{username}")
+    @GetMapping("/public/{username}")
     public ResponseEntity<Doctor> getDoctorByUsername(@PathVariable String username) {
         Optional<Doctor> doctor = doctorService.getDoctorByUsername(username);
         return doctor.map(ResponseEntity::ok)
@@ -56,30 +49,23 @@ public class DoctorController {
         }
     }
 
-    @PutMapping("/{id}/profile")
+    @PutMapping("/profile/{username}")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<Doctor> updateDoctorProfile(@PathVariable Long id, @RequestBody UpdateDoctorRequest request) {
+    public ResponseEntity<Doctor> updateDoctorProfile(@PathVariable String username,
+                                                      @RequestBody UpdateDoctorRequest request) {
         try {
-            Doctor updatedDoctor = new Doctor();
-            updatedDoctor.setFirstName(request.getFirstName());
-            updatedDoctor.setLastName(request.getLastName());
-            updatedDoctor.setSpecialization(request.getSpecialization());
-            updatedDoctor.setProfileImageUrl(request.getProfileImageUrl());
-            updatedDoctor.setEmail(request.getEmail());
-            updatedDoctor.setIsActive(request.getIsActive());
-            
-            Doctor doctor = doctorService.updateDoctorProfile(id, updatedDoctor);
+            Doctor doctor = doctorService.updateDoctorProfileByUsername(username, request);
             return ResponseEntity.ok(doctor);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
     }
 
-    @PutMapping("/{id}/profile-image")
+    @PutMapping("/profile/{username}/image")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<Doctor> updateProfileImage(@PathVariable Long id, @RequestParam String imageUrl) {
+    public ResponseEntity<Doctor> updateProfileImage(@PathVariable String username, @RequestParam String imageUrl) {
         try {
-            Doctor doctor = doctorService.updateProfileImage(id, imageUrl);
+            Doctor doctor = doctorService.updateProfileImageByUsername(username, imageUrl);
             return ResponseEntity.ok(doctor);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
@@ -93,9 +79,9 @@ public class DoctorController {
     }
 
     // Experience Management
-    @PostMapping("/{doctorId}/experiences")
+    @PostMapping("/profile/{username}/experiences")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<Experience> addExperience(@PathVariable Long doctorId, @RequestBody CreateExperienceRequest request) {
+    public ResponseEntity<Experience> addExperience(@PathVariable String username, @RequestBody CreateExperienceRequest request) {
         try {
             Experience experience = new Experience();
             experience.setHospitalName(request.getHospitalName());
@@ -103,22 +89,22 @@ public class DoctorController {
             experience.setYearsOfService(request.getYearsOfService());
             experience.setDetails(request.getDetails());
             
-            Experience savedExperience = doctorService.addExperience(doctorId, experience);
+            Experience savedExperience = doctorService.addExperienceByUsername(username, experience);
             return ResponseEntity.ok(savedExperience);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
     }
 
-    @GetMapping("/{doctorId}/experiences")
-    public ResponseEntity<List<Experience>> getDoctorExperiences(@PathVariable Long doctorId) {
-        List<Experience> experiences = doctorService.getDoctorExperiences(doctorId);
+    @GetMapping("/profile/{username}/experiences")
+    public ResponseEntity<List<Experience>> getDoctorExperiences(@PathVariable String username) {
+        List<Experience> experiences = doctorService.getDoctorExperiencesByUsername(username);
         return ResponseEntity.ok(experiences);
     }
 
-    @PutMapping("/experiences/{experienceId}")
+    @PutMapping("/profile/{username}/experiences/{experienceId}")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<Experience> updateExperience(@PathVariable Long experienceId, @RequestBody CreateExperienceRequest request) {
+    public ResponseEntity<Experience> updateExperience(@PathVariable String username, @PathVariable Long experienceId, @RequestBody CreateExperienceRequest request) {
         try {
             Experience experience = new Experience();
             experience.setHospitalName(request.getHospitalName());
@@ -133,9 +119,9 @@ public class DoctorController {
         }
     }
 
-    @DeleteMapping("/experiences/{experienceId}")
+    @DeleteMapping("/profile/{username}/experiences/{experienceId}")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<?> deleteExperience(@PathVariable Long experienceId) {
+    public ResponseEntity<?> deleteExperience(@PathVariable String username, @PathVariable Long experienceId) {
         try {
             doctorService.deleteExperience(experienceId);
             return ResponseEntity.ok().build();
@@ -145,9 +131,9 @@ public class DoctorController {
     }
 
     // Education Management
-    @PostMapping("/{doctorId}/educations")
+    @PostMapping("/profile/{username}/educations")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<Education> addEducation(@PathVariable Long doctorId, @RequestBody CreateEducationRequest request) {
+    public ResponseEntity<Education> addEducation(@PathVariable String username, @RequestBody CreateEducationRequest request) {
         try {
             Education education = new Education();
             education.setDegree(request.getDegree());
@@ -155,22 +141,22 @@ public class DoctorController {
             education.setYearOfCompletion(request.getYearOfCompletion());
             education.setDetails(request.getDetails());
             
-            Education savedEducation = doctorService.addEducation(doctorId, education);
+            Education savedEducation = doctorService.addEducationByUsername(username, education);
             return ResponseEntity.ok(savedEducation);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
     }
 
-    @GetMapping("/{doctorId}/educations")
-    public ResponseEntity<List<Education>> getDoctorEducations(@PathVariable Long doctorId) {
-        List<Education> educations = doctorService.getDoctorEducations(doctorId);
+    @GetMapping("/profile/{username}/educations")
+    public ResponseEntity<List<Education>> getDoctorEducations(@PathVariable String username) {
+        List<Education> educations = doctorService.getDoctorEducationsByUsername(username);
         return ResponseEntity.ok(educations);
     }
 
-    @PutMapping("/educations/{educationId}")
+    @PutMapping("/profile/{username}/educations/{educationId}")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<Education> updateEducation(@PathVariable Long educationId, @RequestBody CreateEducationRequest request) {
+    public ResponseEntity<Education> updateEducation(@PathVariable String username, @PathVariable Long educationId, @RequestBody CreateEducationRequest request) {
         try {
             Education education = new Education();
             education.setDegree(request.getDegree());
@@ -185,9 +171,9 @@ public class DoctorController {
         }
     }
 
-    @DeleteMapping("/educations/{educationId}")
+    @DeleteMapping("/profile/{username}/educations/{educationId}")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<?> deleteEducation(@PathVariable Long educationId) {
+    public ResponseEntity<?> deleteEducation(@PathVariable String username, @PathVariable Long educationId) {
         try {
             doctorService.deleteEducation(educationId);
             return ResponseEntity.ok().build();
@@ -197,36 +183,42 @@ public class DoctorController {
     }
 
     // Certificate Management
-    @PostMapping("/{doctorId}/certificates")
+    @PostMapping("/profile/{username}/certificates")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<Certificate> addCertificate(@PathVariable Long doctorId, @RequestBody CreateCertificateRequest request) {
+    public ResponseEntity<Certificate> addCertificate(@PathVariable String username, @RequestBody CreateCertificateRequest request) {
         try {
             Certificate certificate = new Certificate();
             certificate.setName(request.getName());
-            certificate.setUrl(request.getUrl());
-            certificate.setDetails(request.getDetails());
+            certificate.setIssuingOrganization(request.getIssuingOrganization());
+            certificate.setIssueDate(request.getIssueDate());
+            certificate.setExpiryDate(request.getExpiryDate());
+            certificate.setCredentialId(request.getCredentialId());
+            certificate.setCredentialUrl(request.getCredentialUrl());
             
-            Certificate savedCertificate = doctorService.addCertificate(doctorId, certificate);
+            Certificate savedCertificate = doctorService.addCertificateByUsername(username, certificate);
             return ResponseEntity.ok(savedCertificate);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
     }
 
-    @GetMapping("/{doctorId}/certificates")
-    public ResponseEntity<List<Certificate>> getDoctorCertificates(@PathVariable Long doctorId) {
-        List<Certificate> certificates = doctorService.getDoctorCertificates(doctorId);
+    @GetMapping("/profile/{username}/certificates")
+    public ResponseEntity<List<Certificate>> getDoctorCertificates(@PathVariable String username) {
+        List<Certificate> certificates = doctorService.getDoctorCertificatesByUsername(username);
         return ResponseEntity.ok(certificates);
     }
 
-    @PutMapping("/certificates/{certificateId}")
+    @PutMapping("/profile/{username}/certificates/{certificateId}")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<Certificate> updateCertificate(@PathVariable Long certificateId, @RequestBody CreateCertificateRequest request) {
+    public ResponseEntity<Certificate> updateCertificate(@PathVariable String username, @PathVariable Long certificateId, @RequestBody CreateCertificateRequest request) {
         try {
             Certificate certificate = new Certificate();
             certificate.setName(request.getName());
-            certificate.setUrl(request.getUrl());
-            certificate.setDetails(request.getDetails());
+            certificate.setIssuingOrganization(request.getIssuingOrganization());
+            certificate.setIssueDate(request.getIssueDate());
+            certificate.setExpiryDate(request.getExpiryDate());
+            certificate.setCredentialId(request.getCredentialId());
+            certificate.setCredentialUrl(request.getCredentialUrl());
             
             Certificate updatedCertificate = doctorService.updateCertificate(certificateId, certificate);
             return ResponseEntity.ok(updatedCertificate);
@@ -235,9 +227,9 @@ public class DoctorController {
         }
     }
 
-    @DeleteMapping("/certificates/{certificateId}")
+    @DeleteMapping("/profile/{username}/certificates/{certificateId}")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<?> deleteCertificate(@PathVariable Long certificateId) {
+    public ResponseEntity<?> deleteCertificate(@PathVariable String username, @PathVariable Long certificateId) {
         try {
             doctorService.deleteCertificate(certificateId);
             return ResponseEntity.ok().build();
@@ -245,4 +237,4 @@ public class DoctorController {
             return ResponseEntity.badRequest().build();
         }
     }
-} 
+}

@@ -16,6 +16,10 @@ public class MedicalHistory {
     @JoinColumn(name = "patient_id")
     private Patient patient;
 
+    @ManyToOne
+    @JoinColumn(name = "doctor_id")
+    private Doctor doctor;
+
     private LocalDate visitDate;
     private String symptoms;
     private String diagnosis;
@@ -23,4 +27,4 @@ public class MedicalHistory {
 
     // Getters and setters
     // ...
-} 
+}

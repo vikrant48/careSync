@@ -21,6 +21,7 @@ public class DoctorDto {
     private String name;
     private String specialization;
     private String profileImageUrl;
+    private String contactInfo;
     private Boolean isActive;
     private List<ExperienceDto> experiences;
     private List<EducationDto> educations;
@@ -36,6 +37,7 @@ public class DoctorDto {
         this.name = doctor.getName();
         this.specialization = doctor.getSpecialization();
         this.profileImageUrl = doctor.getProfileImageUrl();
+        this.contactInfo = doctor.getContactInfo();
         this.isActive = doctor.getIsActive();
         
         if (doctor.getExperiences() != null) {

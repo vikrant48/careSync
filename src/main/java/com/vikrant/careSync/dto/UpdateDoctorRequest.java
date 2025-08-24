@@ -12,6 +12,7 @@ public class UpdateDoctorRequest {
     private String firstName;
     private String lastName;
     private String specialization;
+    private String contactInfo;
     private String profileImageUrl;
     private String email;
     private Boolean isActive;

@@ -4,6 +4,7 @@ import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Experience;
 import com.vikrant.careSync.entity.Education;
 import com.vikrant.careSync.entity.Certificate;
+import com.vikrant.careSync.dto.UpdateDoctorRequest;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.ExperienceRepository;
 import com.vikrant.careSync.repository.EducationRepository;
@@ -11,6 +12,7 @@ import com.vikrant.careSync.repository.CertificateRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -47,11 +49,36 @@ public class DoctorService {
         return doctorRepository.save(doctor);
     }
 
+    public Doctor updateDoctorProfileByUsername(String username, UpdateDoctorRequest request) {
+        Doctor doctor = doctorRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("Doctor not found"));
+
+        if (request.getFirstName() != null) doctor.setFirstName(request.getFirstName());
+        if (request.getLastName() != null) doctor.setLastName(request.getLastName());
+        if (request.getSpecialization() != null) doctor.setSpecialization(request.getSpecialization());
+        if (request.getContactInfo() != null) doctor.setContactInfo(request.getContactInfo());
+        if (request.getEmail() != null) doctor.setEmail(request.getEmail());
+        if (request.getIsActive() != null) doctor.setIsActive(request.getIsActive());
+
+        doctor.setUpdatedAt(LocalDateTime.now());
+
+        return doctorRepository.save(doctor);
+    }
+
     public Doctor updateProfileImage(Long doctorId, String imageUrl) {
         Doctor doctor = doctorRepository.findById(doctorId)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
 
         doctor.setProfileImageUrl(imageUrl);
+        return doctorRepository.save(doctor);
+    }
+
+    public Doctor updateProfileImageByUsername(String username, String imageUrl) {
+        Doctor doctor = doctorRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("Doctor not found"));
+
+        doctor.setProfileImageUrl(imageUrl);
+        doctor.setUpdatedAt(LocalDateTime.now());
         return doctorRepository.save(doctor);
     }
 
@@ -64,8 +91,22 @@ public class DoctorService {
         return experienceRepository.save(experience);
     }
 
+    public Experience addExperienceByUsername(String username, Experience experience) {
+        Doctor doctor = doctorRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("Doctor not found"));
+
+        experience.setDoctor(doctor);
+        return experienceRepository.save(experience);
+    }
+
     public List<Experience> getDoctorExperiences(Long doctorId) {
         return experienceRepository.findByDoctorId(doctorId);
+    }
+
+    public List<Experience> getDoctorExperiencesByUsername(String username) {
+        Doctor doctor = doctorRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("Doctor not found"));
+        return experienceRepository.findByDoctorId(doctor.getId());
     }
 
     public Experience updateExperience(Long experienceId, Experience updatedExperience) {
@@ -93,8 +134,22 @@ public class DoctorService {
         return educationRepository.save(education);
     }
 
+    public Education addEducationByUsername(String username, Education education) {
+        Doctor doctor = doctorRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("Doctor not found"));
+
+        education.setDoctor(doctor);
+        return educationRepository.save(education);
+    }
+
     public List<Education> getDoctorEducations(Long doctorId) {
         return educationRepository.findByDoctorId(doctorId);
+    }
+
+    public List<Education> getDoctorEducationsByUsername(String username) {
+        Doctor doctor = doctorRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("Doctor not found"));
+        return educationRepository.findByDoctorId(doctor.getId());
     }
 
     public Education updateEducation(Long educationId, Education updatedEducation) {
@@ -122,8 +177,22 @@ public class DoctorService {
         return certificateRepository.save(certificate);
     }
 
+    public Certificate addCertificateByUsername(String username, Certificate certificate) {
+        Doctor doctor = doctorRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("Doctor not found"));
+
+        certificate.setDoctor(doctor);
+        return certificateRepository.save(certificate);
+    }
+
     public List<Certificate> getDoctorCertificates(Long doctorId) {
         return certificateRepository.findByDoctorId(doctorId);
+    }
+
+    public List<Certificate> getDoctorCertificatesByUsername(String username) {
+        Doctor doctor = doctorRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("Doctor not found"));
+        return certificateRepository.findByDoctorId(doctor.getId());
     }
 
     public Certificate updateCertificate(Long certificateId, Certificate updatedCertificate) {
@@ -151,4 +220,4 @@ public class DoctorService {
         return doctorRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
     }
-} 
+}

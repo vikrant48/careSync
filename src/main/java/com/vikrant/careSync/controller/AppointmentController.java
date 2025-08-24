@@ -32,15 +32,24 @@ public class AppointmentController {
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
 
-    // Get current authenticated user
-    private User getCurrentUser() {
+    // Get current authenticated user (for patient endpoints)
+    private User getCurrentPatient() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()) {
             String username = authentication.getName();
-
-            // Check if it's a patient first (since this is a patient endpoint)
             return patientRepository.findByUsername(username)
                     .orElseThrow(() -> new RuntimeException("Patient not found with username: " + username));
+        }
+        throw new RuntimeException("User not authenticated");
+    }
+
+    // Get current authenticated user (for doctor endpoints)
+    private User getCurrentDoctor() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.isAuthenticated()) {
+            String username = authentication.getName();
+            return doctorRepository.findByUsername(username)
+                    .orElseThrow(() -> new RuntimeException("Doctor not found with username: " + username));
         }
         throw new RuntimeException("User not authenticated");
     }
@@ -52,7 +61,7 @@ public class AppointmentController {
     public ResponseEntity<?> bookAppointment(@Valid @RequestBody CreateAppointmentRequest request) {
         try {
             System.out.println("=== Starting appointment creation ===");
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentPatient();
             System.out.println("Current user: " + currentUser.getId());
             System.out.println("Doctor ID: " + request.doctorId);
             System.out.println("Appointment time: " + request.appointmentDateTime);
@@ -80,7 +89,7 @@ public class AppointmentController {
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<?> getMyAppointments() {
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentPatient();
             List<Appointment> appointments = appointmentService.getAppointmentsByPatient(currentUser.getId());
             List<PatientAppointmentResponse> responses = appointments.stream()
                     .map(PatientAppointmentResponse::new)
@@ -97,7 +106,7 @@ public class AppointmentController {
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<?> getMyUpcomingAppointments() {
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentPatient();
             List<Appointment> appointments = appointmentService.getUpcomingAppointmentsByPatient(currentUser.getId());
             List<PatientAppointmentResponse> responses = appointments.stream()
                     .map(PatientAppointmentResponse::new)
@@ -114,7 +123,7 @@ public class AppointmentController {
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<?> getMyAppointmentsByStatus(@PathVariable String status) {
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentPatient();
             Appointment.Status appointmentStatus = Appointment.Status.valueOf(status.toUpperCase());
             List<Appointment> appointments = appointmentService.getAppointmentsByStatusForPatient(currentUser.getId(), appointmentStatus);
             List<PatientAppointmentResponse> responses = appointments.stream()
@@ -132,7 +141,7 @@ public class AppointmentController {
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<?> getMyCompletedAppointments() {
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentPatient();
             List<Appointment> appointments = appointmentService.getAppointmentsByStatusForPatient(currentUser.getId(), Appointment.Status.COMPLETED);
             List<PatientAppointmentResponse> responses = appointments.stream()
                     .map(PatientAppointmentResponse::new)
@@ -149,7 +158,7 @@ public class AppointmentController {
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<?> getMyCancelledAppointments() {
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentPatient();
             List<Appointment> appointments = appointmentService.getAppointmentsByStatusForPatient(currentUser.getId(), Appointment.Status.CANCELLED);
             List<PatientAppointmentResponse> responses = appointments.stream()
                     .map(PatientAppointmentResponse::new)
@@ -166,7 +175,7 @@ public class AppointmentController {
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<?> updateMyAppointment(@PathVariable Long id, @Valid @RequestBody CreateAppointmentRequest request) {
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentPatient();
             
             // Create updated appointment object
             Appointment updatedAppointment = new Appointment();
@@ -189,7 +198,7 @@ public class AppointmentController {
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<?> cancelMyAppointment(@PathVariable Long id) {
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentPatient();
             
             // Use the updated service method
             appointmentService.cancelAppointment(id, currentUser);
@@ -209,7 +218,7 @@ public class AppointmentController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> getMyPatients() {
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentDoctor();
             List<Appointment> appointments = appointmentService.getAppointmentsByDoctor(currentUser.getId());
             List<DoctorAppointmentResponse> responses = appointments.stream()
                     .map(DoctorAppointmentResponse::new)
@@ -226,7 +235,7 @@ public class AppointmentController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> getMyUpcomingPatients() {
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentDoctor();
             List<Appointment> appointments = appointmentService.getUpcomingAppointmentsByDoctor(currentUser.getId());
             List<DoctorAppointmentResponse> responses = appointments.stream()
                     .map(DoctorAppointmentResponse::new)
@@ -243,7 +252,7 @@ public class AppointmentController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> getMyTodayPatients() {
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentDoctor();
             List<Appointment> appointments = appointmentService.getTodayAppointments(currentUser.getId());
             List<DoctorAppointmentResponse> responses = appointments.stream()
                     .map(DoctorAppointmentResponse::new)
@@ -260,7 +269,7 @@ public class AppointmentController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> getMyPatientsByStatus(@PathVariable String status) {
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentDoctor();
             Appointment.Status appointmentStatus = Appointment.Status.valueOf(status.toUpperCase());
             List<Appointment> appointments = appointmentService.getAppointmentsByStatus(currentUser.getId(), appointmentStatus);
             List<DoctorAppointmentResponse> responses = appointments.stream()
@@ -278,7 +287,7 @@ public class AppointmentController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> getMyCompletedPatients() {
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentDoctor();
             List<Appointment> appointments = appointmentService.getCompletedAppointments(currentUser.getId());
             List<DoctorAppointmentResponse> responses = appointments.stream()
                     .map(DoctorAppointmentResponse::new)
@@ -295,7 +304,7 @@ public class AppointmentController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> getMyCancelledPatients() {
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentDoctor();
             List<Appointment> appointments = appointmentService.getCancelledAppointments(currentUser.getId());
             List<DoctorAppointmentResponse> responses = appointments.stream()
                     .map(DoctorAppointmentResponse::new)
@@ -313,7 +322,7 @@ public class AppointmentController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> updateAppointmentStatus(@PathVariable Long id, @RequestParam String status) {
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentDoctor();
             
             // Convert string status to enum
             Appointment.Status appointmentStatus = Appointment.Status.valueOf(status.toUpperCase());
@@ -333,7 +342,7 @@ public class AppointmentController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> confirmAppointment(@PathVariable Long id) {
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentDoctor();
             Appointment updatedAppointment = appointmentService.updateAppointmentStatus(id, Appointment.Status.CONFIRMED, currentUser);
             return ResponseEntity.ok(new DoctorAppointmentResponse(updatedAppointment));
         } catch (Exception e) {
@@ -348,7 +357,7 @@ public class AppointmentController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> completeAppointment(@PathVariable Long id) {
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentDoctor();
             Appointment updatedAppointment = appointmentService.updateAppointmentStatus(id, Appointment.Status.COMPLETED, currentUser);
             return ResponseEntity.ok(new DoctorAppointmentResponse(updatedAppointment));
         } catch (Exception e) {
@@ -363,7 +372,7 @@ public class AppointmentController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> cancelAppointmentByDoctor(@PathVariable Long id) {
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentDoctor();
             Appointment updatedAppointment = appointmentService.updateAppointmentStatus(id, Appointment.Status.CANCELLED, currentUser);
             return ResponseEntity.ok(new DoctorAppointmentResponse(updatedAppointment));
         } catch (Exception e) {
@@ -416,4 +425,4 @@ public class AppointmentController {
             return ResponseEntity.badRequest().body(errorResponse);
         }
     }
-} 
+}

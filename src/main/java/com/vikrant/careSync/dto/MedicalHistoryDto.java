@@ -16,6 +16,8 @@ public class MedicalHistoryDto {
     private String symptoms;
     private String diagnosis;
     private String treatment;
+    private String doctorName;
+    private String doctorSpecialization;
 
     public MedicalHistoryDto(MedicalHistory medicalHistory) {
         this.id = medicalHistory.getId();
@@ -23,5 +25,10 @@ public class MedicalHistoryDto {
         this.symptoms = medicalHistory.getSymptoms();
         this.diagnosis = medicalHistory.getDiagnosis();
         this.treatment = medicalHistory.getTreatment();
+        
+        if (medicalHistory.getDoctor() != null) {
+            this.doctorName = medicalHistory.getDoctor().getFirstName() + " " + medicalHistory.getDoctor().getLastName();
+            this.doctorSpecialization = medicalHistory.getDoctor().getSpecialization();
+        }
     }
 }
