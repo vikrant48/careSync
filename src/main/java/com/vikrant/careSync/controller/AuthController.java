@@ -16,6 +16,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.security.core.userdetails.UserDetails;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -69,11 +70,21 @@ public class AuthController {
 
             refreshTokenService.verifyExpiration(refreshToken);
 
-            // Generate new access token
-            // This would require additional implementation in AuthenticationService
+            // Load user details to generate new JWT
+            String username = refreshToken.getUsername();
+            String userType = refreshToken.getUserType();
+            
+            // Generate new access token using JwtService
+            UserDetails userDetails = loadUserDetails(username, userType);
+            String newAccessToken = jwtService.generateToken(userDetails);
+            
+            // Delete old refresh token and create new one for security
+            refreshTokenService.deleteRefreshToken(request.getRefreshToken());
+            var newRefreshToken = refreshTokenService.createRefreshToken(username, userType);
+
             RefreshTokenResponse response = RefreshTokenResponse.builder()
-                    .accessToken("new-access-token")
-                    .refreshToken(refreshToken.getToken())
+                    .accessToken(newAccessToken)
+                    .refreshToken(newRefreshToken.getToken())
                     .tokenType("Bearer")
                     .build();
 
@@ -193,5 +204,25 @@ public class AuthController {
         
         final String jwt = authHeader.substring(7);
         return jwtService.extractUsername(jwt);
+    }
+    
+    // Helper method to load user details for JWT generation
+    private UserDetails loadUserDetails(String username, String userType) {
+        if ("DOCTOR".equals(userType)) {
+            var doctor = userService.getUserByUsername(username);
+            return org.springframework.security.core.userdetails.User.builder()
+                    .username(username)
+                    .password("") // Password not needed for token generation
+                    .authorities("ROLE_DOCTOR")
+                    .build();
+        } else if ("PATIENT".equals(userType)) {
+            var patient = userService.getUserByUsername(username);
+            return org.springframework.security.core.userdetails.User.builder()
+                    .username(username)
+                    .password("") // Password not needed for token generation
+                    .authorities("ROLE_PATIENT")
+                    .build();
+        }
+        throw new RuntimeException("Invalid user type: " + userType);
     }
 }

@@ -336,14 +336,29 @@ public class AuthenticationService {
         String accessToken = jwtService.generateToken(userDetails);
         var refreshToken = refreshTokenService.createRefreshToken(username, role);
 
+        // Get complete user data
+        Object userData = getUserData(username, role);
+
         return AuthenticationResponse.builder()
                 .accessToken(accessToken)
                 .refreshToken(refreshToken.getToken())
                 .tokenType("Bearer")
                 .username(username)
                 .role(role)
+                .user(userData)
                 .message(message)
                 .build();
+    }
+
+    private Object getUserData(String username, String role) {
+        if ("DOCTOR".equals(role)) {
+            return doctorRepository.findByUsername(username)
+                    .orElseThrow(() -> new RuntimeException("Doctor not found"));
+        } else if ("PATIENT".equals(role)) {
+            return patientRepository.findByUsername(username)
+                    .orElseThrow(() -> new RuntimeException("Patient not found"));
+        }
+        throw new RuntimeException("Invalid role: " + role);
     }
 
     private UserDetails loadUserDetails(String username) {
