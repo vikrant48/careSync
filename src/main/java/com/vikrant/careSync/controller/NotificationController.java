@@ -1,10 +1,13 @@
 package com.vikrant.careSync.controller;
 
+import com.vikrant.careSync.dto.AppointmentReminderRequest;
 import com.vikrant.careSync.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import jakarta.validation.Valid;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -27,6 +30,52 @@ public class NotificationController {
             return ResponseEntity.ok("Appointment reminder sent successfully");
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Failed to send appointment reminder: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/doctor/{doctorId}/feed")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<List<com.vikrant.careSync.entity.Notification>> getDoctorFeed(@PathVariable Long doctorId) {
+        return ResponseEntity.ok(notificationService.getDoctorFeed(doctorId));
+    }
+
+    @GetMapping("/doctor/{doctorId}/unread-count")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<Long> getDoctorUnreadCount(@PathVariable Long doctorId) {
+        return ResponseEntity.ok(notificationService.getDoctorUnreadCount(doctorId));
+    }
+
+    @GetMapping("/patient/{patientId}/feed")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<List<com.vikrant.careSync.entity.Notification>> getPatientFeed(@PathVariable Long patientId) {
+        return ResponseEntity.ok(notificationService.getPatientFeed(patientId));
+    }
+
+    @GetMapping("/patient/{patientId}/unread-count")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<Long> getPatientUnreadCount(@PathVariable Long patientId) {
+        return ResponseEntity.ok(notificationService.getPatientUnreadCount(patientId));
+    }
+
+    @PostMapping("/{notificationId}/read")
+    @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT')")
+    public ResponseEntity<Void> markRead(@PathVariable Long notificationId) {
+        notificationService.markRead(notificationId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/appointment-reminder")
+    @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT')")
+    public ResponseEntity<String> sendAppointmentReminderWithDetails(@Valid @RequestBody AppointmentReminderRequest request) {
+        try {
+            notificationService.sendAppointmentReminderWithDetails(
+                request.getAppointmentId(), 
+                request.getReminderType(), 
+                request.getHoursBeforeAppointment()
+            );
+            return ResponseEntity.ok("Appointment reminder scheduled successfully");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Failed to schedule appointment reminder: " + e.getMessage());
         }
     }
 
@@ -154,4 +203,4 @@ public class NotificationController {
             return ResponseEntity.badRequest().build();
         }
     }
-} 
+}

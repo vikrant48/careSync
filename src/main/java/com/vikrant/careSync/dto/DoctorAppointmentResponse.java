@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 public class DoctorAppointmentResponse {
 
     private Long appointmentId;
+    private Long patientId;
     private String patientName;
     private String patientEmail;
     private String patientContactInfo;
@@ -33,6 +34,7 @@ public class DoctorAppointmentResponse {
     public DoctorAppointmentResponse(Appointment appointment) {
         this.appointmentId = appointment.getId();
         if (appointment.getPatient() != null) {
+            this.patientId = appointment.getPatient().getId();
             this.patientName = appointment.getPatient().getName();
             this.patientEmail = appointment.getPatient().getEmail();
             this.patientContactInfo = appointment.getPatient().getContactInfo();
@@ -72,17 +74,25 @@ public class DoctorAppointmentResponse {
     @AllArgsConstructor
     public static class PatientMedicalHistoryDto {
         private Long id;
+        private Long doctorId;
         private String visitDate;
         private String symptoms;
         private String diagnosis;
         private String treatment;
+        private String medicine;
+        private String doses;
+        private String notes;
 
         public PatientMedicalHistoryDto(MedicalHistory medicalHistory) {
             this.id = medicalHistory.getId();
+            this.doctorId = (medicalHistory.getDoctor() != null) ? medicalHistory.getDoctor().getId() : null;
             this.visitDate = medicalHistory.getVisitDate().toString();
             this.symptoms = medicalHistory.getSymptoms();
             this.diagnosis = medicalHistory.getDiagnosis();
             this.treatment = medicalHistory.getTreatment();
+            this.medicine = medicalHistory.getMedicine();
+            this.doses = medicalHistory.getDoses();
+            this.notes = medicalHistory.getNotes();
         }
     }
 }

@@ -18,6 +18,19 @@ public class AnalyticsController {
 
     private final AnalyticsService analyticsService;
 
+    @GetMapping("/overall")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN')")
+    public ResponseEntity<Map<String, Object>> getOverallAnalytics(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        try {
+            Map<String, Object> analysis = analyticsService.getOverallAnalytics(startDate, endDate);
+            return ResponseEntity.ok(analysis);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
     @GetMapping("/doctor/{doctorId}/peak-hours")
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<Map<String, Object>> getPeakHoursAnalysis(
@@ -119,4 +132,4 @@ public class AnalyticsController {
             return ResponseEntity.badRequest().build();
         }
     }
-} 
+}

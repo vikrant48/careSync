@@ -8,7 +8,7 @@ import com.vikrant.careSync.dto.CreateEducationRequest;
 import com.vikrant.careSync.dto.CreateExperienceRequest;
 import com.vikrant.careSync.dto.CreateCertificateRequest;
 import com.vikrant.careSync.dto.UpdateDoctorRequest;
-import com.vikrant.careSync.service.DoctorService;
+import com.vikrant.careSync.service.interfaces.IDoctorService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -23,10 +23,17 @@ import java.util.Optional;
 @CrossOrigin(origins = "*")
 public class DoctorController {
 
-    private final DoctorService doctorService;
+    private final IDoctorService doctorService;
 
     @GetMapping
     public ResponseEntity<List<Doctor>> getAllDoctors() {
+        List<Doctor> doctors = doctorService.getAllDoctors();
+        return ResponseEntity.ok(doctors);
+    }
+
+    @GetMapping("/for-patients")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<List<Doctor>> getAllDoctorsForPatients() {
         List<Doctor> doctors = doctorService.getAllDoctors();
         return ResponseEntity.ok(doctors);
     }
@@ -189,6 +196,7 @@ public class DoctorController {
         try {
             Certificate certificate = new Certificate();
             certificate.setName(request.getName());
+            certificate.setDetails(request.getDetails());
             certificate.setIssuingOrganization(request.getIssuingOrganization());
             certificate.setIssueDate(request.getIssueDate());
             certificate.setExpiryDate(request.getExpiryDate());
@@ -214,6 +222,7 @@ public class DoctorController {
         try {
             Certificate certificate = new Certificate();
             certificate.setName(request.getName());
+            certificate.setDetails(request.getDetails());
             certificate.setIssuingOrganization(request.getIssuingOrganization());
             certificate.setIssueDate(request.getIssueDate());
             certificate.setExpiryDate(request.getExpiryDate());

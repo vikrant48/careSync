@@ -30,6 +30,7 @@ public class Feedback {
 
     private int rating;
     private String comment;
+    private Boolean anonymous = false;
     private LocalDateTime createdAt;
 
     @PrePersist
@@ -39,4 +40,4 @@ public class Feedback {
 
     // Getters and setters
     // ...
-} 
+}

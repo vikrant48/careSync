@@ -25,7 +25,20 @@ public class SecurityFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
         
+        String requestURI = request.getRequestURI();
+        
+        // Skip IP blocking for admin and auth endpoints
+        if (requestURI.startsWith("/api/admin/") || requestURI.startsWith("/api/auth/")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+        
+        // Skip IP blocking for localhost in development
         String clientIP = getClientIPAddress(request);
+        if ("127.0.0.1".equals(clientIP) || "0:0:0:0:0:0:0:1".equals(clientIP) || "::1".equals(clientIP)) {
+            filterChain.doFilter(request, response);
+            return;
+        }
         
         // Check if IP is blocked
         if (securityService.isIPBlocked(clientIP)) {
@@ -50,4 +63,4 @@ public class SecurityFilter extends OncePerRequestFilter {
         
         return request.getRemoteAddr();
     }
-} 
+}

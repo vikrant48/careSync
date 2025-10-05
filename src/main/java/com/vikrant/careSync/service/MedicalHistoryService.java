@@ -9,6 +9,7 @@ import com.vikrant.careSync.repository.MedicalHistoryRepository;
 import com.vikrant.careSync.repository.PatientRepository;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.AppointmentRepository;
+import com.vikrant.careSync.service.interfaces.IMedicalHistoryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -22,13 +23,14 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-public class MedicalHistoryService {
+public class MedicalHistoryService implements IMedicalHistoryService {
 
     private final MedicalHistoryRepository medicalHistoryRepository;
     private final PatientRepository patientRepository;
     private final DoctorRepository doctorRepository;
     private final AppointmentRepository appointmentRepository;
 
+    @Override
     public MedicalHistory createMedicalHistory(MedicalHistory medicalHistory) {
         // Validate medical history
         if (medicalHistory.getPatient() == null || medicalHistory.getPatient().getId() == null) {
@@ -81,11 +83,13 @@ public class MedicalHistoryService {
         return medicalHistoryRepository.save(medicalHistory);
     }
 
+    @Override
     public MedicalHistory getMedicalHistoryById(Long id) {
         return medicalHistoryRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Medical history not found"));
     }
 
+    @Override
     public List<MedicalHistory> getMedicalHistoryByPatient(Long patientId) {
         return medicalHistoryRepository.findByPatientId(patientId);
     }
@@ -113,6 +117,12 @@ public class MedicalHistoryService {
         }
     }
 
+    @Override
+    public List<MedicalHistory> getMedicalHistoryByDateRange(Long patientId, LocalDate startDate, LocalDate endDate) {
+        return medicalHistoryRepository.findByPatientIdAndVisitDateBetween(patientId, startDate, endDate);
+    }
+
+    @Override
     public MedicalHistory updateMedicalHistory(Long id, MedicalHistory updatedHistory) {
         MedicalHistory existingHistory = medicalHistoryRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Medical history not found"));
@@ -130,16 +140,27 @@ public class MedicalHistoryService {
         if (updatedHistory.getTreatment() != null) {
             existingHistory.setTreatment(updatedHistory.getTreatment());
         }
+        if (updatedHistory.getMedicine() != null) {
+            existingHistory.setMedicine(updatedHistory.getMedicine());
+        }
+        if (updatedHistory.getDoses() != null) {
+            existingHistory.setDoses(updatedHistory.getDoses());
+        }
+        if (updatedHistory.getNotes() != null) {
+            existingHistory.setNotes(updatedHistory.getNotes());
+        }
 
         return medicalHistoryRepository.save(existingHistory);
     }
 
+    @Override
     public void deleteMedicalHistory(Long id) {
         MedicalHistory medicalHistory = medicalHistoryRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Medical history not found"));
         medicalHistoryRepository.delete(medicalHistory);
     }
 
+    @Override
     public Map<String, Object> getMedicalHistorySummary(Long patientId) {
         List<MedicalHistory> histories = medicalHistoryRepository.findByPatientId(patientId);
         
@@ -170,12 +191,14 @@ public class MedicalHistoryService {
         return summary;
     }
 
+    @Override
     public List<MedicalHistory> getMedicalHistoryByDiagnosis(Long patientId, String diagnosis) {
         return medicalHistoryRepository.findByPatientId(patientId).stream()
                 .filter(history -> history.getDiagnosis().toLowerCase().contains(diagnosis.toLowerCase()))
                 .toList();
     }
 
+    @Override
     public List<MedicalHistoryWithDoctorDto> getMedicalHistoryWithDoctorByPatient(Long patientId) {
         // Get all completed appointments for the patient
         List<Appointment> completedAppointments = appointmentRepository.findByPatientIdAndStatus(patientId, Appointment.Status.COMPLETED);

@@ -134,4 +134,44 @@ public class SecurityService {
     public List<LoginAttempt> getRecentLoginAttemptsByIP(String ipAddress) {
         return loginAttemptRepository.findByIpAddressOrderByTimestampDesc(ipAddress);
     }
-} 
+
+    public void unblockIP(String ipAddress) {
+        blockedIPRepository.findByIpAddressAndActiveTrue(ipAddress)
+                .ifPresent(blockedIP -> {
+                    blockedIP.setActive(false);
+                    blockedIPRepository.save(blockedIP);
+                });
+    }
+
+    public void unblockAllIPs() {
+        List<BlockedIP> activeBlockedIPs = blockedIPRepository.findByActiveTrue();
+        for (BlockedIP blockedIP : activeBlockedIPs) {
+            blockedIP.setActive(false);
+            blockedIPRepository.save(blockedIP);
+        }
+    }
+
+    public List<BlockedIP> getAllBlockedIPs() {
+        return blockedIPRepository.findByActiveTrue();
+    }
+
+    public void blockIPManually(String ipAddress, String reason, int hoursToBlock) {
+        // Check if IP is already blocked
+        if (isIPBlocked(ipAddress)) {
+            throw new RuntimeException("IP address " + ipAddress + " is already blocked");
+        }
+
+        Instant now = Instant.now();
+        Instant expiresAt = now.plusMillis(hoursToBlock * 60 * 60 * 1000L); // Convert hours to milliseconds
+
+        BlockedIP blockedIP = BlockedIP.builder()
+                .ipAddress(ipAddress)
+                .reason(reason)
+                .blockedAt(now)
+                .expiresAt(expiresAt)
+                .active(true)
+                .build();
+
+        blockedIPRepository.save(blockedIP);
+    }
+}

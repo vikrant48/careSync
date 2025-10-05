@@ -1,10 +1,16 @@
 package com.vikrant.careSync.controller;
 
 import com.vikrant.careSync.entity.Feedback;
+import com.vikrant.careSync.entity.User;
 import com.vikrant.careSync.dto.CreateFeedbackRequest;
-import com.vikrant.careSync.service.FeedbackService;
+import com.vikrant.careSync.dto.PatientAppointmentResponse;
+import com.vikrant.careSync.service.interfaces.IFeedbackService;
+import com.vikrant.careSync.repository.PatientRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
@@ -18,16 +24,30 @@ import java.util.Map;
 @CrossOrigin(origins = "*")
 public class FeedbackController {
 
-    private final FeedbackService feedbackService;
+    private final IFeedbackService feedbackService;
+    private final PatientRepository patientRepository;
+
+    // Helper to get current authenticated patient as a User
+    private User getCurrentPatient() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.isAuthenticated()) {
+            String username = authentication.getName();
+            return patientRepository.findByUsername(username)
+                    .orElseThrow(() -> new RuntimeException("Patient not found with username: " + username));
+        }
+        throw new RuntimeException("User not authenticated");
+    }
 
     @PostMapping
     public ResponseEntity<?> createFeedback(@Valid @RequestBody CreateFeedbackRequest request) {
         try {
-            Feedback feedback = new Feedback();
-            feedback.setRating(request.getRating());
-            feedback.setComment(request.getComment());
-            
-            Feedback createdFeedback = feedbackService.createFeedback(feedback);
+            Feedback createdFeedback = feedbackService.submitFeedback(
+                request.getAppointmentId(),
+                request.getDoctorId(),
+                request.getRating(),
+                request.getComment(),
+                request.getAnonymous()
+            );
             return ResponseEntity.ok(createdFeedback);
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
@@ -41,6 +61,21 @@ public class FeedbackController {
         try {
             Feedback feedback = feedbackService.getFeedbackById(id);
             return ResponseEntity.ok(feedback);
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    // Get completed appointments for current patient that still need feedback
+    @GetMapping("/patient/pending")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<?> getPendingFeedbackForCurrentPatient() {
+        try {
+            User current = getCurrentPatient();
+            List<PatientAppointmentResponse> pending = feedbackService.getPendingFeedbackAppointmentsForPatient(current.getId());
+            return ResponseEntity.ok(pending);
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
@@ -140,4 +175,4 @@ public class FeedbackController {
             return ResponseEntity.badRequest().body(errorResponse);
         }
     }
-} 
+}

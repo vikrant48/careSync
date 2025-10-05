@@ -3,6 +3,7 @@ package com.vikrant.careSync.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.time.LocalDate;
 
@@ -11,6 +12,7 @@ import java.time.LocalDate;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class CreateMedicalHistoryRequest {
     @NotNull(message = "Patient ID is required")
     private Long patientId;
@@ -24,4 +26,11 @@ public class CreateMedicalHistoryRequest {
     private String diagnosis;
     
     private String treatment;
+    
+    // Prescription fields
+    private String medicine;
+    
+    private String doses;
+    
+    private String notes;
 }

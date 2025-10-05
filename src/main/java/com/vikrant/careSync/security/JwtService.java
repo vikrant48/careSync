@@ -32,6 +32,14 @@ public class JwtService {
         }
     }
 
+    public String extractSessionId(String token) {
+        try {
+            return extractClaim(token, claims -> claims.get("sessionId", String.class));
+        } catch (Exception e) {
+            return null; // Return null if sessionId is not present in token
+        }
+    }
+
     public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
         final Claims claims = extractAllClaims(token);
         return claimsResolver.apply(claims);
@@ -101,4 +109,4 @@ public class JwtService {
             throw new RuntimeException("Invalid JWT secret key: " + e.getMessage());
         }
     }
-} 
+}

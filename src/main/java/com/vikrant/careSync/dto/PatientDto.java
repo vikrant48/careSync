@@ -20,6 +20,7 @@ public class PatientDto {
     private String firstName;
     private String lastName;
     private String name;
+    private String profileImageUrl;
     private LocalDate dateOfBirth;
     private String contactInfo;
     private String illnessDetails;
@@ -35,11 +36,12 @@ public class PatientDto {
         this.firstName = patient.getFirstName();
         this.lastName = patient.getLastName();
         this.name = patient.getName();
+        this.profileImageUrl = patient.getProfileImageUrl();
         this.dateOfBirth = patient.getDateOfBirth();
         this.contactInfo = patient.getContactInfo();
         this.illnessDetails = patient.getIllnessDetails();
         this.isActive = patient.getIsActive();
-        
+
         if (patient.getMedicalHistories() != null) {
             this.medicalHistories = patient.getMedicalHistories().stream()
                     .map(MedicalHistoryDto::new)

@@ -1,68 +1,61 @@
 package com.vikrant.careSync.service;
 
+import com.vikrant.careSync.constants.AppConstants;
+import com.vikrant.careSync.service.CloudinaryService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
+import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class FileUploadService {
 
-    @Value("${app.file.upload.path:uploads/}")
-    private String uploadPath;
+    private final CloudinaryService cloudinaryService;
 
-    @Value("${app.file.max-size:10485760}") // 10MB default
-    private long maxFileSize;
-
-    @Value("${app.file.allowed-extensions:jpg,jpeg,png,pdf,doc,docx}")
-    private String allowedExtensions;
+    // Using constants from AppConstants instead of @Value annotations
+    private static final long MAX_FILE_SIZE = AppConstants.Config.MAX_FILE_SIZE;
+    private static final String[] ALLOWED_DOCUMENT_EXTENSIONS = AppConstants.Config.ALLOWED_DOCUMENT_EXTENSIONS;
+    private static final String[] ALLOWED_IMAGE_EXTENSIONS = AppConstants.Config.ALLOWED_IMAGE_EXTENSIONS;
 
     public String uploadCertificate(MultipartFile file, Long doctorId) throws IOException {
         validateFile(file);
-        String fileName = generateFileName(file, "certificate", doctorId);
-        return saveFile(file, fileName, "certificates");
+        return cloudinaryService.uploadFile(file, CloudinaryService.FileType.CERTIFICATE, doctorId);
     }
 
     public String uploadProfileImage(MultipartFile file, Long userId, String userType) throws IOException {
-        validateFile(file);
-        validateImageFile(file);
-        String fileName = generateFileName(file, "profile", userId);
-        return saveFile(file, fileName, "profiles/" + userType.toLowerCase());
+        validateProfileImageFile(file);
+        return cloudinaryService.uploadFile(file, CloudinaryService.FileType.PROFILE_IMAGE, userId);
     }
 
     public String uploadMedicalDocument(MultipartFile file, Long patientId) throws IOException {
         validateFile(file);
-        String fileName = generateFileName(file, "medical", patientId);
-        return saveFile(file, fileName, "medical-documents");
+        return cloudinaryService.uploadFile(file, CloudinaryService.FileType.MEDICAL_DOCUMENT, patientId);
     }
 
-    public void deleteFile(String filePath) throws IOException {
-        Path path = Paths.get(uploadPath, filePath);
-        if (Files.exists(path)) {
-            Files.delete(path);
+    public void deleteFile(String cloudinaryUrl) throws IOException {
+        String publicId = cloudinaryService.extractPublicId(cloudinaryUrl);
+        if (publicId != null) {
+            cloudinaryService.deleteFile(publicId);
         }
     }
 
-    public boolean fileExists(String filePath) {
-        Path path = Paths.get(uploadPath, filePath);
-        return Files.exists(path);
+    public boolean fileExists(String cloudinaryUrl) {
+        String publicId = cloudinaryService.extractPublicId(cloudinaryUrl);
+        return publicId != null && cloudinaryService.fileExists(publicId);
     }
 
-    public long getFileSize(String filePath) throws IOException {
-        Path path = Paths.get(uploadPath, filePath);
-        if (Files.exists(path)) {
-            return Files.size(path);
-        }
+    public long getFileSize(String cloudinaryUrl) throws IOException {
+        // For Cloudinary URLs, we can't easily get file size without additional API calls
+        // This would require implementing a separate method in CloudinaryService
+        log.warn("File size retrieval not implemented for Cloudinary URLs: {}", cloudinaryUrl);
         return 0;
     }
 
@@ -71,8 +64,8 @@ public class FileUploadService {
             throw new IllegalArgumentException("File cannot be empty");
         }
 
-        if (file.getSize() > maxFileSize) {
-            throw new IllegalArgumentException("File size exceeds maximum allowed size of " + (maxFileSize / 1024 / 1024) + "MB");
+        if (file.getSize() > MAX_FILE_SIZE) {
+            throw new IllegalArgumentException("File size exceeds maximum allowed size of " + (MAX_FILE_SIZE / 1024 / 1024) + "MB");
         }
 
         String originalFilename = file.getOriginalFilename();
@@ -81,18 +74,40 @@ public class FileUploadService {
         }
 
         String extension = getFileExtension(originalFilename);
-        if (!isAllowedExtension(extension)) {
-            throw new IllegalArgumentException("File type not allowed. Allowed types: " + allowedExtensions);
+        if (!isDocumentExtensionAllowed(extension)) {
+            throw new IllegalArgumentException("File type not allowed. Allowed types: " + String.join(", ", ALLOWED_DOCUMENT_EXTENSIONS));
         }
     }
 
     private void validateImageFile(MultipartFile file) throws IOException {
         String originalFilename = file.getOriginalFilename();
         if (originalFilename != null) {
-            String extension = getFileExtension(originalFilename).toLowerCase();
-            if (!extension.matches("jpg|jpeg|png|gif")) {
-                throw new IllegalArgumentException("Only image files (jpg, jpeg, png, gif) are allowed for profile images");
+            String extension = getFileExtension(originalFilename);
+            if (!isImageExtensionAllowed(extension)) {
+                throw new IllegalArgumentException("Only image files (" + 
+                    String.join(", ", ALLOWED_IMAGE_EXTENSIONS) + ") are allowed");
             }
+        }
+    }
+
+    private void validateProfileImageFile(MultipartFile file) throws IOException {
+        if (file.isEmpty()) {
+            throw new IllegalArgumentException("File cannot be empty");
+        }
+
+        if (file.getSize() > MAX_FILE_SIZE) {
+            throw new IllegalArgumentException("File size exceeds maximum allowed size of " + (MAX_FILE_SIZE / 1024 / 1024) + "MB");
+        }
+
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null || originalFilename.isEmpty()) {
+            throw new IllegalArgumentException("Invalid file name");
+        }
+
+        String extension = getFileExtension(originalFilename);
+        if (!isImageExtensionAllowed(extension)) {
+            throw new IllegalArgumentException("Only image files (" + 
+                String.join(", ", ALLOWED_IMAGE_EXTENSIONS) + ") are allowed for profile images");
         }
     }
 
@@ -104,10 +119,18 @@ public class FileUploadService {
         return "";
     }
 
-    private boolean isAllowedExtension(String extension) {
-        String[] allowed = allowedExtensions.split(",");
-        for (String ext : allowed) {
-            if (ext.trim().equalsIgnoreCase(extension)) {
+    private boolean isDocumentExtensionAllowed(String extension) {
+        for (String ext : ALLOWED_DOCUMENT_EXTENSIONS) {
+            if (ext.equalsIgnoreCase(extension)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isImageExtensionAllowed(String extension) {
+        for (String ext : ALLOWED_IMAGE_EXTENSIONS) {
+            if (ext.equalsIgnoreCase(extension)) {
                 return true;
             }
         }
@@ -123,41 +146,20 @@ public class FileUploadService {
         return String.format("%s_%s_%s_%s.%s", type, userId, timestamp, uniqueId, extension);
     }
 
-    private String saveFile(MultipartFile file, String fileName, String subDirectory) throws IOException {
-        Path uploadDir = Paths.get(uploadPath, subDirectory);
-        
-        // Create directory if it doesn't exist
-        if (!Files.exists(uploadDir)) {
-            Files.createDirectories(uploadDir);
-        }
-
-        Path filePath = uploadDir.resolve(fileName);
-        Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
-
-        return subDirectory + "/" + fileName;
+    public String getFileUrl(String cloudinaryUrl) {
+        // For Cloudinary URLs, return the URL directly as it's already accessible
+        return cloudinaryUrl;
     }
 
-    public String getFileUrl(String filePath) {
-        // In a real application, this would return the actual URL
-        // For now, returning a relative path
-        return "/api/files/" + filePath;
-    }
-
-    public byte[] getFileContent(String filePath) throws IOException {
-        Path path = Paths.get(uploadPath, filePath);
-        if (Files.exists(path)) {
-            return Files.readAllBytes(path);
-        }
-        throw new IOException("File not found: " + filePath);
+    public byte[] getFileContent(String cloudinaryUrl) throws IOException {
+        // For Cloudinary URLs, we would need to download the file content
+        // This is not commonly needed as Cloudinary URLs are directly accessible
+        throw new UnsupportedOperationException("Direct file content retrieval not supported for Cloudinary URLs. Use the URL directly: " + cloudinaryUrl);
     }
 
     public void cleanupOrphanedFiles() throws IOException {
-        // This method would clean up files that are no longer referenced
-        // Implementation would depend on your specific requirements
-        Path uploadDir = Paths.get(uploadPath);
-        if (Files.exists(uploadDir)) {
-            // Add logic to find and remove orphaned files
-            System.out.println("Cleaning up orphaned files...");
-        }
+        // This method would clean up files that are no longer referenced in Cloudinary
+        // Implementation would require checking database records against Cloudinary assets
+        log.info("Cloudinary cleanup would require checking database records against Cloudinary assets");
     }
-} 
+}

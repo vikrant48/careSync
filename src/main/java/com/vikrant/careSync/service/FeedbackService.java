@@ -4,10 +4,12 @@ import com.vikrant.careSync.entity.Feedback;
 import com.vikrant.careSync.entity.Appointment;
 import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Patient;
+import com.vikrant.careSync.dto.PatientAppointmentResponse;
 import com.vikrant.careSync.repository.FeedbackRepository;
 import com.vikrant.careSync.repository.AppointmentRepository;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.PatientRepository;
+import com.vikrant.careSync.service.interfaces.IFeedbackService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -19,7 +21,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-public class FeedbackService {
+public class FeedbackService implements IFeedbackService {
 
     private final FeedbackRepository feedbackRepository;
     private final AppointmentRepository appointmentRepository;
@@ -119,12 +121,17 @@ public class FeedbackService {
     }
 
     public Feedback submitFeedback(Long appointmentId, Long patientId, int rating, String comment) {
-        // Validate appointment exists and belongs to patient
+        return submitFeedback(appointmentId, null, rating, comment, false);
+    }
+
+    public Feedback submitFeedback(Long appointmentId, Long doctorId, int rating, String comment, Boolean anonymous) {
+        // Validate appointment exists
         Appointment appointment = appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
 
-        if (!appointment.getPatient().getId().equals(patientId)) {
-            throw new RuntimeException("Appointment does not belong to this patient");
+        // If doctorId is provided, validate it matches the appointment's doctor
+        if (doctorId != null && !appointment.getDoctor().getId().equals(doctorId)) {
+            throw new RuntimeException("Doctor ID does not match the appointment's doctor");
         }
 
         // Check if feedback already exists
@@ -144,6 +151,7 @@ public class FeedbackService {
         feedback.setDoctor(appointment.getDoctor());
         feedback.setRating(rating);
         feedback.setComment(comment);
+        feedback.setAnonymous(anonymous != null ? anonymous : false);
         feedback.setCreatedAt(LocalDateTime.now());
 
         return feedbackRepository.save(feedback);
@@ -160,6 +168,20 @@ public class FeedbackService {
         return feedbackRepository.findByDoctorIdAndRatingGreaterThanEqual(doctorId, 4);
     }
 
+    @Override
+    public List<PatientAppointmentResponse> getPendingFeedbackAppointmentsForPatient(Long patientId) {
+        // Get completed appointments for the patient
+        List<Appointment> completed = appointmentRepository.findByPatientIdAndStatus(patientId, Appointment.Status.COMPLETED);
+        // Filter out appointments that already have feedback
+        List<Appointment> pending = completed.stream()
+                .filter(a -> feedbackRepository.findByAppointmentId(a.getId()).isEmpty())
+                .toList();
+        // Map to patient-facing DTO
+        return pending.stream()
+                .map(PatientAppointmentResponse::new)
+                .collect(Collectors.toList());
+    }
+
     public List<Feedback> getLowRatedFeedbacks(Long doctorId) {
         return feedbackRepository.findByDoctorIdAndRatingLessThanEqual(doctorId, 2);
     }
@@ -171,4 +193,8 @@ public class FeedbackService {
     public long getFeedbacksCountByRating(Long doctorId, int rating) {
         return feedbackRepository.countByDoctorIdAndRating(doctorId, rating);
     }
-} 
+
+    public List<Feedback> getAllFeedback() {
+        return feedbackRepository.findAll();
+    }
+}

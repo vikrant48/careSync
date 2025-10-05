@@ -102,4 +102,4 @@ public class ReportingController {
             return ResponseEntity.badRequest().build();
         }
     }
-} 
+}

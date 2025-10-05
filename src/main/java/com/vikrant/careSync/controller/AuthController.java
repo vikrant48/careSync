@@ -7,6 +7,8 @@ import com.vikrant.careSync.service.UserService;
 import com.vikrant.careSync.security.service.RefreshTokenService;
 import com.vikrant.careSync.security.service.SecurityService;
 import com.vikrant.careSync.security.JwtService;
+import com.vikrant.careSync.repository.DoctorRepository;
+import com.vikrant.careSync.repository.PatientRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -32,6 +34,8 @@ public class AuthController {
     private final SecurityService securityService;
     private final JwtService jwtService;
     private final UserService userService;
+    private final DoctorRepository doctorRepository;
+    private final PatientRepository patientRepository;
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
@@ -82,10 +86,16 @@ public class AuthController {
             refreshTokenService.deleteRefreshToken(request.getRefreshToken());
             var newRefreshToken = refreshTokenService.createRefreshToken(username, userType);
 
+            // Get complete user data
+            Object userData = getUserData(username, userType);
+
             RefreshTokenResponse response = RefreshTokenResponse.builder()
                     .accessToken(newAccessToken)
                     .refreshToken(newRefreshToken.getToken())
                     .tokenType("Bearer")
+                    .username(username)
+                    .role(userType)
+                    .user(userData)
                     .build();
 
             return ResponseEntity.ok(response);
@@ -224,5 +234,18 @@ public class AuthController {
                     .build();
         }
         throw new RuntimeException("Invalid user type: " + userType);
+    }
+
+    private Object getUserData(String username, String role) {
+        if ("DOCTOR".equals(role)) {
+            var doctor = doctorRepository.findByUsername(username)
+                    .orElseThrow(() -> new RuntimeException("Doctor not found"));
+            return new com.vikrant.careSync.dto.DoctorDto(doctor);
+        } else if ("PATIENT".equals(role)) {
+            var patient = patientRepository.findByUsername(username)
+                    .orElseThrow(() -> new RuntimeException("Patient not found"));
+            return new com.vikrant.careSync.dto.PatientDto(patient);
+        }
+        throw new RuntimeException("Invalid role: " + role);
     }
 }

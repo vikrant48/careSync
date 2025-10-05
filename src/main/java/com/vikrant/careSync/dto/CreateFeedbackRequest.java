@@ -11,6 +11,9 @@ import lombok.*;
 @AllArgsConstructor
 @Builder
 public class CreateFeedbackRequest {
+    // Doctor ID is optional; derived from appointment if omitted
+    private Long doctorId;
+    
     @NotNull(message = "Appointment ID is required")
     private Long appointmentId;
     
@@ -20,4 +23,6 @@ public class CreateFeedbackRequest {
     private Integer rating;
     
     private String comment;
+    
+    private Boolean anonymous = false;
 }

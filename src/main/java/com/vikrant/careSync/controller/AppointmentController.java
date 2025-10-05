@@ -61,6 +61,14 @@ public class AppointmentController {
     public ResponseEntity<?> bookAppointment(@Valid @RequestBody CreateAppointmentRequest request) {
         try {
             System.out.println("=== Starting appointment creation ===");
+            
+            // Check if appointment date is in the past
+            if (request.appointmentDateTime.isBefore(java.time.LocalDateTime.now())) {
+                Map<String, String> error = new HashMap<>();
+                error.put("error", "You can't book an appointment in the past. Please select a future date and time.");
+                return ResponseEntity.badRequest().body(error);
+            }
+            
             User currentUser = getCurrentPatient();
             System.out.println("Current user: " + currentUser.getId());
             System.out.println("Doctor ID: " + request.doctorId);
@@ -204,6 +212,36 @@ public class AppointmentController {
             appointmentService.cancelAppointment(id, currentUser);
             Map<String, String> successResponse = new HashMap<>();
             successResponse.put("message", "Appointment cancelled successfully");
+            return ResponseEntity.ok(successResponse);
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    @PutMapping("/patient/{id}/reschedule")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<?> rescheduleMyAppointment(@PathVariable Long id, @RequestParam String newDateTime) {
+        try {
+            User currentUser = getCurrentPatient();
+            
+            // Parse the new date time
+            java.time.LocalDateTime newAppointmentDateTime = java.time.LocalDateTime.parse(newDateTime);
+            
+            // Check if new appointment date is in the past
+            if (newAppointmentDateTime.isBefore(java.time.LocalDateTime.now())) {
+                Map<String, String> error = new HashMap<>();
+                error.put("error", "You can't reschedule an appointment to the past. Please select a future date and time.");
+                return ResponseEntity.badRequest().body(error);
+            }
+            
+            // Use the reschedule service method
+            Appointment rescheduled = appointmentService.rescheduleAppointment(id, newAppointmentDateTime, currentUser);
+            
+            Map<String, Object> successResponse = new HashMap<>();
+            successResponse.put("message", "Appointment rescheduled successfully");
+            successResponse.put("appointment", new PatientAppointmentResponse(rescheduled));
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
@@ -414,11 +452,33 @@ public class AppointmentController {
 
     // PUBLIC ENDPOINTS - Accessible by authenticated users
 
-    @GetMapping("/available-slots/{doctorId}")
-    public ResponseEntity<?> getAvailableSlots(@PathVariable Long doctorId, @RequestParam String date) {
+    @GetMapping("/available-slots")
+    public ResponseEntity<?> getAvailableSlots(@RequestParam Long doctorId, @RequestParam String date) {
         try {
             List<String> availableSlots = appointmentService.getAvailableSlots(doctorId, date);
             return ResponseEntity.ok(availableSlots);
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    // EMERGENCY BOOKING - Immediate appointment booking
+    @PostMapping("/patient/book-emergency")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<?> bookEmergencyAppointment(@RequestParam Long doctorId, @RequestParam(required = false) String reason) {
+        try {
+            User currentUser = getCurrentPatient();
+            
+            // Book emergency appointment at current time
+            Appointment emergencyAppointment = appointmentService.bookEmergencyAppointment(
+                doctorId, 
+                currentUser.getId(), 
+                reason != null ? reason : "Emergency appointment"
+            );
+            
+            return ResponseEntity.ok(new PatientAppointmentResponse(emergencyAppointment));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());

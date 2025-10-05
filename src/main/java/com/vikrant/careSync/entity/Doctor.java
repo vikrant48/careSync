@@ -12,8 +12,8 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@ToString(exclude = {"experiences", "educations", "certificates", "appointments", "feedbacks"})
-@EqualsAndHashCode(exclude = {"experiences", "educations", "certificates", "appointments", "feedbacks"})
+@ToString(exclude = {"experiences", "educations", "certificates", "appointments", "feedbacks", "documents"})
+@EqualsAndHashCode(exclude = {"experiences", "educations", "certificates", "appointments", "feedbacks", "documents"})
 @Entity
 @Table(name = "doctors")
 public class Doctor extends User {
@@ -56,6 +56,10 @@ public class Doctor extends User {
     @JsonManagedReference
     private List<Feedback> feedbacks;
 
+    @OneToMany(mappedBy = "doctor", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @JsonManagedReference
+    private List<Document> documents;
+
     public String getName() {
         return firstName + " " + lastName;
     }
@@ -64,4 +68,4 @@ public class Doctor extends User {
     public boolean canAcceptAppointments() {
         return this.getIsActive() != null && this.getIsActive();
     }
-} 
+}

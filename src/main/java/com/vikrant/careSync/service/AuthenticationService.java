@@ -9,7 +9,9 @@ import com.vikrant.careSync.security.dto.*;
 import com.vikrant.careSync.security.service.RefreshTokenService;
 import com.vikrant.careSync.security.service.SecurityService;
 import com.vikrant.careSync.security.entity.PasswordResetToken;
+import com.vikrant.careSync.security.entity.UserSession;
 import com.vikrant.careSync.security.repository.PasswordResetTokenRepository;
+import com.vikrant.careSync.service.interfaces.IAuthenticationService;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -19,10 +21,12 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
-public class AuthenticationService {
+public class AuthenticationService implements IAuthenticationService {
 
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
@@ -108,7 +112,7 @@ public class AuthenticationService {
         doctor.setSpecialization(request.getSpecialization());
 
         Doctor savedDoctor = doctorRepository.save(doctor);
-        return generateAuthResponse(savedDoctor.getUsername(), "DOCTOR", "Registration successful as Doctor.");
+        return generateAuthResponse(savedDoctor.getUsername(), "DOCTOR", "Registration successful as Doctor.", "127.0.0.1", "Registration");
     }
 
     private AuthenticationResponse registerPatient(RegisterRequest request) {
@@ -134,7 +138,7 @@ public class AuthenticationService {
         patient.setIllnessDetails(request.getIllnessDetails());
 
         Patient savedPatient = patientRepository.save(patient);
-        return generateAuthResponse(savedPatient.getUsername(), "PATIENT", "Registration successful as Patient.");
+        return generateAuthResponse(savedPatient.getUsername(), "PATIENT", "Registration successful as Patient.", "127.0.0.1", "Registration");
     }
 
     public AuthenticationResponse authenticate(AuthenticationRequest request, String ipAddress, String userAgent) {
@@ -171,11 +175,11 @@ public class AuthenticationService {
             // Determine user type and generate response
             Doctor doctor = doctorRepository.findByUsername(request.getUsername()).orElse(null);
             if (doctor != null) {
-                return generateAuthResponse(doctor.getUsername(), "DOCTOR", "Login successful as Doctor.");
+                return generateAuthResponse(doctor.getUsername(), "DOCTOR", "Login successful as Doctor.", ipAddress, userAgent);
             } else {
                 Patient patient = patientRepository.findByUsername(request.getUsername()).orElse(null);
                 if (patient != null) {
-                    return generateAuthResponse(patient.getUsername(), "PATIENT", "Login successful as Patient.");
+                    return generateAuthResponse(patient.getUsername(), "PATIENT", "Login successful as Patient.", ipAddress, userAgent);
                 }
             }
 
@@ -331,9 +335,18 @@ public class AuthenticationService {
         passwordResetTokenRepository.save(resetToken);
     }
 
-    private AuthenticationResponse generateAuthResponse(String username, String role, String message) {
+    private AuthenticationResponse generateAuthResponse(String username, String role, String message, String ipAddress, String userAgent) {
         UserDetails userDetails = loadUserDetails(username);
-        String accessToken = jwtService.generateToken(userDetails);
+        
+        // Create user session and get sessionId
+        UserSession userSession = securityService.createUserSession(username, ipAddress, userAgent, role);
+        String sessionId = userSession.getSessionId();
+        
+        // Create JWT token with sessionId in claims
+        Map<String, Object> extraClaims = new HashMap<>();
+        extraClaims.put("sessionId", sessionId);
+        String accessToken = jwtService.generateToken(extraClaims, userDetails);
+        
         var refreshToken = refreshTokenService.createRefreshToken(username, role);
 
         // Get complete user data
@@ -352,11 +365,13 @@ public class AuthenticationService {
 
     private Object getUserData(String username, String role) {
         if ("DOCTOR".equals(role)) {
-            return doctorRepository.findByUsername(username)
+            var doctor = doctorRepository.findByUsername(username)
                     .orElseThrow(() -> new RuntimeException("Doctor not found"));
+            return new com.vikrant.careSync.dto.DoctorDto(doctor);
         } else if ("PATIENT".equals(role)) {
-            return patientRepository.findByUsername(username)
+            var patient = patientRepository.findByUsername(username)
                     .orElseThrow(() -> new RuntimeException("Patient not found"));
+            return new com.vikrant.careSync.dto.PatientDto(patient);
         }
         throw new RuntimeException("Invalid role: " + role);
     }
@@ -384,4 +399,4 @@ public class AuthenticationService {
 
         throw new RuntimeException("User not found");
     }
-} 
+}

@@ -1,13 +1,18 @@
 package com.vikrant.careSync.controller;
 
 import com.vikrant.careSync.entity.MedicalHistory;
+import com.vikrant.careSync.entity.Patient;
+import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.dto.CreateMedicalHistoryRequest;
 import com.vikrant.careSync.dto.MedicalHistoryDto;
 import com.vikrant.careSync.dto.MedicalHistoryWithDoctorDto;
-import com.vikrant.careSync.service.MedicalHistoryService;
+import com.vikrant.careSync.service.interfaces.IMedicalHistoryService;
+import com.vikrant.careSync.repository.DoctorRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import jakarta.validation.Valid;
 import java.util.HashMap;
@@ -21,19 +26,44 @@ import java.util.stream.Collectors;
 @CrossOrigin(origins = "*")
 public class MedicalHistoryController {
 
-    private final MedicalHistoryService medicalHistoryService;
+    private final IMedicalHistoryService medicalHistoryService;
+    private final DoctorRepository doctorRepository;
+    
+    // Get current authenticated doctor
+    private Doctor getCurrentDoctor() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.isAuthenticated()) {
+            String username = authentication.getName();
+            return doctorRepository.findByUsername(username)
+                    .orElseThrow(() -> new RuntimeException("Doctor not found with username: " + username));
+        }
+        throw new RuntimeException("User not authenticated");
+    }
 
     @PostMapping
     public ResponseEntity<?> createMedicalHistory(@Valid @RequestBody CreateMedicalHistoryRequest request) {
         try {
             MedicalHistory medicalHistory = new MedicalHistory();
+            
+            // Set patient from patientId
+            Patient patient = new Patient();
+            patient.setId(request.getPatientId());
+            medicalHistory.setPatient(patient);
+            
+            // Set doctor from current authenticated user
+            Doctor currentDoctor = getCurrentDoctor();
+            medicalHistory.setDoctor(currentDoctor);
+            
             medicalHistory.setVisitDate(request.getVisitDate());
             medicalHistory.setSymptoms(request.getSymptoms());
             medicalHistory.setDiagnosis(request.getDiagnosis());
             medicalHistory.setTreatment(request.getTreatment());
+            medicalHistory.setMedicine(request.getMedicine());
+            medicalHistory.setDoses(request.getDoses());
+            medicalHistory.setNotes(request.getNotes());
             
             MedicalHistory createdHistory = medicalHistoryService.createMedicalHistory(medicalHistory);
-            return ResponseEntity.ok(new MedicalHistoryDto(createdHistory));
+            return ResponseEntity.ok(new MedicalHistoryDto(createdHistory, "Medical history created successfully"));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
@@ -43,17 +73,29 @@ public class MedicalHistoryController {
 
     @PostMapping("/with-doctor")
     public ResponseEntity<?> createMedicalHistoryWithDoctor(
-            @Valid @RequestBody CreateMedicalHistoryRequest request,
-            @RequestParam Long doctorId) {
+            @Valid @RequestBody CreateMedicalHistoryRequest request) {
         try {
             MedicalHistory medicalHistory = new MedicalHistory();
+            
+            // Set patient from patientId
+            Patient patient = new Patient();
+            patient.setId(request.getPatientId());
+            medicalHistory.setPatient(patient);
+            
+            // Set doctor from current authenticated user
+            Doctor currentDoctor = getCurrentDoctor();
+            medicalHistory.setDoctor(currentDoctor);
+            
             medicalHistory.setVisitDate(request.getVisitDate());
             medicalHistory.setSymptoms(request.getSymptoms());
             medicalHistory.setDiagnosis(request.getDiagnosis());
             medicalHistory.setTreatment(request.getTreatment());
+            medicalHistory.setMedicine(request.getMedicine());
+            medicalHistory.setDoses(request.getDoses());
+            medicalHistory.setNotes(request.getNotes());
             
-            MedicalHistory createdHistory = medicalHistoryService.createMedicalHistoryWithDoctor(medicalHistory, doctorId);
-            return ResponseEntity.ok(new MedicalHistoryDto(createdHistory));
+            MedicalHistory createdHistory = medicalHistoryService.createMedicalHistoryWithDoctor(medicalHistory, currentDoctor.getId());
+            return ResponseEntity.ok(new MedicalHistoryDto(createdHistory, "Medical history created successfully"));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
@@ -129,6 +171,9 @@ public class MedicalHistoryController {
             medicalHistory.setSymptoms(request.getSymptoms());
             medicalHistory.setDiagnosis(request.getDiagnosis());
             medicalHistory.setTreatment(request.getTreatment());
+            medicalHistory.setMedicine(request.getMedicine());
+            medicalHistory.setDoses(request.getDoses());
+            medicalHistory.setNotes(request.getNotes());
             
             MedicalHistory updatedHistory = medicalHistoryService.updateMedicalHistory(id, medicalHistory);
             return ResponseEntity.ok(new MedicalHistoryDto(updatedHistory));

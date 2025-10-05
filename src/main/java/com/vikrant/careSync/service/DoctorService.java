@@ -9,6 +9,7 @@ import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.ExperienceRepository;
 import com.vikrant.careSync.repository.EducationRepository;
 import com.vikrant.careSync.repository.CertificateRepository;
+import com.vikrant.careSync.service.interfaces.IDoctorService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -18,7 +19,7 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
-public class DoctorService {
+public class DoctorService implements IDoctorService {
 
     private final DoctorRepository doctorRepository;
     private final ExperienceRepository experienceRepository;
@@ -203,6 +204,14 @@ public class DoctorService {
         certificate.setUrl(updatedCertificate.getUrl());
         certificate.setDetails(updatedCertificate.getDetails());
 
+        return certificateRepository.save(certificate);
+    }
+
+    public Certificate updateCertificateUrl(Long certificateId, String url) {
+        Certificate certificate = certificateRepository.findById(certificateId)
+                .orElseThrow(() -> new RuntimeException("Certificate not found"));
+        
+        certificate.setUrl(url);
         return certificateRepository.save(certificate);
     }
 

@@ -1,5 +1,6 @@
 package com.vikrant.careSync.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import lombok.*;
@@ -16,6 +17,7 @@ public abstract class User {
     private String username;
 
     @Column(nullable = false, length = 255)
+    @JsonIgnore
     private String password;
 
     @Column(nullable = false, unique = true, length = 100)
@@ -54,4 +56,4 @@ public abstract class User {
     public enum Role {
         DOCTOR, PATIENT, ADMIN
     }
-} 
+}

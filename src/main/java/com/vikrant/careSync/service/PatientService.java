@@ -4,16 +4,18 @@ import com.vikrant.careSync.entity.Patient;
 import com.vikrant.careSync.entity.MedicalHistory;
 import com.vikrant.careSync.repository.PatientRepository;
 import com.vikrant.careSync.repository.MedicalHistoryRepository;
+import com.vikrant.careSync.service.interfaces.IPatientService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
-public class PatientService {
+public class PatientService implements IPatientService {
 
     private final PatientRepository patientRepository;
     private final MedicalHistoryRepository medicalHistoryRepository;
@@ -105,4 +107,21 @@ public class PatientService {
         patient.setContactInfo(contactInfo);
         return patientRepository.save(patient);
     }
-} 
+
+    public Patient updateProfileImage(Long patientId, String imageUrl) {
+        Patient patient = patientRepository.findById(patientId)
+                .orElseThrow(() -> new RuntimeException("Patient not found"));
+
+        patient.setProfileImageUrl(imageUrl);
+        return patientRepository.save(patient);
+    }
+
+    public Patient updateProfileImageByUsername(String username, String imageUrl) {
+        Patient patient = patientRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("Patient not found"));
+
+        patient.setProfileImageUrl(imageUrl);
+        patient.setUpdatedAt(LocalDateTime.now());
+        return patientRepository.save(patient);
+    }
+}

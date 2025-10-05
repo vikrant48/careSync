@@ -16,6 +16,7 @@ public class MedicalHistoryWithDoctorDto {
     private String treatment;
     private String doctorName;
     private String doctorSpecialization;
+    private String doctorContactInfo;
     private Long appointmentId;
     private String appointmentDate;
     
@@ -27,6 +28,7 @@ public class MedicalHistoryWithDoctorDto {
         this.treatment = medicalHistory.getTreatment();
         this.doctorName = doctor.getFirstName() + " " + doctor.getLastName();
         this.doctorSpecialization = doctor.getSpecialization();
+        this.doctorContactInfo = doctor.getContactInfo();
         this.appointmentId = appointmentId;
         this.appointmentDate = appointmentDate;
     }

@@ -57,7 +57,7 @@ public class Appointment {
     private Feedback feedback;
 
     public enum Status {
-        BOOKED, CONFIRMED, COMPLETED, CANCELLED
+        BOOKED, SCHEDULED, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED
     }
 
     @PrePersist
@@ -99,4 +99,4 @@ public class Appointment {
         this.statusChangedAt = LocalDateTime.now();
         this.statusChangedBy = changedBy;
     }
-} 
+}
