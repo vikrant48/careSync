@@ -5,6 +5,7 @@ import lombok.*;
 
 import java.util.List;
 import java.util.stream.Collectors;
+import java.math.*;
 
 @Getter
 @Setter
@@ -23,6 +24,10 @@ public class DoctorDto {
     private String profileImageUrl;
     private String contactInfo;
     private Boolean isActive;
+    private String gender;
+    private BigDecimal consultationFees;
+    private String address;
+    private List<String> languages;
     private List<ExperienceDto> experiences;
     private List<EducationDto> educations;
     private List<CertificateDto> certificates;
@@ -39,6 +44,10 @@ public class DoctorDto {
         this.profileImageUrl = doctor.getProfileImageUrl();
         this.contactInfo = doctor.getContactInfo();
         this.isActive = doctor.getIsActive();
+        this.gender = doctor.getGender();
+        this.consultationFees = doctor.getConsultationFees();
+        this.address = doctor.getAddress();
+        this.languages = doctor.getLanguages() != null ? java.util.Arrays.stream(doctor.getLanguages().split(",")).map(String::trim).filter(s -> !s.isEmpty()).collect(java.util.stream.Collectors.toList()) : null;
         
         if (doctor.getExperiences() != null) {
             this.experiences = doctor.getExperiences().stream()

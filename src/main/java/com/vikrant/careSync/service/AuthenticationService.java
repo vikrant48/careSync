@@ -9,14 +9,18 @@ import com.vikrant.careSync.security.dto.*;
 import com.vikrant.careSync.security.service.RefreshTokenService;
 import com.vikrant.careSync.security.service.SecurityService;
 import com.vikrant.careSync.security.entity.PasswordResetToken;
+import com.vikrant.careSync.security.entity.PasswordResetOtp;
 import com.vikrant.careSync.security.entity.UserSession;
 import com.vikrant.careSync.security.repository.PasswordResetTokenRepository;
+import com.vikrant.careSync.security.repository.PasswordResetOtpRepository;
 import com.vikrant.careSync.service.interfaces.IAuthenticationService;
+import com.vikrant.careSync.service.EmailService;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -36,8 +40,10 @@ public class AuthenticationService implements IAuthenticationService {
     private final RefreshTokenService refreshTokenService;
     private final SecurityService securityService;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
+    private final PasswordResetOtpRepository passwordResetOtpRepository;
+    private final EmailService emailService;
 
-    public AuthenticationService(DoctorRepository doctorRepository, PatientRepository patientRepository, PasswordEncoder passwordEncoder, JwtService jwtService, AuthenticationManager authenticationManager, RefreshTokenService refreshTokenService, SecurityService securityService, PasswordResetTokenRepository passwordResetTokenRepository) {
+    public AuthenticationService(DoctorRepository doctorRepository, PatientRepository patientRepository, PasswordEncoder passwordEncoder, JwtService jwtService, AuthenticationManager authenticationManager, RefreshTokenService refreshTokenService, SecurityService securityService, PasswordResetTokenRepository passwordResetTokenRepository, PasswordResetOtpRepository passwordResetOtpRepository, EmailService emailService) {
         this.doctorRepository = doctorRepository;
         this.patientRepository = patientRepository;
         this.passwordEncoder = passwordEncoder;
@@ -46,6 +52,8 @@ public class AuthenticationService implements IAuthenticationService {
         this.refreshTokenService = refreshTokenService;
         this.securityService = securityService;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
+        this.passwordResetOtpRepository = passwordResetOtpRepository;
+        this.emailService = emailService;
     }
 
     public AuthenticationResponse register(RegisterRequest request) {
@@ -283,6 +291,141 @@ public class AuthenticationService implements IAuthenticationService {
         // For now, just log the token (in production, send email)
         System.out.println("Password reset token for " + request.getEmail() + ": " + token);
 
+    }
+
+    // ===================== OTP-based Reset Password Flow =====================
+    @Transactional
+    public void forgotPasswordOtp(com.vikrant.careSync.security.dto.ForgotPasswordOtpRequest request) {
+        if (request.getEmail() == null || request.getEmail().trim().isEmpty()) {
+            throw new RuntimeException("Email is required");
+        }
+
+        Doctor doctor = doctorRepository.findByEmail(request.getEmail()).orElse(null);
+        Patient patient = null;
+        String name;
+        String role;
+        Long userId;
+        String mobile;
+
+        if (doctor == null) {
+            patient = patientRepository.findByEmail(request.getEmail()).orElse(null);
+            if (patient == null) {
+                // For security, do not reveal existence
+                return;
+            }
+            name = patient.getName();
+            role = com.vikrant.careSync.entity.User.Role.PATIENT.name();
+            userId = patient.getId();
+            mobile = patient.getContactInfo();
+        } else {
+            name = doctor.getName();
+            role = com.vikrant.careSync.entity.User.Role.DOCTOR.name();
+            userId = doctor.getId();
+            mobile = doctor.getContactInfo();
+        }
+
+        // Delete expired OTPs for this email
+        passwordResetOtpRepository.deleteExpiredForEmail(request.getEmail(), Instant.now());
+
+        // Generate new OTP
+        String otp = generateSixDigitOtp();
+
+        PasswordResetOtp record = PasswordResetOtp.builder()
+                .userId(userId)
+                .name(name)
+                .email(request.getEmail())
+                .mobileNumber(mobile)
+                .role(role)
+                .otp(otp)
+                .createdAt(Instant.now())
+                .expiryDate(Instant.now().plusSeconds(600)) // 10 minutes
+                .used(false)
+                .verified(false)
+                .build();
+        passwordResetOtpRepository.save(record);
+
+        // Send OTP via email service
+        emailService.sendOtpEmail(request.getEmail(), name, otp);
+    }
+
+    @Transactional
+    public void verifyOtp(com.vikrant.careSync.security.dto.VerifyOtpRequest request) {
+        if (request.getEmail() == null || request.getEmail().trim().isEmpty()) {
+            throw new RuntimeException("Email is required");
+        }
+        if (request.getOtp() == null || request.getOtp().trim().length() != 6) {
+            throw new RuntimeException("Valid 6-digit OTP is required");
+        }
+
+        PasswordResetOtp otpRecord = passwordResetOtpRepository.findByEmailAndOtp(request.getEmail(), request.getOtp())
+                .orElseThrow(() -> new RuntimeException("Invalid OTP"));
+
+        if (otpRecord.isUsed()) {
+            throw new RuntimeException("OTP has already been used");
+        }
+        if (otpRecord.getExpiryDate().isBefore(Instant.now())) {
+            throw new RuntimeException("OTP has expired");
+        }
+
+        // Mark verified for this record to allow reset step
+        otpRecord.setVerified(true);
+        passwordResetOtpRepository.save(otpRecord);
+    }
+
+    @Transactional
+    public void resetPasswordWithOtp(com.vikrant.careSync.security.dto.ResetPasswordWithOtpRequest request) {
+        if (request.getEmail() == null || request.getEmail().trim().isEmpty()) {
+            throw new RuntimeException("Email is required");
+        }
+        if (request.getOtp() == null || request.getOtp().trim().length() != 6) {
+            throw new RuntimeException("Valid 6-digit OTP is required");
+        }
+        if (request.getNewPassword() == null || request.getNewPassword().length() < 6) {
+            throw new RuntimeException("New password must be at least 6 characters long");
+        }
+        if (!request.getNewPassword().equals(request.getConfirmPassword())) {
+            throw new RuntimeException("New password and confirm password do not match");
+        }
+
+        PasswordResetOtp otpRecord = passwordResetOtpRepository.findByEmailAndOtp(request.getEmail(), request.getOtp())
+                .orElseThrow(() -> new RuntimeException("Invalid OTP"));
+
+        if (otpRecord.isUsed()) {
+            throw new RuntimeException("OTP has already been used");
+        }
+        if (!otpRecord.isVerified()) {
+            throw new RuntimeException("OTP not verified");
+        }
+        if (otpRecord.getExpiryDate().isBefore(Instant.now())) {
+            throw new RuntimeException("OTP has expired");
+        }
+
+        // Find user by email
+        Doctor doctor = doctorRepository.findByEmail(request.getEmail()).orElse(null);
+        Patient patient = null;
+        if (doctor == null) {
+            patient = patientRepository.findByEmail(request.getEmail()).orElse(null);
+            if (patient == null) {
+                throw new RuntimeException("User not found");
+            }
+        }
+
+        String encodedNewPassword = passwordEncoder.encode(request.getNewPassword());
+        if (doctor != null) {
+            doctor.setPassword(encodedNewPassword);
+            doctorRepository.save(doctor);
+        } else {
+            patient.setPassword(encodedNewPassword);
+            patientRepository.save(patient);
+        }
+
+        otpRecord.setUsed(true);
+        passwordResetOtpRepository.save(otpRecord);
+    }
+
+    private String generateSixDigitOtp() {
+        int code = (int) (Math.random() * 900000) + 100000; // 100000–999999
+        return String.valueOf(code);
     }
 
     public void resetPassword(ResetPasswordRequest request) {

@@ -36,6 +36,19 @@ public class Doctor extends User {
     @Column(name = "profile_image_url", length = 255)
     private String profileImageUrl;
 
+    @Column(name = "gender", length = 20)
+    private String gender;
+
+    @Column(name = "consultation_fees")
+    private java.math.BigDecimal consultationFees;
+
+    @Column(name = "address", length = 255)
+    private String address;
+
+    // Comma separated list of languages (e.g., "Hindi,Telugu,English")
+    @Column(name = "languages", length = 255)
+    private String languages;
+
     @OneToMany(mappedBy = "doctor", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JsonManagedReference
     private List<Experience> experiences;

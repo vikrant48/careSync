@@ -2,6 +2,7 @@ package com.vikrant.careSync.dto;
 
 import jakarta.validation.constraints.Email;
 import lombok.*;
+import java.util.*;
 
 @Getter
 @Setter
@@ -16,4 +17,8 @@ public class UpdateDoctorRequest {
     private String profileImageUrl;
     private String email;
     private Boolean isActive;
+    private String gender;
+    private Double consultationFees;
+    private String address;
+    private List<String> languages;
 }

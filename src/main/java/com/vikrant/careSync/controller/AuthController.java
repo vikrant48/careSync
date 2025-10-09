@@ -156,11 +156,53 @@ public class AuthController {
         }
     }
 
+    @PostMapping("/forgot-password-otp")
+    public ResponseEntity<?> forgotPasswordOtp(@Valid @RequestBody ForgotPasswordOtpRequest request) {
+        try {
+            authenticationService.forgotPasswordOtp(request);
+            Map<String, String> successResponse = new HashMap<>();
+            successResponse.put("message", "If account exists, an OTP has been sent");
+            return ResponseEntity.ok(successResponse);
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
     @PostMapping("/reset-password")
     public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         try {
             authenticationService.resetPassword(request);
             
+            Map<String, String> successResponse = new HashMap<>();
+            successResponse.put("message", "Password reset successfully");
+            return ResponseEntity.ok(successResponse);
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    @PostMapping("/verify-otp")
+    public ResponseEntity<?> verifyOtp(@Valid @RequestBody VerifyOtpRequest request) {
+        try {
+            authenticationService.verifyOtp(request);
+            Map<String, String> successResponse = new HashMap<>();
+            successResponse.put("message", "OTP verified. You may reset your password");
+            return ResponseEntity.ok(successResponse);
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    @PostMapping("/reset-password-otp")
+    public ResponseEntity<?> resetPasswordWithOtp(@Valid @RequestBody ResetPasswordWithOtpRequest request) {
+        try {
+            authenticationService.resetPasswordWithOtp(request);
             Map<String, String> successResponse = new HashMap<>();
             successResponse.put("message", "Password reset successfully");
             return ResponseEntity.ok(successResponse);

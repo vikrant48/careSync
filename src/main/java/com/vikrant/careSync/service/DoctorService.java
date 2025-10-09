@@ -60,6 +60,10 @@ public class DoctorService implements IDoctorService {
         if (request.getContactInfo() != null) doctor.setContactInfo(request.getContactInfo());
         if (request.getEmail() != null) doctor.setEmail(request.getEmail());
         if (request.getIsActive() != null) doctor.setIsActive(request.getIsActive());
+        if (request.getGender() != null) doctor.setGender(request.getGender());
+        if (request.getConsultationFees() != null) doctor.setConsultationFees(java.math.BigDecimal.valueOf(request.getConsultationFees()));
+        if (request.getAddress() != null) doctor.setAddress(request.getAddress());
+        if (request.getLanguages() != null) doctor.setLanguages(String.join(",", request.getLanguages()));
 
         doctor.setUpdatedAt(LocalDateTime.now());
 
