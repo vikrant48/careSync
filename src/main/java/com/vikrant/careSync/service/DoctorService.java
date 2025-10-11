@@ -207,6 +207,11 @@ public class DoctorService implements IDoctorService {
         certificate.setName(updatedCertificate.getName());
         certificate.setUrl(updatedCertificate.getUrl());
         certificate.setDetails(updatedCertificate.getDetails());
+        certificate.setIssuingOrganization(updatedCertificate.getIssuingOrganization());
+        certificate.setIssueDate(updatedCertificate.getIssueDate());
+        certificate.setExpiryDate(updatedCertificate.getExpiryDate());
+        certificate.setCredentialId(updatedCertificate.getCredentialId());
+        certificate.setCredentialUrl(updatedCertificate.getCredentialUrl());
 
         return certificateRepository.save(certificate);
     }

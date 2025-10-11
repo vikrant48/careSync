@@ -196,6 +196,7 @@ public class DoctorController {
         try {
             Certificate certificate = new Certificate();
             certificate.setName(request.getName());
+            certificate.setUrl(request.getUrl());
             certificate.setDetails(request.getDetails());
             certificate.setIssuingOrganization(request.getIssuingOrganization());
             certificate.setIssueDate(request.getIssueDate());
@@ -222,6 +223,7 @@ public class DoctorController {
         try {
             Certificate certificate = new Certificate();
             certificate.setName(request.getName());
+            certificate.setUrl(request.getUrl());
             certificate.setDetails(request.getDetails());
             certificate.setIssuingOrganization(request.getIssuingOrganization());
             certificate.setIssueDate(request.getIssueDate());

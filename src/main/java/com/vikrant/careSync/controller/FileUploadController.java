@@ -204,6 +204,43 @@ public class FileUploadController {
         }
     }
 
+    @PostMapping("/upload/doctor-document")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<?> uploadDoctorDocument(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("doctorId") Long doctorId,
+            @RequestParam(value = "documentType", defaultValue = "OTHER") String documentType,
+            @RequestParam(value = "description", required = false) String description,
+            Authentication authentication) {
+        try {
+            UserDto userDto = userService.getUserByUsername(authentication.getName());
+            String username = authentication.getName();
+            String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
+
+            Document.DocumentType type = Document.DocumentType.valueOf(documentType.toUpperCase());
+            Document document = documentService.uploadDocumentForDoctor(
+                file, doctorId, type, description, username, userType);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("id", document.getId());
+            response.put("filename", document.getOriginalFilename());
+            response.put("url", documentService.getFileUrl(document.getId()));
+            response.put("downloadUrl", documentService.getDownloadUrl(document.getId()));
+            response.put("cloudinaryUrl", document.getFileUrl());
+            response.put("size", document.getFileSize());
+            response.put("uploadDate", document.getUploadDate());
+            response.put("documentType", document.getDocumentType());
+
+            return ResponseEntity.ok(response);
+        } catch (IOException e) {
+            return ResponseEntity.badRequest().body("Failed to upload document: " + e.getMessage());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body("Invalid file or document type: " + e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        }
+    }
+
     @GetMapping("/download/{documentId}")
     public ResponseEntity<Resource> downloadFile(@PathVariable Long documentId) {
         try {
