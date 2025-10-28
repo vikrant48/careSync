@@ -355,6 +355,32 @@ public class AppointmentController {
         }
     }
 
+    @GetMapping("/doctor/unique-patients")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<?> getUniquePatients() {
+        try {
+            User currentUser = getCurrentDoctor();
+            List<Appointment> appointments = appointmentService.getAppointmentsByDoctor(currentUser.getId());
+            
+            // Get unique patients from appointments
+            List<User> uniquePatients = appointments.stream()
+                    .map(Appointment::getPatient)
+                    .distinct()
+                    .collect(Collectors.toList());
+            
+            // If no patients found, return empty list instead of error
+            if (uniquePatients.isEmpty()) {
+                return ResponseEntity.ok(uniquePatients);
+            }
+            
+            return ResponseEntity.ok(uniquePatients);
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
     // Doctor can change appointment status (CONFIRM, COMPLETE, CANCEL)
     @PutMapping("/doctor/{id}/status")
     @PreAuthorize("hasRole('DOCTOR')")
