@@ -41,6 +41,7 @@ public class PatientService implements IPatientService {
         patient.setDateOfBirth(updatedPatient.getDateOfBirth());
         patient.setContactInfo(updatedPatient.getContactInfo());
         patient.setIllnessDetails(updatedPatient.getIllnessDetails());
+        patient.setGender(updatedPatient.getGender());
 
         return patientRepository.save(patient);
     }

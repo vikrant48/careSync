@@ -24,6 +24,7 @@ public class PatientDto {
     private LocalDate dateOfBirth;
     private String contactInfo;
     private String illnessDetails;
+    private String gender;
     private Boolean isActive;
     private List<MedicalHistoryDto> medicalHistories;
     private List<AppointmentDto> appointments;
@@ -40,6 +41,7 @@ public class PatientDto {
         this.dateOfBirth = patient.getDateOfBirth();
         this.contactInfo = patient.getContactInfo();
         this.illnessDetails = patient.getIllnessDetails();
+        this.gender = patient.getGender();
         this.isActive = patient.getIsActive();
 
         if (patient.getMedicalHistories() != null) {

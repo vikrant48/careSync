@@ -177,6 +177,69 @@ public class PaymentService {
     }
     
     /**
+     * Generic payment method for any payment type
+     */
+    public PaymentResponseDto processGenericPayment(PaymentRequestDto request) {
+        log.info("Processing generic payment for patient ID: {}, type: {}, amount: {}", 
+                request.getPatientId(), request.getPaymentType(), request.getAmount());
+        
+        // Validate patient exists
+        Patient patient = patientRepository.findById(request.getPatientId())
+                .orElseThrow(() -> new RuntimeException("Patient not found with ID: " + request.getPatientId()));
+        
+        // Validate booking if provided
+        Booking booking = null;
+        if (request.getBookingId() != null) {
+            booking = bookingRepository.findById(request.getBookingId())
+                    .orElseThrow(() -> new RuntimeException("Booking not found with ID: " + request.getBookingId()));
+        }
+        
+        // Create payment record
+        Payment payment = createPaymentRecord(request, patient, booking);
+        
+        // Process payment based on method
+        PaymentResponseDto response = new PaymentResponseDto(payment);
+        
+        try {
+            switch (request.getPaymentMethod()) {
+                case UPI:
+                    response = processUpiPayment(payment, request);
+                    break;
+                case CARD:
+                    response = processCardPayment(payment, request);
+                    break;
+                case QR_CODE:
+                    response = processQrPayment(payment, request);
+                    break;
+                default:
+                    throw new RuntimeException("Unsupported payment method: " + request.getPaymentMethod());
+            }
+            
+            // For demo purposes, mark payment as successful immediately
+            // In production, this would be handled by webhook callbacks
+            payment.setPaymentStatus(Payment.PaymentStatus.SUCCESS);
+            payment.setPaymentCompletedAt(LocalDateTime.now());
+            paymentRepository.save(payment);
+            
+            // Update response to reflect successful status
+            response.setPaymentStatus(Payment.PaymentStatus.SUCCESS);
+            response.setPaymentCompletedAt(LocalDateTime.now());
+            
+            log.info("Generic payment processed successfully. Transaction ID: {}, Type: {}", 
+                    payment.getTransactionId(), payment.getPaymentType());
+            
+        } catch (Exception e) {
+            log.error("Generic payment processing failed for transaction: {}", payment.getTransactionId(), e);
+            payment.setPaymentStatus(Payment.PaymentStatus.FAILED);
+            payment.setFailureReason(e.getMessage());
+            paymentRepository.save(payment);
+            throw new RuntimeException("Payment processing failed: " + e.getMessage());
+        }
+        
+        return response;
+    }
+    
+    /**
      * Process UPI payment
      */
     private PaymentResponseDto processUpiPayment(Payment payment, PaymentRequestDto request) {
@@ -374,9 +437,16 @@ public class PaymentService {
         payment.setCurrency(request.getCurrency());
         payment.setPaymentMethod(request.getPaymentMethod());
         payment.setPaymentStatus(Payment.PaymentStatus.PENDING);
-        payment.setDescription(request.getDescription());
+        payment.setPaymentType(request.getPaymentType());
         payment.setPatient(patient);
         payment.setRefundStatus(Payment.RefundStatus.NOT_REFUNDED);
+        
+        // Auto-generate description if not provided
+        String description = request.getDescription();
+        if (description == null || description.trim().isEmpty()) {
+            description = request.getPaymentType().generateDescription(request.getAdditionalInfo());
+        }
+        payment.setDescription(description);
         
         // Set booking_id to the booking's ID if booking exists, otherwise null
         if (booking != null) {

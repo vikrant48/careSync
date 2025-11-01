@@ -108,6 +108,7 @@ public class AuthenticationService implements IAuthenticationService {
         doctor.setLastName(request.getLastName());
         doctor.setContactInfo(request.getContactInfo());
         doctor.setProfileImageUrl(request.getProfilePictureUrl());
+        doctor.setGender(request.getGender());
 
         if (request.getDateOfBirth() != null && !request.getDateOfBirth().trim().isEmpty()) {
             try {
@@ -144,6 +145,7 @@ public class AuthenticationService implements IAuthenticationService {
         }
 
         patient.setIllnessDetails(request.getIllnessDetails());
+        patient.setGender(request.getGender());
 
         Patient savedPatient = patientRepository.save(patient);
         return generateAuthResponse(savedPatient.getUsername(), "PATIENT", "Registration successful as Patient.", "127.0.0.1", "Registration");

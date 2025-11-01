@@ -44,6 +44,10 @@ public class Payment {
     @Column(name = "description")
     private String description;
     
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_type", nullable = false)
+    private PaymentType paymentType;
+    
     // UPI specific fields
     @Column(name = "upi_id")
     private String upiId;
@@ -110,6 +114,59 @@ public class Payment {
     
     public enum RefundStatus {
         NOT_REFUNDED, REFUND_PENDING, REFUND_PROCESSING, REFUNDED, REFUND_FAILED
+    }
+    
+    public enum PaymentType {
+        LAB_TEST("Lab Test Payment"),
+        APPOINTMENT("Doctor Appointment Payment"),
+        CONSULTATION("Doctor Consultation Payment"),
+        MEDICINE("Medicine Purchase Payment"),
+        HEALTH_CHECKUP("Health Checkup Payment"),
+        SUBSCRIPTION("Subscription Payment"),
+        OTHER("Other Payment");
+        
+        private final String displayName;
+        
+        PaymentType(String displayName) {
+            this.displayName = displayName;
+        }
+        
+        public String getDisplayName() {
+            return displayName;
+        }
+        
+        public String generateDescription(String additionalInfo) {
+            switch (this) {
+                case LAB_TEST:
+                    return additionalInfo != null ? 
+                        "Payment for lab test: " + additionalInfo : 
+                        "Payment for lab test";
+                case APPOINTMENT:
+                    return additionalInfo != null ? 
+                        "Payment for doctor appointment with " + additionalInfo : 
+                        "Payment for doctor appointment";
+                case CONSULTATION:
+                    return additionalInfo != null ? 
+                        "Payment for consultation with " + additionalInfo : 
+                        "Payment for consultation";
+                case MEDICINE:
+                    return additionalInfo != null ? 
+                        "Payment for medicine: " + additionalInfo : 
+                        "Payment for medicine";
+                case HEALTH_CHECKUP:
+                    return additionalInfo != null ? 
+                        "Payment for health checkup: " + additionalInfo : 
+                        "Payment for health checkup";
+                case SUBSCRIPTION:
+                    return additionalInfo != null ? 
+                        "Payment for subscription: " + additionalInfo : 
+                        "Payment for subscription";
+                default:
+                    return additionalInfo != null ? 
+                        "Payment for: " + additionalInfo : 
+                        "Payment";
+            }
+        }
     }
     
     // Helper methods

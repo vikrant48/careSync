@@ -121,6 +121,7 @@ public class PatientController {
             updatedPatient.setIllnessDetails(request.getIllnessDetails());
             updatedPatient.setEmail(request.getEmail());
             updatedPatient.setIsActive(request.getIsActive());
+            updatedPatient.setGender(request.getGender());
             
             Patient patient = patientService.updatePatientProfile(id, updatedPatient);
             return ResponseEntity.ok(patient);

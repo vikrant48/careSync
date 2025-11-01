@@ -44,6 +44,9 @@ public class RegisterRequest {
     @Size(max = 1000, message = "Illness details must not exceed 1000 characters")
     private String illnessDetails;
 
+    @Size(max = 20, message = "Gender must not exceed 20 characters")
+    private String gender;
+
     @Size(max = 200, message = "Specialization must not exceed 200 characters")
     private String specialization;
 

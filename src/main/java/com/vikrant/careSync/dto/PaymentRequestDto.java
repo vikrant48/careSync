@@ -14,13 +14,18 @@ import java.math.BigDecimal;
 public class PaymentRequestDto {
     
     @NotNull(message = "Amount is required")
-    @DecimalMin(value = "1.0", message = "Amount must be at least 1.0")
+    @DecimalMin(value = "0.0", message = "Amount must be at least 0.0")
     @Digits(integer = 8, fraction = 2, message = "Amount format is invalid")
     private BigDecimal amount;
     
-    @NotBlank(message = "Description is required")
     @Size(max = 255, message = "Description cannot exceed 255 characters")
-    private String description;
+    private String description; // Optional - will be auto-generated if not provided
+    
+    @NotNull(message = "Payment type is required")
+    private Payment.PaymentType paymentType;
+    
+    // Optional additional info for auto-generating descriptions
+    private String additionalInfo;
     
     @NotNull(message = "Payment method is required")
     private Payment.PaymentMethod paymentMethod;

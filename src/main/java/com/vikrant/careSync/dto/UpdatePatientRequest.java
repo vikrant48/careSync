@@ -17,4 +17,5 @@ public class UpdatePatientRequest {
     private String illnessDetails;
     private String email;
     private Boolean isActive;
+    private String gender;
 }
