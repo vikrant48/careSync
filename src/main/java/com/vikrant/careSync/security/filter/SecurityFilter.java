@@ -33,12 +33,21 @@ public class SecurityFilter extends OncePerRequestFilter {
             return;
         }
         
-        // Skip IP blocking for localhost in development
-        String clientIP = getClientIPAddress(request);
-        if ("127.0.0.1".equals(clientIP) || "0:0:0:0:0:0:0:1".equals(clientIP) || "::1".equals(clientIP)) {
+        // Bypass IP blocking if the actual remote address is localhost (dev convenience)
+        String remoteAddr = request.getRemoteAddr();
+        if ("127.0.0.1".equals(remoteAddr) || "0:0:0:0:0:0:0:1".equals(remoteAddr) || "::1".equals(remoteAddr)) {
             filterChain.doFilter(request, response);
             return;
         }
+        
+        // Determine client IP, preferring proxy headers if present
+        String clientIP = getClientIPAddress(request);
+        
+        // Debug log for diagnosis
+        System.out.println("SecurityFilter - clientIP=" + clientIP + 
+                ", remoteAddr=" + remoteAddr + 
+                ", X-Forwarded-For=" + request.getHeader("X-Forwarded-For") + 
+                ", X-Real-IP=" + request.getHeader("X-Real-IP"));
         
         // Check if IP is blocked
         if (securityService.isIPBlocked(clientIP)) {

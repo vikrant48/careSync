@@ -32,7 +32,7 @@ import java.util.Optional;
 @RestController
 @RequestMapping("/api/patients")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = "${app.cors.allowed-origins}")
 public class PatientController {
 
     private final IPatientService patientService;
@@ -111,7 +111,7 @@ public class PatientController {
 
     @PutMapping("/{id}/profile")
     @PreAuthorize("hasRole('PATIENT')")
-    public ResponseEntity<Patient> updatePatientProfile(@PathVariable Long id, @RequestBody UpdatePatientRequest request) {
+    public ResponseEntity<PatientDto> updatePatientProfile(@PathVariable Long id, @RequestBody UpdatePatientRequest request) {
         try {
             Patient updatedPatient = new Patient();
             updatedPatient.setFirstName(request.getFirstName());
@@ -124,7 +124,7 @@ public class PatientController {
             updatedPatient.setGender(request.getGender());
             
             Patient patient = patientService.updatePatientProfile(id, updatedPatient);
-            return ResponseEntity.ok(patient);
+            return ResponseEntity.ok(new PatientDto(patient));
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
@@ -139,13 +139,13 @@ public class PatientController {
 
     @PutMapping("/{id}/illness-details")
     @PreAuthorize("hasRole('PATIENT')")
-    public ResponseEntity<Patient> updateIllnessDetails(@PathVariable Long id, @RequestParam String illnessDetails) {
+    public ResponseEntity<PatientDto> updateIllnessDetails(@PathVariable Long id, @RequestParam String illnessDetails) {
         try {
             Patient patient = patientService.getPatientById(id).orElseThrow(() ->
                 new RuntimeException("Patient not found with id: " + id));
             patient.setIllnessDetails(illnessDetails);
             Patient updatedPatient = patientService.updatePatientProfile(id, patient);
-            return ResponseEntity.ok(updatedPatient);
+            return ResponseEntity.ok(new PatientDto(updatedPatient));
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
@@ -153,13 +153,13 @@ public class PatientController {
 
     @PutMapping("/{id}/contact-info")
     @PreAuthorize("hasRole('PATIENT')")
-    public ResponseEntity<Patient> updateContactInfo(@PathVariable Long id, @RequestParam String contactInfo) {
+    public ResponseEntity<PatientDto> updateContactInfo(@PathVariable Long id, @RequestParam String contactInfo) {
         try {
             Patient patient = patientService.getPatientById(id).orElseThrow(() ->
                 new RuntimeException("Patient not found with id: " + id));
             patient.setContactInfo(contactInfo);
             Patient updatedPatient = patientService.updatePatientProfile(id, patient);
-            return ResponseEntity.ok(updatedPatient);
+            return ResponseEntity.ok(new PatientDto(updatedPatient));
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
@@ -167,10 +167,10 @@ public class PatientController {
 
     @PutMapping("/{id}/profile-image")
     @PreAuthorize("hasRole('PATIENT')")
-    public ResponseEntity<Patient> updateProfileImage(@PathVariable Long id, @RequestParam String imageUrl) {
+    public ResponseEntity<PatientDto> updateProfileImage(@PathVariable Long id, @RequestParam String imageUrl) {
         try {
             Patient patient = patientService.updateProfileImage(id, imageUrl);
-            return ResponseEntity.ok(patient);
+            return ResponseEntity.ok(new PatientDto(patient));
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
@@ -178,10 +178,10 @@ public class PatientController {
 
     @PutMapping("/profile/{username}/image")
     @PreAuthorize("hasRole('PATIENT')")
-    public ResponseEntity<Patient> updateProfileImageByUsername(@PathVariable String username, @RequestParam String imageUrl) {
+    public ResponseEntity<PatientDto> updateProfileImageByUsername(@PathVariable String username, @RequestParam String imageUrl) {
         try {
             Patient patient = patientService.updateProfileImageByUsername(username, imageUrl);
-            return ResponseEntity.ok(patient);
+            return ResponseEntity.ok(new PatientDto(patient));
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }

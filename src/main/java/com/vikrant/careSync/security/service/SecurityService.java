@@ -9,6 +9,7 @@ import com.vikrant.careSync.security.repository.UserSessionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -60,10 +61,11 @@ public class SecurityService {
     }
 
     private void checkAndBlockIP(String ipAddress) {
-        Instant since = Instant.now().minusMillis(loginAttemptWindowMs);
-        long failedAttempts = loginAttemptRepository.countFailedAttemptsByIP(ipAddress, since);
-        
-        if (failedAttempts >= maxLoginAttempts && !isIPBlocked(ipAddress)) {
+        if (isIPBlocked(ipAddress)) {
+            return;
+        }
+        long failedAttempts = loginAttemptRepository.countFailedAttemptsByIP(ipAddress, Instant.now().minusMillis(loginAttemptWindowMs));
+        if (failedAttempts >= maxLoginAttempts) {
             BlockedIP blockedIP = BlockedIP.builder()
                     .ipAddress(ipAddress)
                     .reason("Too many failed login attempts")
@@ -78,7 +80,7 @@ public class SecurityService {
     public UserSession createUserSession(String username, String ipAddress, String userAgent, String userType) {
         UserSession session = UserSession.builder()
                 .username(username)
-                .sessionId(UUID.randomUUID().toString())
+                .sessionId(java.util.UUID.randomUUID().toString())
                 .ipAddress(ipAddress)
                 .loginTime(Instant.now())
                 .lastActivity(Instant.now())
@@ -89,6 +91,7 @@ public class SecurityService {
         return userSessionRepository.save(session);
     }
 
+    @Transactional
     public void updateSessionActivity(String sessionId) {
         userSessionRepository.updateLastActivity(sessionId, Instant.now());
     }
@@ -101,6 +104,7 @@ public class SecurityService {
                 });
     }
 
+    @Transactional
     public void deactivateAllUserSessions(String username) {
         userSessionRepository.deactivateAllSessionsForUser(username);
     }
@@ -109,10 +113,10 @@ public class SecurityService {
         return userSessionRepository.findByUsernameAndActiveTrue(username);
     }
 
+    @Transactional
     public void cleanupExpiredSessions() {
         Instant threshold = Instant.now().minusMillis(sessionTimeoutMs);
         List<UserSession> inactiveSessions = userSessionRepository.findInactiveSessions(threshold);
-        
         for (UserSession session : inactiveSessions) {
             session.setActive(false);
             userSessionRepository.save(session);
@@ -135,6 +139,7 @@ public class SecurityService {
         return loginAttemptRepository.findByIpAddressOrderByTimestampDesc(ipAddress);
     }
 
+    // Admin IP management helpers restored
     public void unblockIP(String ipAddress) {
         blockedIPRepository.findByIpAddressAndActiveTrue(ipAddress)
                 .ifPresent(blockedIP -> {

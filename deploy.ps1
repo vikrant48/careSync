@@ -4,7 +4,7 @@
 # Set your Docker Hub username
 $DOCKER_USERNAME = "vikrant48"
 $IMAGE_NAME = "caresync-backend"
-$TAG = "v1.0.0"
+$TAG = "v1.0.1"
 
 # Build the Docker image
 Write-Host "Building Docker image..." -ForegroundColor Green

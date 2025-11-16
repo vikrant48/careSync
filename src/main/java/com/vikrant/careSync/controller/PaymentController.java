@@ -27,7 +27,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 @Slf4j
 @Tag(name = "Payment Management", description = "APIs for payment processing and management")
-@CrossOrigin(origins = {"http://localhost:4200", "https://caresync.com"})
+@CrossOrigin(origins = "${app.cors.allowed-origins}")
 public class PaymentController {
     
     private final PaymentService paymentService;

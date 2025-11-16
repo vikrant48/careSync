@@ -4,6 +4,7 @@ import com.vikrant.careSync.entity.Feedback;
 import com.vikrant.careSync.entity.User;
 import com.vikrant.careSync.dto.CreateFeedbackRequest;
 import com.vikrant.careSync.dto.PatientAppointmentResponse;
+import com.vikrant.careSync.dto.FeedbackDto;
 import com.vikrant.careSync.service.interfaces.IFeedbackService;
 import com.vikrant.careSync.repository.PatientRepository;
 import lombok.RequiredArgsConstructor;
@@ -17,11 +18,12 @@ import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/feedback")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = "${app.cors.allowed-origins}")
 public class FeedbackController {
 
     private final IFeedbackService feedbackService;
@@ -99,7 +101,10 @@ public class FeedbackController {
     public ResponseEntity<?> getFeedbackByPatient(@PathVariable Long patientId) {
         try {
             List<Feedback> feedbacks = feedbackService.getFeedbackByPatient(patientId);
-            return ResponseEntity.ok(feedbacks);
+            List<FeedbackDto> dtos = feedbacks.stream()
+                    .map(FeedbackDto::new)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(dtos);
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
