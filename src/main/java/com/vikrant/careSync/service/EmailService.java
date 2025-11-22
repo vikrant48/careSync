@@ -1,70 +1,87 @@
 package com.vikrant.careSync.service;
 
-import lombok.RequiredArgsConstructor;
+import com.vikrant.careSync.entity.Communication;
+import com.vikrant.careSync.repository.CommunicationRepository;
+import jakarta.mail.internet.InternetAddress;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
-import java.util.HashMap;
-import java.util.Map;
 
 @Service
-@RequiredArgsConstructor
 public class EmailService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
 
-    @Value("${app.mail.mailtrap.token:}")
-    private String mailtrapToken;
+    private final JavaMailSender mailSender;
+    private final CommunicationRepository communicationRepository;
+    private final EmailTemplateService emailTemplateService;
 
-    @Value("${app.mail.sender:CareSync <noreply@caresync.local>}")
-    private String sender;
+    @Value("${spring.mail.username:}")
+    private String fromAddress;
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    public EmailService(JavaMailSender mailSender, CommunicationRepository communicationRepository, EmailTemplateService emailTemplateService) {
+        this.mailSender = mailSender;
+        this.communicationRepository = communicationRepository;
+        this.emailTemplateService = emailTemplateService;
+    }
+
+    public void sendTemplateEmail(String to, String subject, String templatePath, java.util.Map<String, String> model) {
+        String html = emailTemplateService.render(templatePath, model);
+        String sender = (fromAddress != null && !fromAddress.isBlank()) ? fromAddress : "noreply@caresync.local";
+        try {
+            var mimeMessage = mailSender.createMimeMessage();
+            var helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+            helper.setFrom(new InternetAddress(sender, "CareSync"));
+            helper.setTo(to);
+            helper.setSubject(subject);
+            helper.setText(html, true);
+            mailSender.send(mimeMessage);
+            log.info("Sent template email '{}' to {}", templatePath, to);
+
+            communicationRepository.save(
+                    Communication.builder()
+                            .fromEmail(sender)
+                            .toEmail(to)
+                            .subject(subject)
+                            .body(html)
+                            .status(Communication.Status.SENT)
+                            .errorMessage(null)
+                            .createdAt(java.time.LocalDateTime.now())
+                            .build()
+            );
+        } catch (Exception e) {
+            log.error("Failed to send template email '{}': {}", templatePath, e.getMessage(), e);
+            communicationRepository.save(
+                    Communication.builder()
+                            .fromEmail(sender)
+                            .toEmail(to)
+                            .subject(subject)
+                            .body(html)
+                            .status(Communication.Status.FAILED)
+                            .errorMessage(truncate(e.getMessage(), 1000))
+                            .createdAt(java.time.LocalDateTime.now())
+                            .build()
+            );
+        }
+    }
 
     public void sendOtpEmail(String to, String name, String otp) {
         String subject = "Your CareSync Password Reset OTP";
-        String text = String.format("Hello %s,\n\nYour one-time password (OTP) is: %s.\nIt will expire in 10 minutes.\n\nIf you did not request this, please ignore this email.", name, otp);
+        java.util.Map<String, String> model = new java.util.HashMap<>();
+        model.put("name", name);
+        model.put("otp", otp);
+        sendTemplateEmail(to, subject, "email/password-reset-otp.html", model);
+    }
 
-        // If Mailtrap token is configured, use its API (free tier support)
-        if (mailtrapToken != null && !mailtrapToken.isEmpty()) {
-            try {
-                String url = "https://send.api.mailtrap.io/api/send";
-                HttpHeaders headers = new HttpHeaders();
-                headers.setContentType(MediaType.APPLICATION_JSON);
-                headers.setBearerAuth(mailtrapToken);
+    
 
-                Map<String, Object> payload = new HashMap<>();
-                Map<String, Object> from = new HashMap<>();
-                from.put("email", sender.contains("<") ? sender.substring(sender.indexOf('<') + 1, sender.indexOf('>')) : sender);
-                from.put("name", sender.contains("<") ? sender.substring(0, sender.indexOf('<')).trim() : "CareSync");
-                payload.put("from", from);
-
-                Map<String, Object> toObj = new HashMap<>();
-                toObj.put("email", to);
-                toObj.put("name", name);
-                payload.put("to", new Object[]{toObj});
-
-                payload.put("subject", subject);
-                Map<String, Object> content = new HashMap<>();
-                content.put("text", text);
-                payload.put("content", content);
-
-                HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);
-                restTemplate.postForEntity(url, entity, String.class);
-                log.info("Sent OTP email via Mailtrap to {}", to);
-                return;
-            } catch (Exception e) {
-                log.warn("Failed to send OTP via Mailtrap, falling back to log: {}", e.getMessage());
-            }
-        }
-
-        // Fallback: log the OTP - replace with your SMTP provider later
-        log.info("[DEV] OTP for {} ({}): {}", name, to, otp);
+    private String truncate(String s, int maxLen) {
+        if (s == null) return null;
+        if (s.length() <= maxLen) return s;
+        return s.substring(0, maxLen);
     }
 }

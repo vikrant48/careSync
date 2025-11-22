@@ -15,6 +15,7 @@ import com.vikrant.careSync.security.repository.PasswordResetTokenRepository;
 import com.vikrant.careSync.security.repository.PasswordResetOtpRepository;
 import com.vikrant.careSync.service.interfaces.IAuthenticationService;
 import com.vikrant.careSync.service.EmailService;
+import com.vikrant.careSync.service.EmailVerificationService;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -42,8 +43,9 @@ public class AuthenticationService implements IAuthenticationService {
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final PasswordResetOtpRepository passwordResetOtpRepository;
     private final EmailService emailService;
+    private final EmailVerificationService emailVerificationService;
 
-    public AuthenticationService(DoctorRepository doctorRepository, PatientRepository patientRepository, PasswordEncoder passwordEncoder, JwtService jwtService, AuthenticationManager authenticationManager, RefreshTokenService refreshTokenService, SecurityService securityService, PasswordResetTokenRepository passwordResetTokenRepository, PasswordResetOtpRepository passwordResetOtpRepository, EmailService emailService) {
+    public AuthenticationService(DoctorRepository doctorRepository, PatientRepository patientRepository, PasswordEncoder passwordEncoder, JwtService jwtService, AuthenticationManager authenticationManager, RefreshTokenService refreshTokenService, SecurityService securityService, PasswordResetTokenRepository passwordResetTokenRepository, PasswordResetOtpRepository passwordResetOtpRepository, EmailService emailService, EmailVerificationService emailVerificationService) {
         this.doctorRepository = doctorRepository;
         this.patientRepository = patientRepository;
         this.passwordEncoder = passwordEncoder;
@@ -54,6 +56,7 @@ public class AuthenticationService implements IAuthenticationService {
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.passwordResetOtpRepository = passwordResetOtpRepository;
         this.emailService = emailService;
+        this.emailVerificationService = emailVerificationService;
     }
 
     public AuthenticationResponse register(RegisterRequest request) {
@@ -69,6 +72,11 @@ public class AuthenticationService implements IAuthenticationService {
         if (doctorRepository.findByEmail(request.getEmail()).isPresent() ||
             patientRepository.findByEmail(request.getEmail()).isPresent()) {
             throw new RuntimeException("Email already exists");
+        }
+
+        // Enforce email verification before allowing registration to proceed
+        if (!emailVerificationService.isVerified(request.getEmail())) {
+            throw new RuntimeException("Email not verified");
         }
 
         if ("DOCTOR".equalsIgnoreCase(request.getRole())) {
@@ -121,6 +129,9 @@ public class AuthenticationService implements IAuthenticationService {
         doctor.setSpecialization(request.getSpecialization());
 
         Doctor savedDoctor = doctorRepository.save(doctor);
+
+        // Attach userId to verified email record for traceability
+        emailVerificationService.attachUserIdIfVerified(request.getEmail(), savedDoctor.getId());
         return generateAuthResponse(savedDoctor.getUsername(), "DOCTOR", "Registration successful as Doctor.", "127.0.0.1", "Registration");
     }
 
@@ -148,6 +159,9 @@ public class AuthenticationService implements IAuthenticationService {
         patient.setGender(request.getGender());
 
         Patient savedPatient = patientRepository.save(patient);
+
+        // Attach userId to verified email record for traceability
+        emailVerificationService.attachUserIdIfVerified(request.getEmail(), savedPatient.getId());
         return generateAuthResponse(savedPatient.getUsername(), "PATIENT", "Registration successful as Patient.", "127.0.0.1", "Registration");
     }
 

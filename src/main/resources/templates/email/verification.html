@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Email Verification</title>
+  <style>
+    body{font-family:Arial,sans-serif;background:#f6f8fa;color:#333}
+    .wrap{max-width:600px;margin:20px auto;background:#fff;border:1px solid #e1e4e8;border-radius:6px}
+    .hd{background:#2c3e50;color:#fff;padding:16px 24px;border-top-left-radius:6px;border-top-right-radius:6px}
+    .ct{padding:24px}
+    .otp{font-size:24px;font-weight:bold;letter-spacing:2px;background:#ecf0f1;padding:12px 16px;display:inline-block;border-radius:4px}
+    .ft{padding:16px 24px;font-size:12px;color:#586069}
+  </style>
+  </head>
+<body>
+  <div class="wrap">
+    <div class="hd"><h2>Verify Your Email</h2></div>
+    <div class="ct">
+      <p>Hi {{name}},</p>
+      <p>Use the following one-time password (OTP) to verify your email:</p>
+      <p class="otp">{{otp}}</p>
+      <p>This OTP expires in 10 minutes.</p>
+      <p>Thanks,<br/>CareSync Support Team</p>
+    </div>
+    <div class="ft">
+      <p>Do not share this OTP with anyone.</p>
+    </div>
+  </div>
+</body>
+</html>

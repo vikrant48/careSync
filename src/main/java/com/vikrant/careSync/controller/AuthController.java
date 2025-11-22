@@ -4,6 +4,7 @@ import com.vikrant.careSync.security.dto.*;
 import com.vikrant.careSync.dto.UserDto;
 import com.vikrant.careSync.service.AuthenticationService;
 import com.vikrant.careSync.service.UserService;
+import com.vikrant.careSync.service.EmailVerificationService;
 import com.vikrant.careSync.security.service.RefreshTokenService;
 import com.vikrant.careSync.security.service.SecurityService;
 import com.vikrant.careSync.security.JwtService;
@@ -36,12 +37,60 @@ public class AuthController {
     private final UserService userService;
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
+    private final EmailVerificationService emailVerificationService;
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
         try {
             AuthenticationResponse response = authenticationService.register(request);
             return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    @PostMapping("/email-verification/start")
+    public ResponseEntity<?> startEmailVerification(@Valid @RequestBody EmailVerificationStartRequest request) {
+        try {
+            emailVerificationService.startVerification(request.getName(), request.getEmail(), request.getMobileNumber());
+            Map<String, String> successResponse = new HashMap<>();
+            successResponse.put("message", "Verification OTP sent to email");
+            return ResponseEntity.ok(successResponse);
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    @PostMapping("/email-verification/verify")
+    public ResponseEntity<?> verifyEmail(@Valid @RequestBody EmailVerificationVerifyRequest request) {
+        try {
+            boolean ok = emailVerificationService.verifyOtp(request.getEmail(), request.getOtp());
+            if (!ok) {
+                Map<String, String> errorResponse = new HashMap<>();
+                errorResponse.put("error", "Invalid or expired OTP");
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            Map<String, String> successResponse = new HashMap<>();
+            successResponse.put("message", "Email verified successfully");
+            return ResponseEntity.ok(successResponse);
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    @GetMapping("/email-verification/status")
+    public ResponseEntity<?> verificationStatus(@RequestParam("email") String email) {
+        try {
+            boolean verified = emailVerificationService.isVerified(email);
+            Map<String, Object> successResponse = new HashMap<>();
+            successResponse.put("verified", verified);
+            return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
