@@ -43,6 +43,11 @@ node_modules/
 .env
 .env.local
 .env.*.local
+.env.development
+.env.production
+.env.test
+.env.*
+!*.env_sample
 
 # Test files
 src/test/
@@ -53,3 +58,24 @@ dist/
 
 # Uploads directory (will be mounted as volume)
 uploads/
+
+# Eclipse/STS project files
+.classpath
+.project
+.settings/
+
+# Secrets and certificates
+*.pem
+*.key
+*.crt
+*.cert
+*.jks
+*.p12
+*.der
+
+# Editor swap files
+*.swp
+*.swo
+
+# Misc caches
+.cache/

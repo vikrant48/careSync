@@ -19,29 +19,67 @@ public class EmailService {
     private final JavaMailSender mailSender;
     private final CommunicationRepository communicationRepository;
     private final EmailTemplateService emailTemplateService;
+    private final SendGridEmailClient sendGridEmailClient;
 
     @Value("${spring.mail.username:}")
     private String fromAddress;
 
-    public EmailService(JavaMailSender mailSender, CommunicationRepository communicationRepository, EmailTemplateService emailTemplateService) {
+    @Value("${mail.from.address:}")
+    private String overrideFromAddress;
+
+    @Value("${mail.api.provider:}")
+    private String mailApiProvider;
+
+    public EmailService(JavaMailSender mailSender, CommunicationRepository communicationRepository, EmailTemplateService emailTemplateService, SendGridEmailClient sendGridEmailClient) {
         this.mailSender = mailSender;
         this.communicationRepository = communicationRepository;
         this.emailTemplateService = emailTemplateService;
+        this.sendGridEmailClient = sendGridEmailClient;
     }
 
     public void sendTemplateEmail(String to, String subject, String templatePath, java.util.Map<String, String> model) {
         String html = emailTemplateService.render(templatePath, model);
-        String sender = (fromAddress != null && !fromAddress.isBlank()) ? fromAddress : "noreply@caresync.local";
-        try {
-            var mimeMessage = mailSender.createMimeMessage();
-            var helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
-            helper.setFrom(new InternetAddress(sender, "CareSync"));
-            helper.setTo(to);
-            helper.setSubject(subject);
-            helper.setText(html, true);
-            mailSender.send(mimeMessage);
-            log.info("Sent template email '{}' to {}", templatePath, to);
+        String sender;
+        if (overrideFromAddress != null && !overrideFromAddress.isBlank()) {
+            sender = overrideFromAddress;
+        } else if (fromAddress != null && !fromAddress.isBlank()) {
+            sender = fromAddress;
+        } else {
+            sender = "noreply@caresync.local";
+        }
+        boolean sent = false;
+        Exception sendError = null;
 
+        // Try HTTP provider first when configured
+        if (mailApiProvider != null && mailApiProvider.equalsIgnoreCase("sendgrid")) {
+            try {
+                sent = sendGridEmailClient.sendHtml(sender, to, subject, html);
+            } catch (Exception e) {
+                sendError = e;
+                log.warn("SendGrid send failed, falling back to SMTP: {}", e.getMessage());
+            }
+        }
+
+        // Fallback to SMTP if not sent via HTTP
+        if (!sent) {
+            try {
+                var mimeMessage = mailSender.createMimeMessage();
+                var helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+                helper.setFrom(new InternetAddress(sender, "CareSync"));
+                helper.setTo(to);
+                helper.setSubject(subject);
+                helper.setText(html, true);
+                mailSender.send(mimeMessage);
+                sent = true;
+                sendError = null;
+            } catch (Exception e) {
+                sendError = e;
+                log.error("SMTP send failed: {}", e.getMessage(), e);
+            }
+        }
+
+        if (sent) {
+            log.info("Sent template email '{}' to {}", templatePath, to);
             communicationRepository.save(
                     Communication.builder()
                             .fromEmail(sender)
@@ -53,8 +91,9 @@ public class EmailService {
                             .createdAt(java.time.LocalDateTime.now())
                             .build()
             );
-        } catch (Exception e) {
-            log.error("Failed to send template email '{}': {}", templatePath, e.getMessage(), e);
+        } else {
+            String err = sendError != null ? sendError.getMessage() : "Unknown error";
+            log.error("Failed to send template email '{}': {}", templatePath, err);
             communicationRepository.save(
                     Communication.builder()
                             .fromEmail(sender)
@@ -62,7 +101,7 @@ public class EmailService {
                             .subject(subject)
                             .body(html)
                             .status(Communication.Status.FAILED)
-                            .errorMessage(truncate(e.getMessage(), 1000))
+                            .errorMessage(truncate(err, 1000))
                             .createdAt(java.time.LocalDateTime.now())
                             .build()
             );
