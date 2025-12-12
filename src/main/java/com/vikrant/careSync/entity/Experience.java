@@ -7,6 +7,7 @@ import lombok.*;
 @Getter
 @Setter
 @Entity
+@Table(name = "experiences")
 public class Experience {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -22,4 +23,4 @@ public class Experience {
     @JsonBackReference
     private Doctor doctor;
 
-} 
+}

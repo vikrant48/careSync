@@ -12,27 +12,27 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@ToString(exclude = {"experiences", "educations", "certificates", "appointments", "feedbacks", "documents"})
-@EqualsAndHashCode(exclude = {"experiences", "educations", "certificates", "appointments", "feedbacks", "documents"})
+@ToString(exclude = { "experiences", "educations", "certificates", "appointments", "feedbacks", "documents" })
+@EqualsAndHashCode(exclude = { "experiences", "educations", "certificates", "appointments", "feedbacks", "documents" })
 @Entity
 @Table(name = "doctors")
 public class Doctor extends User {
-    
+
     @Column(name = "first_name", nullable = false, length = 50)
     private String firstName;
-    
+
     @Column(name = "last_name", nullable = false, length = 50)
     private String lastName;
-    
+
     @Column(name = "date_of_birth")
     private LocalDate dateOfBirth;
-    
+
     @Column(name = "contact_info", length = 100)
     private String contactInfo;
-    
+
     @Column(name = "specialization", length = 100)
     private String specialization;
-    
+
     @Column(name = "profile_image_url", length = 255)
     private String profileImageUrl;
 
@@ -48,6 +48,10 @@ public class Doctor extends User {
     // Comma separated list of languages (e.g., "Hindi,Telugu,English")
     @Column(name = "languages", length = 255)
     private String languages;
+
+    @Column(name = "is_verified", nullable = false, columnDefinition = "boolean default false")
+    @Builder.Default
+    private Boolean isVerified = false;
 
     @OneToMany(mappedBy = "doctor", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JsonManagedReference

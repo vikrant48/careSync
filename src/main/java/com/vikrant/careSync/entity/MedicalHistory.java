@@ -8,6 +8,7 @@ import java.time.LocalDate;
 @Setter
 @Getter
 @Entity
+@Table(name = "medical_histories")
 public class MedicalHistory {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -26,7 +27,7 @@ public class MedicalHistory {
     private String symptoms;
     private String diagnosis;
     private String treatment;
-    
+
     // Prescription fields
     private String medicine;
     private String doses;

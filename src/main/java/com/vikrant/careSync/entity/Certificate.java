@@ -9,6 +9,7 @@ import java.time.LocalDate;
 @Getter
 @Setter
 @Entity
+@Table(name = "certificates")
 public class Certificate {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -17,15 +18,15 @@ public class Certificate {
     private String name;
     private String url;
     private String details;
-    
+
     private String issuingOrganization;
-    
+
     private LocalDate issueDate;
-    
+
     private LocalDate expiryDate;
-    
+
     private String credentialId;
-    
+
     private String credentialUrl;
 
     @ManyToOne
