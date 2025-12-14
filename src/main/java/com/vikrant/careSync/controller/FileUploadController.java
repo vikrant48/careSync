@@ -50,13 +50,13 @@ public class FileUploadController {
             UserDto userDto = userService.getUserByUsername(authentication.getName());
             String username = authentication.getName();
             String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
-            
+
             Document document = documentService.uploadDocumentForDoctor(
-                file, doctorId, Document.DocumentType.CERTIFICATE, description, username, userType);
-                
+                    file, doctorId, Document.DocumentType.CERTIFICATE, description, username, userType);
+
             String cloudinaryUrl = document.getFileUrl();
             Certificate savedCertificate;
-            
+
             if (certificateId != null) {
                 // Update existing certificate with new file URL
                 savedCertificate = doctorService.updateCertificateUrl(certificateId, cloudinaryUrl);
@@ -66,10 +66,10 @@ public class FileUploadController {
                 certificate.setUrl(cloudinaryUrl);
                 certificate.setName(document.getOriginalFilename());
                 certificate.setDetails(description);
-                
+
                 savedCertificate = doctorService.addCertificate(doctorId, certificate);
             }
-            
+
             Map<String, Object> response = new HashMap<>();
             response.put("id", document.getId());
             response.put("filename", document.getOriginalFilename());
@@ -79,8 +79,9 @@ public class FileUploadController {
             response.put("size", document.getFileSize());
             response.put("uploadDate", document.getUploadDate());
             response.put("certificateId", savedCertificate.getId());
-            response.put("message", certificateId != null ? "Certificate file updated successfully" : "Certificate created successfully");
-            
+            response.put("message", certificateId != null ? "Certificate file updated successfully"
+                    : "Certificate created successfully");
+
             return ResponseEntity.ok(response);
         } catch (IOException e) {
             return ResponseEntity.badRequest().body("Failed to upload certificate: " + e.getMessage());
@@ -102,14 +103,14 @@ public class FileUploadController {
             UserDto userDto = userService.getUserByUsername(authentication.getName());
             String username = authentication.getName();
             String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
-            
+
             Document document = documentService.uploadDocumentForDoctor(
-                file, doctorId, Document.DocumentType.PROFILE_IMAGE, description, username, userType);
-            
+                    file, doctorId, Document.DocumentType.PROFILE_IMAGE, description, username, userType);
+
             // Automatically update doctor's profile image URL
             String cloudinaryUrl = document.getFileUrl();
             doctorService.updateProfileImage(doctorId, cloudinaryUrl);
-            
+
             Map<String, Object> response = new HashMap<>();
             response.put("id", document.getId());
             response.put("filename", document.getOriginalFilename());
@@ -118,7 +119,7 @@ public class FileUploadController {
             response.put("cloudinaryUrl", cloudinaryUrl); // Direct Cloudinary URL
             response.put("size", document.getFileSize());
             response.put("uploadDate", document.getUploadDate());
-            
+
             return ResponseEntity.ok(response);
         } catch (IOException e) {
             return ResponseEntity.badRequest().body("Failed to upload profile image: " + e.getMessage());
@@ -128,7 +129,7 @@ public class FileUploadController {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         }
     }
-    
+
     @PostMapping("/upload/profile-image/patient")
     @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR')")
     public ResponseEntity<?> uploadPatientProfileImage(
@@ -140,14 +141,14 @@ public class FileUploadController {
             UserDto userDto = userService.getUserByUsername(authentication.getName());
             String username = authentication.getName();
             String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
-            
+
             Document document = documentService.uploadDocumentForPatient(
-                file, patientId, Document.DocumentType.PROFILE_IMAGE, description, username, userType);
-            
+                    file, patientId, Document.DocumentType.PROFILE_IMAGE, description, username, userType);
+
             // Automatically update patient's profile image URL
             String cloudinaryUrl = document.getFileUrl();
             patientService.updateProfileImage(patientId, cloudinaryUrl);
-            
+
             Map<String, Object> response = new HashMap<>();
             response.put("id", document.getId());
             response.put("filename", document.getOriginalFilename());
@@ -156,7 +157,7 @@ public class FileUploadController {
             response.put("cloudinaryUrl", cloudinaryUrl); // Direct Cloudinary URL
             response.put("size", document.getFileSize());
             response.put("uploadDate", document.getUploadDate());
-            
+
             return ResponseEntity.ok(response);
         } catch (IOException e) {
             return ResponseEntity.badRequest().body("Failed to upload profile image: " + e.getMessage());
@@ -179,11 +180,11 @@ public class FileUploadController {
             UserDto userDto = userService.getUserByUsername(authentication.getName());
             String username = authentication.getName();
             String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
-            
+
             Document.DocumentType type = Document.DocumentType.valueOf(documentType.toUpperCase());
             Document document = documentService.uploadDocumentForPatient(
-                file, patientId, type, description, username, userType);
-            
+                    file, patientId, type, description, username, userType);
+
             Map<String, Object> response = new HashMap<>();
             response.put("id", document.getId());
             response.put("filename", document.getOriginalFilename());
@@ -193,7 +194,7 @@ public class FileUploadController {
             response.put("size", document.getFileSize());
             response.put("uploadDate", document.getUploadDate());
             response.put("documentType", document.getDocumentType());
-            
+
             return ResponseEntity.ok(response);
         } catch (IOException e) {
             return ResponseEntity.badRequest().body("Failed to upload medical document: " + e.getMessage());
@@ -219,7 +220,7 @@ public class FileUploadController {
 
             Document.DocumentType type = Document.DocumentType.valueOf(documentType.toUpperCase());
             Document document = documentService.uploadDocumentForDoctor(
-                file, doctorId, type, description, username, userType);
+                    file, doctorId, type, description, username, userType);
 
             Map<String, Object> response = new HashMap<>();
             response.put("id", document.getId());
@@ -241,18 +242,54 @@ public class FileUploadController {
         }
     }
 
+    @PostMapping("/upload/lab-report")
+    @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR')")
+    public ResponseEntity<?> uploadLabReport(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("bookingId") Long bookingId,
+            @RequestParam("patientId") Long patientId,
+            @RequestParam(value = "description", required = false) String description,
+            Authentication authentication) {
+        try {
+            UserDto userDto = userService.getUserByUsername(authentication.getName());
+            String username = authentication.getName();
+            String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
+
+            Document document = documentService.uploadLabReport(
+                    file, bookingId, patientId, description, username, userType);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("id", document.getId());
+            response.put("filename", document.getOriginalFilename());
+            response.put("url", documentService.getFileUrl(document.getId()));
+            response.put("downloadUrl", documentService.getDownloadUrl(document.getId()));
+            response.put("cloudinaryUrl", document.getFileUrl());
+            response.put("size", document.getFileSize());
+            response.put("uploadDate", document.getUploadDate());
+            response.put("documentType", document.getDocumentType());
+
+            return ResponseEntity.ok(response);
+        } catch (IOException e) {
+            return ResponseEntity.badRequest().body("Failed to upload lab report: " + e.getMessage());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body("Invalid file or data: " + e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        }
+    }
+
     @GetMapping("/download/{documentId}")
     public ResponseEntity<Resource> downloadFile(@PathVariable Long documentId) {
         try {
             Document document = documentService.getDocumentById(documentId)
                     .orElseThrow(() -> new RuntimeException("Document not found"));
-            
+
             Resource resource = documentService.getFileAsResource(documentId);
-            
+
             HttpHeaders headers = new HttpHeaders();
-            headers.add(HttpHeaders.CONTENT_DISPOSITION, 
+            headers.add(HttpHeaders.CONTENT_DISPOSITION,
                     "attachment; filename=\"" + document.getOriginalFilename() + "\"");
-            
+
             return ResponseEntity.ok()
                     .headers(headers)
                     .contentType(MediaType.parseMediaType(document.getContentType()))
@@ -269,9 +306,9 @@ public class FileUploadController {
         try {
             Document document = documentService.getDocumentById(documentId)
                     .orElseThrow(() -> new RuntimeException("Document not found"));
-            
+
             Resource resource = documentService.getFileAsResource(documentId);
-            
+
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType(document.getContentType()))
                     .body(resource);
@@ -306,7 +343,7 @@ public class FileUploadController {
             return ResponseEntity.badRequest().build();
         }
     }
-    
+
     // Get documents by patient ID
     @GetMapping("/patient/{patientId}")
     @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT')")
@@ -318,12 +355,12 @@ public class FileUploadController {
             return ResponseEntity.badRequest().build();
         }
     }
-    
+
     // Get documents by type
     @GetMapping("/doctor/{doctorId}/type/{documentType}")
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<List<Document>> getDoctorDocumentsByType(
-            @PathVariable Long doctorId, 
+            @PathVariable Long doctorId,
             @PathVariable String documentType) {
         try {
             Document.DocumentType type = Document.DocumentType.valueOf(documentType.toUpperCase());
@@ -333,11 +370,11 @@ public class FileUploadController {
             return ResponseEntity.badRequest().build();
         }
     }
-    
+
     @GetMapping("/patient/{patientId}/type/{documentType}")
     @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT')")
     public ResponseEntity<List<Document>> getPatientDocumentsByType(
-            @PathVariable Long patientId, 
+            @PathVariable Long patientId,
             @PathVariable String documentType) {
         try {
             Document.DocumentType type = Document.DocumentType.valueOf(documentType.toUpperCase());
@@ -347,7 +384,7 @@ public class FileUploadController {
             return ResponseEntity.badRequest().build();
         }
     }
-    
+
     // Update document description
     @PutMapping("/{documentId}/description")
     @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT')")

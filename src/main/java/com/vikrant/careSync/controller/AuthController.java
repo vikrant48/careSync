@@ -1,5 +1,6 @@
 package com.vikrant.careSync.controller;
 
+import com.vikrant.careSync.constants.AppConstants;
 import com.vikrant.careSync.security.dto.*;
 import com.vikrant.careSync.dto.UserDto;
 import com.vikrant.careSync.service.AuthenticationService;
@@ -54,7 +55,8 @@ public class AuthController {
     @PostMapping("/email-verification/start")
     public ResponseEntity<?> startEmailVerification(@Valid @RequestBody EmailVerificationStartRequest request) {
         try {
-            emailVerificationService.startVerification(request.getName(), request.getEmail(), request.getMobileNumber());
+            emailVerificationService.startVerification(request.getName(), request.getEmail(),
+                    request.getMobileNumber());
             Map<String, String> successResponse = new HashMap<>();
             successResponse.put("message", "Verification OTP sent to email");
             return ResponseEntity.ok(successResponse);
@@ -105,7 +107,7 @@ public class AuthController {
         try {
             String ipAddress = getClientIPAddress(httpRequest);
             String userAgent = httpRequest.getHeader("User-Agent");
-            
+
             AuthenticationResponse response = authenticationService.authenticate(request, ipAddress, userAgent);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
@@ -126,11 +128,11 @@ public class AuthController {
             // Load user details to generate new JWT
             String username = refreshToken.getUsername();
             String userType = refreshToken.getUserType();
-            
+
             // Generate new access token using JwtService
             UserDetails userDetails = loadUserDetails(username, userType);
             String newAccessToken = jwtService.generateToken(userDetails);
-            
+
             // Delete old refresh token and create new one for security
             refreshTokenService.deleteRefreshToken(request.getRefreshToken());
             var newRefreshToken = refreshTokenService.createRefreshToken(username, userType);
@@ -159,7 +161,7 @@ public class AuthController {
     public ResponseEntity<?> logout(@Valid @RequestBody LogoutRequest request) {
         try {
             refreshTokenService.deleteRefreshToken(request.getRefreshToken());
-            
+
             LogoutResponse response = LogoutResponse.builder()
                     .message("Successfully logged out")
                     .success(true)
@@ -174,12 +176,13 @@ public class AuthController {
     }
 
     @PostMapping("/change-password")
-    public ResponseEntity<?> changePassword(@Valid @RequestBody ChangePasswordRequest request, HttpServletRequest httpRequest) {
+    public ResponseEntity<?> changePassword(@Valid @RequestBody ChangePasswordRequest request,
+            HttpServletRequest httpRequest) {
         try {
             // Get username from JWT token
             String username = getCurrentUsername(httpRequest);
             authenticationService.changePassword(request, username);
-            
+
             Map<String, String> successResponse = new HashMap<>();
             successResponse.put("message", "Password changed successfully");
             return ResponseEntity.ok(successResponse);
@@ -194,7 +197,7 @@ public class AuthController {
     public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
         try {
             authenticationService.forgotPassword(request);
-            
+
             Map<String, String> successResponse = new HashMap<>();
             successResponse.put("message", "Password reset email sent");
             return ResponseEntity.ok(successResponse);
@@ -223,7 +226,7 @@ public class AuthController {
     public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         try {
             authenticationService.resetPassword(request);
-            
+
             Map<String, String> successResponse = new HashMap<>();
             successResponse.put("message", "Password reset successfully");
             return ResponseEntity.ok(successResponse);
@@ -271,7 +274,7 @@ public class AuthController {
                 errorResponse.put("error", "User not authenticated");
                 return ResponseEntity.status(401).body(errorResponse);
             }
-            
+
             String username = authentication.getName();
             UserDto userDto = userService.getUserByUsername(username);
             return ResponseEntity.ok(userDto);
@@ -287,12 +290,12 @@ public class AuthController {
         if (xForwardedFor != null && !xForwardedFor.isEmpty() && !"unknown".equalsIgnoreCase(xForwardedFor)) {
             return xForwardedFor.split(",")[0].trim();
         }
-        
+
         String xRealIP = request.getHeader("X-Real-IP");
         if (xRealIP != null && !xRealIP.isEmpty() && !"unknown".equalsIgnoreCase(xRealIP)) {
             return xRealIP;
         }
-        
+
         return request.getRemoteAddr();
     }
 
@@ -302,37 +305,37 @@ public class AuthController {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             throw new RuntimeException("Authorization header is missing or invalid");
         }
-        
+
         final String jwt = authHeader.substring(7);
         return jwtService.extractUsername(jwt);
     }
-    
+
     // Helper method to load user details for JWT generation
     private UserDetails loadUserDetails(String username, String userType) {
-        if ("DOCTOR".equals(userType)) {
+        if (AppConstants.Roles.DOCTOR.equals(userType)) {
             var doctor = userService.getUserByUsername(username);
             return org.springframework.security.core.userdetails.User.builder()
                     .username(username)
                     .password("") // Password not needed for token generation
-                    .authorities("ROLE_DOCTOR")
+                    .authorities(AppConstants.Roles.ROLE_DOCTOR)
                     .build();
-        } else if ("PATIENT".equals(userType)) {
+        } else if (AppConstants.Roles.PATIENT.equals(userType)) {
             var patient = userService.getUserByUsername(username);
             return org.springframework.security.core.userdetails.User.builder()
                     .username(username)
                     .password("") // Password not needed for token generation
-                    .authorities("ROLE_PATIENT")
+                    .authorities(AppConstants.Roles.ROLE_PATIENT)
                     .build();
         }
         throw new RuntimeException("Invalid user type: " + userType);
     }
 
     private Object getUserData(String username, String role) {
-        if ("DOCTOR".equals(role)) {
+        if (AppConstants.Roles.DOCTOR.equals(role)) {
             var doctor = doctorRepository.findByUsername(username)
                     .orElseThrow(() -> new RuntimeException("Doctor not found"));
             return new com.vikrant.careSync.dto.DoctorDto(doctor);
-        } else if ("PATIENT".equals(role)) {
+        } else if (AppConstants.Roles.PATIENT.equals(role)) {
             var patient = patientRepository.findByUsername(username)
                     .orElseThrow(() -> new RuntimeException("Patient not found"));
             return new com.vikrant.careSync.dto.PatientDto(patient);

@@ -79,7 +79,7 @@ public class LabTestService {
     public void deleteLabTest(Long id) {
         LabTest labTest = labTestRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Lab test not found with id: " + id));
-        
+
         // Soft delete by setting isActive to false
         labTest.setIsActive(false);
         labTestRepository.save(labTest);

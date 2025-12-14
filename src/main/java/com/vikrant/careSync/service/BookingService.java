@@ -5,14 +5,17 @@ import com.vikrant.careSync.dto.BookingResponse;
 import com.vikrant.careSync.dto.LabTestDto;
 import com.vikrant.careSync.dto.PaymentRequestDto;
 import com.vikrant.careSync.dto.PaymentResponseDto;
+import com.vikrant.careSync.dto.DocumentDto; // Added
 import com.vikrant.careSync.entity.Booking;
 import com.vikrant.careSync.entity.LabTest;
 import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Patient;
+import com.vikrant.careSync.entity.Document; // Added
 import com.vikrant.careSync.repository.BookingRepository;
 import com.vikrant.careSync.repository.LabTestRepository;
 import com.vikrant.careSync.repository.PatientRepository;
 import com.vikrant.careSync.repository.DoctorRepository;
+import com.vikrant.careSync.repository.DocumentRepository; // Added
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -41,6 +44,9 @@ public class BookingService {
     private DoctorRepository doctorRepository;
 
     @Autowired
+    private DocumentRepository documentRepository; // Added
+
+    @Autowired
     private LabTestService labTestService;
 
     @Autowired
@@ -57,7 +63,7 @@ public class BookingService {
         }
 
         String currentUsername = authentication.getName();
-        
+
         // Only patients can use this method
         Patient currentPatient = patientRepository.findByUsername(currentUsername).orElse(null);
         if (currentPatient == null) {
@@ -121,18 +127,18 @@ public class BookingService {
         try {
             // Process payment through PaymentService
             PaymentResponseDto paymentResponse = paymentService.initiatePayment(paymentRequest);
-            
+
             // If payment initiation is successful, update booking status to COMPLETED
             booking.setStatus(Booking.BookingStatus.COMPLETED);
             booking = bookingRepository.save(booking);
-            
+
             // Return booking response with payment details
             BookingResponse response = convertToBookingResponse(booking);
             response.setPaymentTransactionId(paymentResponse.getTransactionId());
             response.setPaymentStatus(paymentResponse.getPaymentStatus().toString());
-            
+
             return response;
-            
+
         } catch (Exception e) {
             // If payment fails, keep booking as PENDING or delete it
             // For now, we'll keep it as PENDING so patient can retry payment later
@@ -151,7 +157,7 @@ public class BookingService {
         }
 
         String currentUsername = authentication.getName();
-        
+
         // Only doctors can use this method
         Doctor currentDoctor = doctorRepository.findByUsername(currentUsername).orElse(null);
         if (currentDoctor == null) {
@@ -200,6 +206,7 @@ public class BookingService {
         booking.setPatient(patient);
         booking.setSelectedTests(selectedTests);
         booking.setTotalPrice(totalPrice);
+        booking.setDoctor(currentDoctor);
         booking.setPrescribedBy("Doctor " + currentDoctor.getFirstName() + " " + currentDoctor.getLastName());
         booking.setBookingDate(request.getBookingDate() != null ? request.getBookingDate() : LocalDateTime.now());
         booking.setNotes(request.getNotes());
@@ -212,7 +219,8 @@ public class BookingService {
     }
 
     /**
-     * Create booking (legacy method - will route to appropriate method based on user role)
+     * Create booking (legacy method - will route to appropriate method based on
+     * user role)
      */
     public BookingResponse createBooking(BookingRequest request) {
         // Get current authenticated user
@@ -222,7 +230,7 @@ public class BookingService {
         }
 
         String currentUsername = authentication.getName();
-        
+
         // Determine if current user is doctor or patient
         Doctor currentDoctor = doctorRepository.findByUsername(currentUsername).orElse(null);
         Patient currentPatient = patientRepository.findByUsername(currentUsername).orElse(null);
@@ -290,6 +298,9 @@ public class BookingService {
         booking.setPatient(patient);
         booking.setSelectedTests(selectedTests);
         booking.setTotalPrice(totalPrice);
+        if (currentDoctor != null) {
+            booking.setDoctor(currentDoctor);
+        }
         booking.setPrescribedBy(prescribedBy);
         booking.setBookingDate(request.getBookingDate() != null ? request.getBookingDate() : LocalDateTime.now());
         booking.setNotes(request.getNotes());
@@ -429,7 +440,7 @@ public class BookingService {
 
             String currentUsername = authentication.getName();
             Patient currentPatient = patientRepository.findByUsername(currentUsername).orElse(null);
-            
+
             return currentPatient != null && currentPatient.getId().equals(userId);
         } catch (Exception e) {
             return false;
@@ -449,7 +460,7 @@ public class BookingService {
 
             String currentUsername = authentication.getName();
             Patient currentPatient = patientRepository.findByUsername(currentUsername).orElse(null);
-            
+
             if (currentPatient == null) {
                 return false;
             }
@@ -466,11 +477,11 @@ public class BookingService {
      */
     private BookingResponse convertToBookingResponse(Booking booking) {
         String patientName = "";
-        
+
         // Get patient name
         Patient patient = booking.getPatient();
         patientName = patient.getFirstName() + " " + patient.getLastName();
-        
+
         // Convert selected tests to DTOs
         List<LabTestDto> testDtos = booking.getSelectedTests().stream()
                 .map(test -> LabTestDto.builder()
@@ -483,8 +494,8 @@ public class BookingService {
                         .updatedAt(test.getUpdatedAt())
                         .build())
                 .collect(Collectors.toList());
-        
-        return BookingResponse.builder()
+
+        BookingResponse response = BookingResponse.builder()
                 .id(booking.getId())
                 .patientId(booking.getPatient().getId())
                 .patientName(patientName)
@@ -497,5 +508,15 @@ public class BookingService {
                 .createdAt(booking.getCreatedAt())
                 .updatedAt(booking.getUpdatedAt())
                 .build();
+
+        // Populate lab reports
+        List<Document> reports = documentRepository.findByBookingId(booking.getId());
+        if (reports != null && !reports.isEmpty()) {
+            response.setLabReports(reports.stream()
+                    .map(DocumentDto::fromEntity)
+                    .collect(Collectors.toList()));
+        }
+
+        return response;
     }
 }

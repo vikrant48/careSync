@@ -1,5 +1,6 @@
 package com.vikrant.careSync.security;
 
+import com.vikrant.careSync.constants.AppConstants;
 import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Patient;
 import com.vikrant.careSync.repository.DoctorRepository;
@@ -29,8 +30,7 @@ public class CustomUserDetailsService implements UserDetailsService {
             return new User(
                     doctor.getUsername(),
                     doctor.getPassword(),
-                    Collections.singletonList(new SimpleGrantedAuthority("ROLE_DOCTOR"))
-            );
+                    Collections.singletonList(new SimpleGrantedAuthority(AppConstants.Roles.ROLE_DOCTOR)));
         }
 
         // If not found as doctor, try to find as patient
@@ -39,10 +39,9 @@ public class CustomUserDetailsService implements UserDetailsService {
             return new User(
                     patient.getUsername(),
                     patient.getPassword(),
-                    Collections.singletonList(new SimpleGrantedAuthority("ROLE_PATIENT"))
-            );
+                    Collections.singletonList(new SimpleGrantedAuthority(AppConstants.Roles.ROLE_PATIENT)));
         }
 
         throw new UsernameNotFoundException("User not found with username: " + username);
     }
-} 
+}

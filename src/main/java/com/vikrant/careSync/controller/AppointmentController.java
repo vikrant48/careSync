@@ -10,6 +10,7 @@ import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.PatientRepository;
 import com.vikrant.careSync.service.AppointmentService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -26,6 +27,7 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/appointments")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "${app.cors.allowed-origins}")
+@Slf4j
 public class AppointmentController {
 
     private final AppointmentService appointmentService;
@@ -60,33 +62,33 @@ public class AppointmentController {
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<?> bookAppointment(@Valid @RequestBody CreateAppointmentRequest request) {
         try {
-            System.out.println("=== Starting appointment creation ===");
-            
+            log.info("=== Starting appointment creation ===");
+
             // Check if appointment date is in the past
             if (request.appointmentDateTime.isBefore(java.time.LocalDateTime.now())) {
                 Map<String, String> error = new HashMap<>();
                 error.put("error", "You can't book an appointment in the past. Please select a future date and time.");
                 return ResponseEntity.badRequest().body(error);
             }
-            
-            User currentUser = getCurrentPatient();
-            System.out.println("Current user: " + currentUser.getId());
-            System.out.println("Doctor ID: " + request.doctorId);
-            System.out.println("Appointment time: " + request.appointmentDateTime);
-            
-            // Use the bookAppointment method from service (patientId is automatically set to current user)
-            Appointment created = appointmentService.bookAppointment(
-                request.doctorId, 
-                currentUser.getId(), 
-                request.appointmentDateTime, 
-                request.reason
-            );
 
-            System.out.println("Appointment created with ID: " + created.getId());
-            
+            User currentUser = getCurrentPatient();
+            log.info("Current user: {}", currentUser.getId());
+            log.info("Doctor ID: {}", request.doctorId);
+            log.info("Appointment time: {}", request.appointmentDateTime);
+
+            // Use the bookAppointment method from service (patientId is automatically set
+            // to current user)
+            Appointment created = appointmentService.bookAppointment(
+                    request.doctorId,
+                    currentUser.getId(),
+                    request.appointmentDateTime,
+                    request.reason);
+
+            log.info("Appointment created with ID: {}", created.getId());
+
             return ResponseEntity.ok(new PatientAppointmentResponse(created));
         } catch (Exception e) {
-            System.out.println("=== ERROR in appointment creation ===");
+            log.error("=== ERROR in appointment creation: {}", e.getMessage(), e);
             Map<String, String> error = new HashMap<>();
             error.put("error", e.getMessage());
             return ResponseEntity.badRequest().body(error);
@@ -133,7 +135,8 @@ public class AppointmentController {
         try {
             User currentUser = getCurrentPatient();
             Appointment.Status appointmentStatus = Appointment.Status.valueOf(status.toUpperCase());
-            List<Appointment> appointments = appointmentService.getAppointmentsByStatusForPatient(currentUser.getId(), appointmentStatus);
+            List<Appointment> appointments = appointmentService.getAppointmentsByStatusForPatient(currentUser.getId(),
+                    appointmentStatus);
             List<PatientAppointmentResponse> responses = appointments.stream()
                     .map(PatientAppointmentResponse::new)
                     .collect(Collectors.toList());
@@ -150,7 +153,8 @@ public class AppointmentController {
     public ResponseEntity<?> getMyCompletedAppointments() {
         try {
             User currentUser = getCurrentPatient();
-            List<Appointment> appointments = appointmentService.getAppointmentsByStatusForPatient(currentUser.getId(), Appointment.Status.COMPLETED);
+            List<Appointment> appointments = appointmentService.getAppointmentsByStatusForPatient(currentUser.getId(),
+                    Appointment.Status.COMPLETED);
             List<PatientAppointmentResponse> responses = appointments.stream()
                     .map(PatientAppointmentResponse::new)
                     .collect(Collectors.toList());
@@ -167,7 +171,8 @@ public class AppointmentController {
     public ResponseEntity<?> getMyCancelledAppointments() {
         try {
             User currentUser = getCurrentPatient();
-            List<Appointment> appointments = appointmentService.getAppointmentsByStatusForPatient(currentUser.getId(), Appointment.Status.CANCELLED);
+            List<Appointment> appointments = appointmentService.getAppointmentsByStatusForPatient(currentUser.getId(),
+                    Appointment.Status.CANCELLED);
             List<PatientAppointmentResponse> responses = appointments.stream()
                     .map(PatientAppointmentResponse::new)
                     .collect(Collectors.toList());
@@ -181,10 +186,11 @@ public class AppointmentController {
 
     @PutMapping("/patient/{id}")
     @PreAuthorize("hasRole('PATIENT')")
-    public ResponseEntity<?> updateMyAppointment(@PathVariable Long id, @Valid @RequestBody CreateAppointmentRequest request) {
+    public ResponseEntity<?> updateMyAppointment(@PathVariable Long id,
+            @Valid @RequestBody CreateAppointmentRequest request) {
         try {
             User currentUser = getCurrentPatient();
-            
+
             // Create updated appointment object
             Appointment updatedAppointment = new Appointment();
             updatedAppointment.setDoctor(doctorRepository.findById(request.doctorId)
@@ -207,7 +213,7 @@ public class AppointmentController {
     public ResponseEntity<?> cancelMyAppointment(@PathVariable Long id) {
         try {
             User currentUser = getCurrentPatient();
-            
+
             // Use the updated service method
             appointmentService.cancelAppointment(id, currentUser);
             Map<String, String> successResponse = new HashMap<>();
@@ -225,20 +231,21 @@ public class AppointmentController {
     public ResponseEntity<?> rescheduleMyAppointment(@PathVariable Long id, @RequestParam String newDateTime) {
         try {
             User currentUser = getCurrentPatient();
-            
+
             // Parse the new date time
             java.time.LocalDateTime newAppointmentDateTime = java.time.LocalDateTime.parse(newDateTime);
-            
+
             // Check if new appointment date is in the past
             if (newAppointmentDateTime.isBefore(java.time.LocalDateTime.now())) {
                 Map<String, String> error = new HashMap<>();
-                error.put("error", "You can't reschedule an appointment to the past. Please select a future date and time.");
+                error.put("error",
+                        "You can't reschedule an appointment to the past. Please select a future date and time.");
                 return ResponseEntity.badRequest().body(error);
             }
-            
+
             // Use the reschedule service method
             Appointment rescheduled = appointmentService.rescheduleAppointment(id, newAppointmentDateTime, currentUser);
-            
+
             Map<String, Object> successResponse = new HashMap<>();
             successResponse.put("message", "Appointment rescheduled successfully");
             successResponse.put("appointment", new PatientAppointmentResponse(rescheduled));
@@ -309,7 +316,8 @@ public class AppointmentController {
         try {
             User currentUser = getCurrentDoctor();
             Appointment.Status appointmentStatus = Appointment.Status.valueOf(status.toUpperCase());
-            List<Appointment> appointments = appointmentService.getAppointmentsByStatus(currentUser.getId(), appointmentStatus);
+            List<Appointment> appointments = appointmentService.getAppointmentsByStatus(currentUser.getId(),
+                    appointmentStatus);
             List<DoctorAppointmentResponse> responses = appointments.stream()
                     .map(DoctorAppointmentResponse::new)
                     .collect(Collectors.toList());
@@ -361,18 +369,18 @@ public class AppointmentController {
         try {
             User currentUser = getCurrentDoctor();
             List<Appointment> appointments = appointmentService.getAppointmentsByDoctor(currentUser.getId());
-            
+
             // Get unique patients from appointments
             List<User> uniquePatients = appointments.stream()
                     .map(Appointment::getPatient)
                     .distinct()
                     .collect(Collectors.toList());
-            
+
             // If no patients found, return empty list instead of error
             if (uniquePatients.isEmpty()) {
                 return ResponseEntity.ok(uniquePatients);
             }
-            
+
             return ResponseEntity.ok(uniquePatients);
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
@@ -387,12 +395,13 @@ public class AppointmentController {
     public ResponseEntity<?> updateAppointmentStatus(@PathVariable Long id, @RequestParam String status) {
         try {
             User currentUser = getCurrentDoctor();
-            
+
             // Convert string status to enum
             Appointment.Status appointmentStatus = Appointment.Status.valueOf(status.toUpperCase());
-            
+
             // Use the updated service method
-            Appointment updatedAppointment = appointmentService.updateAppointmentStatus(id, appointmentStatus, currentUser);
+            Appointment updatedAppointment = appointmentService.updateAppointmentStatus(id, appointmentStatus,
+                    currentUser);
             return ResponseEntity.ok(new DoctorAppointmentResponse(updatedAppointment));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
@@ -407,7 +416,8 @@ public class AppointmentController {
     public ResponseEntity<?> confirmAppointment(@PathVariable Long id) {
         try {
             User currentUser = getCurrentDoctor();
-            Appointment updatedAppointment = appointmentService.updateAppointmentStatus(id, Appointment.Status.CONFIRMED, currentUser);
+            Appointment updatedAppointment = appointmentService.updateAppointmentStatus(id,
+                    Appointment.Status.CONFIRMED, currentUser);
             return ResponseEntity.ok(new DoctorAppointmentResponse(updatedAppointment));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
@@ -422,7 +432,8 @@ public class AppointmentController {
     public ResponseEntity<?> completeAppointment(@PathVariable Long id) {
         try {
             User currentUser = getCurrentDoctor();
-            Appointment updatedAppointment = appointmentService.updateAppointmentStatus(id, Appointment.Status.COMPLETED, currentUser);
+            Appointment updatedAppointment = appointmentService.updateAppointmentStatus(id,
+                    Appointment.Status.COMPLETED, currentUser);
             return ResponseEntity.ok(new DoctorAppointmentResponse(updatedAppointment));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
@@ -437,7 +448,8 @@ public class AppointmentController {
     public ResponseEntity<?> cancelAppointmentByDoctor(@PathVariable Long id) {
         try {
             User currentUser = getCurrentDoctor();
-            Appointment updatedAppointment = appointmentService.updateAppointmentStatus(id, Appointment.Status.CANCELLED, currentUser);
+            Appointment updatedAppointment = appointmentService.updateAppointmentStatus(id,
+                    Appointment.Status.CANCELLED, currentUser);
             return ResponseEntity.ok(new DoctorAppointmentResponse(updatedAppointment));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
@@ -493,17 +505,17 @@ public class AppointmentController {
     // EMERGENCY BOOKING - Immediate appointment booking
     @PostMapping("/patient/book-emergency")
     @PreAuthorize("hasRole('PATIENT')")
-    public ResponseEntity<?> bookEmergencyAppointment(@RequestParam Long doctorId, @RequestParam(required = false) String reason) {
+    public ResponseEntity<?> bookEmergencyAppointment(@RequestParam Long doctorId,
+            @RequestParam(required = false) String reason) {
         try {
             User currentUser = getCurrentPatient();
-            
+
             // Book emergency appointment at current time
             Appointment emergencyAppointment = appointmentService.bookEmergencyAppointment(
-                doctorId, 
-                currentUser.getId(), 
-                reason != null ? reason : "Emergency appointment"
-            );
-            
+                    doctorId,
+                    currentUser.getId(),
+                    reason != null ? reason : "Emergency appointment");
+
             return ResponseEntity.ok(new PatientAppointmentResponse(emergencyAppointment));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();

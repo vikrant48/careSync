@@ -26,6 +26,8 @@ public class PatientAppointmentResponse {
     private String statusChangedAt;
     private String statusChangedBy;
 
+    private String doctorProfileImageUrl;
+
     public PatientAppointmentResponse(Appointment appointment) {
         this.appointmentId = appointment.getId();
         if (appointment.getDoctor() != null) {
@@ -33,6 +35,7 @@ public class PatientAppointmentResponse {
             this.doctorSpecialization = appointment.getDoctor().getSpecialization();
             this.doctorEmail = appointment.getDoctor().getEmail();
             this.doctorContactInfo = appointment.getDoctor().getContactInfo();
+            this.doctorProfileImageUrl = appointment.getDoctor().getProfileImageUrl();
         }
         if (appointment.getAppointmentDateTime() != null) {
             this.appointmentDate = appointment.getAppointmentDateTime().toLocalDate().toString();
@@ -41,7 +44,7 @@ public class PatientAppointmentResponse {
         }
         this.status = appointment.getStatus() != null ? appointment.getStatus().name() : null;
         this.reason = appointment.getReason();
-        
+
         // Format audit fields
         if (appointment.getCreatedAt() != null) {
             this.createdAt = appointment.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
@@ -50,7 +53,8 @@ public class PatientAppointmentResponse {
             this.updatedAt = appointment.getUpdatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
         }
         if (appointment.getStatusChangedAt() != null) {
-            this.statusChangedAt = appointment.getStatusChangedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            this.statusChangedAt = appointment.getStatusChangedAt()
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
         }
         this.statusChangedBy = appointment.getStatusChangedBy();
     }

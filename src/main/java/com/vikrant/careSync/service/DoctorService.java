@@ -54,16 +54,26 @@ public class DoctorService implements IDoctorService {
         Doctor doctor = doctorRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
 
-        if (request.getFirstName() != null) doctor.setFirstName(request.getFirstName());
-        if (request.getLastName() != null) doctor.setLastName(request.getLastName());
-        if (request.getSpecialization() != null) doctor.setSpecialization(request.getSpecialization());
-        if (request.getContactInfo() != null) doctor.setContactInfo(request.getContactInfo());
-        if (request.getEmail() != null) doctor.setEmail(request.getEmail());
-        if (request.getIsActive() != null) doctor.setIsActive(request.getIsActive());
-        if (request.getGender() != null) doctor.setGender(request.getGender());
-        if (request.getConsultationFees() != null) doctor.setConsultationFees(java.math.BigDecimal.valueOf(request.getConsultationFees()));
-        if (request.getAddress() != null) doctor.setAddress(request.getAddress());
-        if (request.getLanguages() != null) doctor.setLanguages(String.join(",", request.getLanguages()));
+        if (request.getFirstName() != null)
+            doctor.setFirstName(request.getFirstName());
+        if (request.getLastName() != null)
+            doctor.setLastName(request.getLastName());
+        if (request.getSpecialization() != null)
+            doctor.setSpecialization(request.getSpecialization());
+        if (request.getContactInfo() != null)
+            doctor.setContactInfo(request.getContactInfo());
+        if (request.getEmail() != null)
+            doctor.setEmail(request.getEmail());
+        if (request.getIsActive() != null)
+            doctor.setIsActive(request.getIsActive());
+        if (request.getGender() != null)
+            doctor.setGender(request.getGender());
+        if (request.getConsultationFees() != null)
+            doctor.setConsultationFees(java.math.BigDecimal.valueOf(request.getConsultationFees()));
+        if (request.getAddress() != null)
+            doctor.setAddress(request.getAddress());
+        if (request.getLanguages() != null)
+            doctor.setLanguages(String.join(",", request.getLanguages()));
 
         doctor.setUpdatedAt(LocalDateTime.now());
 
@@ -219,7 +229,7 @@ public class DoctorService implements IDoctorService {
     public Certificate updateCertificateUrl(Long certificateId, String url) {
         Certificate certificate = certificateRepository.findById(certificateId)
                 .orElseThrow(() -> new RuntimeException("Certificate not found"));
-        
+
         certificate.setUrl(url);
         return certificateRepository.save(certificate);
     }

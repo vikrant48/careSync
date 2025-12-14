@@ -80,7 +80,8 @@ public class AdminController {
     }
 
     @PostMapping("/block-doctor/{doctorId}")
-    public ResponseEntity<Map<String, String>> blockDoctor(@PathVariable Long doctorId, @RequestParam(required = false) String reason) {
+    public ResponseEntity<Map<String, String>> blockDoctor(@PathVariable Long doctorId,
+            @RequestParam(required = false) String reason) {
         try {
             Optional<Doctor> doctorOpt = doctorRepository.findById(doctorId);
             if (doctorOpt.isEmpty()) {
@@ -88,11 +89,11 @@ public class AdminController {
                 errorResponse.put("error", "Doctor not found with ID: " + doctorId);
                 return ResponseEntity.badRequest().body(errorResponse);
             }
-            
+
             Doctor doctor = doctorOpt.get();
             doctor.setIsActive(false);
             doctorRepository.save(doctor);
-            
+
             Map<String, String> response = new HashMap<>();
             response.put("message", "Doctor " + doctor.getUsername() + " has been blocked");
             response.put("reason", reason != null ? reason : "No reason provided");
@@ -105,7 +106,8 @@ public class AdminController {
     }
 
     @PostMapping("/block-patient/{patientId}")
-    public ResponseEntity<Map<String, String>> blockPatient(@PathVariable Long patientId, @RequestParam(required = false) String reason) {
+    public ResponseEntity<Map<String, String>> blockPatient(@PathVariable Long patientId,
+            @RequestParam(required = false) String reason) {
         try {
             Optional<Patient> patientOpt = patientRepository.findById(patientId);
             if (patientOpt.isEmpty()) {
@@ -113,11 +115,11 @@ public class AdminController {
                 errorResponse.put("error", "Patient not found with ID: " + patientId);
                 return ResponseEntity.badRequest().body(errorResponse);
             }
-            
+
             Patient patient = patientOpt.get();
             patient.setIsActive(false);
             patientRepository.save(patient);
-            
+
             Map<String, String> response = new HashMap<>();
             response.put("message", "Patient " + patient.getUsername() + " has been blocked");
             response.put("reason", reason != null ? reason : "No reason provided");
@@ -138,11 +140,11 @@ public class AdminController {
                 errorResponse.put("error", "Doctor not found with ID: " + doctorId);
                 return ResponseEntity.badRequest().body(errorResponse);
             }
-            
+
             Doctor doctor = doctorOpt.get();
             doctor.setIsActive(true);
             doctorRepository.save(doctor);
-            
+
             Map<String, String> response = new HashMap<>();
             response.put("message", "Doctor " + doctor.getUsername() + " has been unblocked");
             return ResponseEntity.ok(response);
@@ -162,11 +164,11 @@ public class AdminController {
                 errorResponse.put("error", "Patient not found with ID: " + patientId);
                 return ResponseEntity.badRequest().body(errorResponse);
             }
-            
+
             Patient patient = patientOpt.get();
             patient.setIsActive(true);
             patientRepository.save(patient);
-            
+
             Map<String, String> response = new HashMap<>();
             response.put("message", "Patient " + patient.getUsername() + " has been unblocked");
             return ResponseEntity.ok(response);
@@ -178,11 +180,13 @@ public class AdminController {
     }
 
     @PostMapping("/block-ip")
-    public ResponseEntity<Map<String, String>> blockIP(@RequestParam String ipAddress, @RequestParam(required = false) String reason, @RequestParam(required = false, defaultValue = "24") int hoursToBlock) {
+    public ResponseEntity<Map<String, String>> blockIP(@RequestParam String ipAddress,
+            @RequestParam(required = false) String reason,
+            @RequestParam(required = false, defaultValue = "24") int hoursToBlock) {
         try {
             String blockReason = reason != null ? reason : "Manually blocked by admin";
             securityService.blockIPManually(ipAddress, blockReason, hoursToBlock);
-            
+
             Map<String, String> response = new HashMap<>();
             response.put("message", "IP address " + ipAddress + " has been blocked for " + hoursToBlock + " hours");
             return ResponseEntity.ok(response);
@@ -194,7 +198,7 @@ public class AdminController {
     }
 
     // Session Management Endpoints
-    
+
     @GetMapping("/sessions/{username}")
     public ResponseEntity<?> getUserSessions(@PathVariable String username) {
         try {
@@ -206,7 +210,7 @@ public class AdminController {
             return ResponseEntity.badRequest().body(errorResponse);
         }
     }
-    
+
     @PostMapping("/sessions/deactivate/{sessionId}")
     public ResponseEntity<Map<String, String>> deactivateSession(@PathVariable String sessionId) {
         try {
@@ -220,7 +224,7 @@ public class AdminController {
             return ResponseEntity.badRequest().body(errorResponse);
         }
     }
-    
+
     @PostMapping("/sessions/deactivate-all/{username}")
     public ResponseEntity<Map<String, String>> deactivateAllUserSessions(@PathVariable String username) {
         try {
@@ -234,7 +238,7 @@ public class AdminController {
             return ResponseEntity.badRequest().body(errorResponse);
         }
     }
-    
+
     @PostMapping("/sessions/cleanup-expired")
     public ResponseEntity<Map<String, String>> cleanupExpiredSessions() {
         try {

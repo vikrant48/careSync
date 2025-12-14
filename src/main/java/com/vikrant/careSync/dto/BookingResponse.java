@@ -17,7 +17,7 @@ import java.util.List;
 @AllArgsConstructor
 @Builder
 public class BookingResponse {
-    
+
     private Long id;
     private Long patientId;
     private String patientName;
@@ -29,8 +29,11 @@ public class BookingResponse {
     private String notes;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
-    
+
     // Payment related fields (optional)
     private String paymentTransactionId;
     private String paymentStatus;
+
+    // Uploaded reports
+    private List<DocumentDto> labReports;
 }

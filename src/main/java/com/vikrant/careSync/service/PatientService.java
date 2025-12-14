@@ -84,13 +84,14 @@ public class PatientService implements IPatientService {
 
     public List<MedicalHistory> getMedicalHistoryByDateRange(Long patientId, LocalDate startDate, LocalDate endDate) {
         return medicalHistoryRepository.findByPatientId(patientId).stream()
-                .filter(history -> !history.getVisitDate().isBefore(startDate) && !history.getVisitDate().isAfter(endDate))
+                .filter(history -> !history.getVisitDate().isBefore(startDate)
+                        && !history.getVisitDate().isAfter(endDate))
                 .toList();
     }
 
     public List<Patient> getPatientsByIllness(String illnessKeyword) {
         return patientRepository.findAll().stream()
-                .filter(patient -> patient.getIllnessDetails() != null && 
+                .filter(patient -> patient.getIllnessDetails() != null &&
                         patient.getIllnessDetails().toLowerCase().contains(illnessKeyword.toLowerCase()))
                 .toList();
     }

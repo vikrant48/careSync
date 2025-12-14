@@ -33,12 +33,12 @@ public class BookingController {
      */
     @PostMapping("/patient/with-payment")
     @PreAuthorize("hasRole('PATIENT')")
-    public ResponseEntity<?> createPatientBookingWithPayment(@Valid @RequestBody PatientBookingWithPaymentRequest request) {
+    public ResponseEntity<?> createPatientBookingWithPayment(
+            @Valid @RequestBody PatientBookingWithPaymentRequest request) {
         try {
             BookingResponse booking = bookingService.createBookingWithPayment(
-                request.getBookingRequest(), 
-                request.getPaymentRequest()
-            );
+                    request.getBookingRequest(),
+                    request.getPaymentRequest());
             return ResponseEntity.status(HttpStatus.CREATED).body(booking);
         } catch (RuntimeException e) {
             Map<String, String> errorResponse = new HashMap<>();
@@ -179,8 +179,8 @@ public class BookingController {
      */
     @PutMapping("/{bookingId}/status")
     @PreAuthorize("hasRole('DOCTOR') or hasRole('ADMIN')")
-    public ResponseEntity<?> updateBookingStatus(@PathVariable Long bookingId, 
-                                                @RequestParam Booking.BookingStatus status) {
+    public ResponseEntity<?> updateBookingStatus(@PathVariable Long bookingId,
+            @RequestParam Booking.BookingStatus status) {
         try {
             BookingResponse booking = bookingService.updateBookingStatus(bookingId, status);
             return ResponseEntity.ok(booking);

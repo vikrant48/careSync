@@ -26,7 +26,8 @@ public class AppointmentService {
     private final NotificationService notificationService;
 
     // Only patients can book appointments - status automatically set to BOOKED
-    public Appointment bookAppointment(Long doctorId, Long patientId, LocalDateTime appointmentDateTime, String reason) {
+    public Appointment bookAppointment(Long doctorId, Long patientId, LocalDateTime appointmentDateTime,
+            String reason) {
         Doctor doctor = doctorRepository.findById(doctorId)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
 
@@ -86,7 +87,7 @@ public class AppointmentService {
 
         // Set appointment time to current time (emergency booking)
         LocalDateTime emergencyTime = LocalDateTime.now();
-        
+
         // Check if doctor has any conflicting appointment at current time
         if (isAppointmentTimeConflict(doctorId, emergencyTime)) {
             throw new RuntimeException("Doctor is currently busy. Please try again in a few minutes.");
@@ -116,7 +117,8 @@ public class AppointmentService {
         return appointmentRepository.findById(appointmentId);
     }
 
-    // Get appointments for doctors with enhanced patient information including illness details
+    // Get appointments for doctors with enhanced patient information including
+    // illness details
     public List<Appointment> getAppointmentsByDoctor(Long doctorId) {
         return appointmentRepository.findByDoctorIdWithPatientAndDoctorDetails(doctorId);
     }
@@ -158,7 +160,8 @@ public class AppointmentService {
         return getUpcomingAppointmentsByPatient(patientId);
     }
 
-    // Update appointment details (only for patients updating their own appointments)
+    // Update appointment details (only for patients updating their own
+    // appointments)
     public Appointment updateAppointment(Long id, Appointment updatedAppointment, User currentUser) {
         Appointment existingAppointment = appointmentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
@@ -177,7 +180,8 @@ public class AppointmentService {
         if (updatedAppointment.getAppointmentDateTime() != null) {
             // Check for conflicts if time is being changed
             if (!updatedAppointment.getAppointmentDateTime().equals(existingAppointment.getAppointmentDateTime())) {
-                if (isAppointmentTimeConflict(existingAppointment.getDoctor().getId(), updatedAppointment.getAppointmentDateTime())) {
+                if (isAppointmentTimeConflict(existingAppointment.getDoctor().getId(),
+                        updatedAppointment.getAppointmentDateTime())) {
                     throw new RuntimeException("New appointment time is not available");
                 }
             }
@@ -202,28 +206,47 @@ public class AppointmentService {
             if (!appointment.getDoctor().getId().equals(currentUser.getId())) {
                 throw new RuntimeException("You can only update appointments assigned to you");
             }
-            // Doctors can change status to SCHEDULED, IN_PROGRESS, COMPLETED, CONFIRMED, or CANCELLED
-            if (newStatus != Appointment.Status.SCHEDULED && 
-                newStatus != Appointment.Status.IN_PROGRESS && 
-                newStatus != Appointment.Status.COMPLETED && 
-                newStatus != Appointment.Status.CONFIRMED &&
-                newStatus != Appointment.Status.CANCELLED) {
-                throw new RuntimeException("Doctors can only change status to SCHEDULED, IN_PROGRESS, COMPLETED, CONFIRMED, or CANCELLED");
+            // Doctors can change status to SCHEDULED, IN_PROGRESS, COMPLETED, CONFIRMED, or
+            // CANCELLED
+            if (newStatus != Appointment.Status.SCHEDULED &&
+                    newStatus != Appointment.Status.IN_PROGRESS &&
+                    newStatus != Appointment.Status.COMPLETED &&
+                    newStatus != Appointment.Status.CONFIRMED &&
+                    newStatus != Appointment.Status.CANCELLED &&
+                    newStatus != Appointment.Status.CANCELLED_BY_DOCTOR) {
+                throw new RuntimeException(
+                        "Doctors can only change status to SCHEDULED, IN_PROGRESS, COMPLETED, CONFIRMED, or CANCELLED");
+            }
+
+            // Map generic CANCELLED to CANCELLED_BY_DOCTOR for doctors
+            if (newStatus == Appointment.Status.CANCELLED) {
+                newStatus = Appointment.Status.CANCELLED_BY_DOCTOR;
             }
         } else if (currentUser.getRole() == User.Role.PATIENT) {
             // Patient can only update their own appointments
             if (!appointment.getPatient().getId().equals(currentUser.getId())) {
                 throw new RuntimeException("You can only update your own appointments");
             }
-            // Patients can only change status to BOOKED or CANCELLED (reschedule is handled separately)
-            if (newStatus != Appointment.Status.BOOKED && newStatus != Appointment.Status.CANCELLED) {
-                throw new RuntimeException("Patients can only change status to BOOKED or CANCELLED. Use reschedule endpoint for rescheduling.");
+            // Patients can only change status to BOOKED or CANCELLED (reschedule is handled
+            // separately)
+            if (newStatus != Appointment.Status.BOOKED &&
+                    newStatus != Appointment.Status.CANCELLED &&
+                    newStatus != Appointment.Status.CANCELLED_BY_PATIENT) {
+                throw new RuntimeException(
+                        "Patients can only change status to BOOKED or CANCELLED. Use reschedule endpoint for rescheduling.");
             }
+
+            // Map generic CANCELLED to CANCELLED_BY_PATIENT for patients
+            if (newStatus == Appointment.Status.CANCELLED) {
+                newStatus = Appointment.Status.CANCELLED_BY_PATIENT;
+            }
+
             // Patients cannot change status to SCHEDULED, IN_PROGRESS, or COMPLETED
-            if (newStatus == Appointment.Status.SCHEDULED || 
-                newStatus == Appointment.Status.IN_PROGRESS || 
-                newStatus == Appointment.Status.COMPLETED) {
-                throw new RuntimeException("Only doctors can change appointment status to SCHEDULED, IN_PROGRESS, or COMPLETED");
+            if (newStatus == Appointment.Status.SCHEDULED ||
+                    newStatus == Appointment.Status.IN_PROGRESS ||
+                    newStatus == Appointment.Status.COMPLETED) {
+                throw new RuntimeException(
+                        "Only doctors can change appointment status to SCHEDULED, IN_PROGRESS, or COMPLETED");
             }
         }
 
@@ -302,12 +325,12 @@ public class AppointmentService {
         }
 
         // Only allow cancellation if status is BOOKED or CONFIRMED
-        if (appointment.getStatus() != Appointment.Status.BOOKED && 
-            appointment.getStatus() != Appointment.Status.CONFIRMED) {
+        if (appointment.getStatus() != Appointment.Status.BOOKED &&
+                appointment.getStatus() != Appointment.Status.CONFIRMED) {
             throw new RuntimeException("Cannot cancel appointment with status: " + appointment.getStatus());
         }
 
-        appointment.changeStatus(Appointment.Status.CANCELLED, currentUser.getUsername());
+        appointment.changeStatus(Appointment.Status.CANCELLED_BY_PATIENT, currentUser.getUsername());
         appointmentRepository.save(appointment);
         // Notify the doctor/patient of cancellation
         notificationService.sendAppointmentCancellation(appointment.getId());
@@ -332,7 +355,13 @@ public class AppointmentService {
     }
 
     public List<Appointment> getCancelledAppointments(Long doctorId) {
-        return getAppointmentsByStatus(doctorId, Appointment.Status.CANCELLED);
+        List<Appointment> cancelled = appointmentRepository.findByDoctorIdAndStatus(doctorId,
+                Appointment.Status.CANCELLED);
+        cancelled.addAll(
+                appointmentRepository.findByDoctorIdAndStatus(doctorId, Appointment.Status.CANCELLED_BY_PATIENT));
+        cancelled.addAll(
+                appointmentRepository.findByDoctorIdAndStatus(doctorId, Appointment.Status.CANCELLED_BY_DOCTOR));
+        return cancelled;
     }
 
     public List<Appointment> getTodayAppointments(Long doctorId) {
@@ -344,18 +373,20 @@ public class AppointmentService {
         return appointmentRepository.findByDoctorIdAndAppointmentDateTimeBetween(doctorId, startDate, endDate);
     }
 
-    public List<Appointment> getAppointmentsByDateRangeForPatient(Long patientId, LocalDateTime startDate, LocalDateTime endDate) {
+    public List<Appointment> getAppointmentsByDateRangeForPatient(Long patientId, LocalDateTime startDate,
+            LocalDateTime endDate) {
         return appointmentRepository.findByPatientId(patientId).stream()
-                .filter(appointment -> appointment.getAppointmentDateTime().isAfter(startDate) && 
-                                     appointment.getAppointmentDateTime().isBefore(endDate))
+                .filter(appointment -> appointment.getAppointmentDateTime().isAfter(startDate) &&
+                        appointment.getAppointmentDateTime().isBefore(endDate))
                 .toList();
     }
 
-    // Get all appointments across all doctors within date range (for system-wide analytics)
+    // Get all appointments across all doctors within date range (for system-wide
+    // analytics)
     public List<Appointment> getAllAppointmentsByDateRange(LocalDateTime startDate, LocalDateTime endDate) {
         return appointmentRepository.findAll().stream()
-                .filter(appointment -> appointment.getAppointmentDateTime().isAfter(startDate) && 
-                                     appointment.getAppointmentDateTime().isBefore(endDate))
+                .filter(appointment -> appointment.getAppointmentDateTime().isAfter(startDate) &&
+                        appointment.getAppointmentDateTime().isBefore(endDate))
                 .toList();
     }
 
@@ -364,32 +395,32 @@ public class AppointmentService {
         // Morning: 9:00 AM - 1:00 PM (9:00-13:00)
         // Afternoon: 2:00 PM - 6:00 PM (14:00-18:00)
         List<String> allSlots = generateDoctorWorkingSlots();
-        
+
         // Get existing appointments for the date
         LocalDateTime dateTime = LocalDateTime.parse(date + "T00:00:00");
         List<Appointment> existingAppointments = getDoctorAppointmentsByDate(doctorId, dateTime);
-        
+
         // Filter out booked and confirmed slots
         return allSlots.stream()
                 .filter(slot -> !isSlotUnavailable(existingAppointments, slot))
                 .toList();
     }
-    
+
     private List<String> generateDoctorWorkingSlots() {
         List<String> slots = new java.util.ArrayList<>();
-        
+
         // Morning slots: 9:00 AM - 1:00 PM (every 30 minutes)
         for (int hour = 9; hour < 13; hour++) {
             slots.add(String.format("%02d:00", hour));
             slots.add(String.format("%02d:30", hour));
         }
-        
+
         // Afternoon slots: 2:00 PM - 6:00 PM (every 30 minutes)
         for (int hour = 14; hour < 18; hour++) {
             slots.add(String.format("%02d:00", hour));
             slots.add(String.format("%02d:30", hour));
         }
-        
+
         return slots;
     }
 
@@ -409,13 +440,15 @@ public class AppointmentService {
     private boolean isSlotUnavailable(List<Appointment> appointments, String timeSlot) {
         return appointments.stream()
                 .anyMatch(appointment -> {
-                    String appointmentTime = appointment.getAppointmentDateTime().toLocalTime().toString().substring(0, 5);
-                    // Consider slots unavailable if they are BOOKED, CONFIRMED, SCHEDULED, or IN_PROGRESS
-                    return appointmentTime.equals(timeSlot) && 
-                           (appointment.getStatus() == Appointment.Status.BOOKED ||
-                            appointment.getStatus() == Appointment.Status.CONFIRMED ||
-                            appointment.getStatus() == Appointment.Status.SCHEDULED ||
-                            appointment.getStatus() == Appointment.Status.IN_PROGRESS);
+                    String appointmentTime = appointment.getAppointmentDateTime().toLocalTime().toString().substring(0,
+                            5);
+                    // Consider slots unavailable if they are BOOKED, CONFIRMED, SCHEDULED, or
+                    // IN_PROGRESS
+                    return appointmentTime.equals(timeSlot) &&
+                            (appointment.getStatus() == Appointment.Status.BOOKED ||
+                                    appointment.getStatus() == Appointment.Status.CONFIRMED ||
+                                    appointment.getStatus() == Appointment.Status.SCHEDULED ||
+                                    appointment.getStatus() == Appointment.Status.IN_PROGRESS);
                 });
     }
 }

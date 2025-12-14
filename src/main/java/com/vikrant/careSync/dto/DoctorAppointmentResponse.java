@@ -21,6 +21,7 @@ public class DoctorAppointmentResponse {
     private String patientEmail;
     private String patientContactInfo;
     private String patientIllnessDetails;
+    private String patientProfileImageUrl;
     private String appointmentDate;
     private String appointmentTime;
     private String status;
@@ -39,6 +40,7 @@ public class DoctorAppointmentResponse {
             this.patientEmail = appointment.getPatient().getEmail();
             this.patientContactInfo = appointment.getPatient().getContactInfo();
             this.patientIllnessDetails = appointment.getPatient().getIllnessDetails();
+            this.patientProfileImageUrl = appointment.getPatient().getProfileImageUrl();
         }
         if (appointment.getAppointmentDateTime() != null) {
             this.appointmentDate = appointment.getAppointmentDateTime().toLocalDate().toString();
@@ -47,7 +49,7 @@ public class DoctorAppointmentResponse {
         }
         this.status = appointment.getStatus() != null ? appointment.getStatus().name() : null;
         this.reason = appointment.getReason();
-        
+
         // Format audit fields
         if (appointment.getCreatedAt() != null) {
             this.createdAt = appointment.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
@@ -56,10 +58,11 @@ public class DoctorAppointmentResponse {
             this.updatedAt = appointment.getUpdatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
         }
         if (appointment.getStatusChangedAt() != null) {
-            this.statusChangedAt = appointment.getStatusChangedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            this.statusChangedAt = appointment.getStatusChangedAt()
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
         }
         this.statusChangedBy = appointment.getStatusChangedBy();
-        
+
         // Convert medical history to DTOs
         if (appointment.getPatient() != null && appointment.getPatient().getMedicalHistories() != null) {
             this.medicalHistory = appointment.getPatient().getMedicalHistories().stream()

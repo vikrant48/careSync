@@ -68,8 +68,8 @@ public class PatientController {
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<PatientDto> getPatientProfile(@PathVariable String username) {
         try {
-            Patient patient = patientService.getPatientByUsername(username).orElseThrow(() ->
-                new RuntimeException("Patient not found with username: " + username));
+            Patient patient = patientService.getPatientByUsername(username)
+                    .orElseThrow(() -> new RuntimeException("Patient not found with username: " + username));
             PatientDto patientDto = new PatientDto(patient);
             return ResponseEntity.ok(patientDto);
         } catch (Exception e) {
@@ -85,22 +85,22 @@ public class PatientController {
             if (patientOpt.isEmpty()) {
                 return ResponseEntity.notFound().build();
             }
-            
+
             Patient patient = patientOpt.get();
             Map<String, Object> completeData = new HashMap<>();
-            
+
             // Patient basic information
             PatientDto patientDto = new PatientDto(patient);
             completeData.put("patient", patientDto);
-            
+
             // Medical history
             List<MedicalHistory> medicalHistory = patientService.getPatientMedicalHistory(patientId);
             completeData.put("medicalHistory", medicalHistory);
-            
+
             // Documents
             List<Document> documents = documentService.getDocumentsByPatientId(patientId);
             completeData.put("documents", documents);
-            
+
             return ResponseEntity.ok(completeData);
         } catch (Exception e) {
             Map<String, Object> errorResponse = new HashMap<>();
@@ -111,7 +111,8 @@ public class PatientController {
 
     @PutMapping("/{id}/profile")
     @PreAuthorize("hasRole('PATIENT')")
-    public ResponseEntity<PatientDto> updatePatientProfile(@PathVariable Long id, @RequestBody UpdatePatientRequest request) {
+    public ResponseEntity<PatientDto> updatePatientProfile(@PathVariable Long id,
+            @RequestBody UpdatePatientRequest request) {
         try {
             Patient updatedPatient = new Patient();
             updatedPatient.setFirstName(request.getFirstName());
@@ -122,7 +123,7 @@ public class PatientController {
             updatedPatient.setEmail(request.getEmail());
             updatedPatient.setIsActive(request.getIsActive());
             updatedPatient.setGender(request.getGender());
-            
+
             Patient patient = patientService.updatePatientProfile(id, updatedPatient);
             return ResponseEntity.ok(new PatientDto(patient));
         } catch (Exception e) {
@@ -141,8 +142,8 @@ public class PatientController {
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<PatientDto> updateIllnessDetails(@PathVariable Long id, @RequestParam String illnessDetails) {
         try {
-            Patient patient = patientService.getPatientById(id).orElseThrow(() ->
-                new RuntimeException("Patient not found with id: " + id));
+            Patient patient = patientService.getPatientById(id)
+                    .orElseThrow(() -> new RuntimeException("Patient not found with id: " + id));
             patient.setIllnessDetails(illnessDetails);
             Patient updatedPatient = patientService.updatePatientProfile(id, patient);
             return ResponseEntity.ok(new PatientDto(updatedPatient));
@@ -155,8 +156,8 @@ public class PatientController {
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<PatientDto> updateContactInfo(@PathVariable Long id, @RequestParam String contactInfo) {
         try {
-            Patient patient = patientService.getPatientById(id).orElseThrow(() ->
-                new RuntimeException("Patient not found with id: " + id));
+            Patient patient = patientService.getPatientById(id)
+                    .orElseThrow(() -> new RuntimeException("Patient not found with id: " + id));
             patient.setContactInfo(contactInfo);
             Patient updatedPatient = patientService.updatePatientProfile(id, patient);
             return ResponseEntity.ok(new PatientDto(updatedPatient));
@@ -178,7 +179,8 @@ public class PatientController {
 
     @PutMapping("/profile/{username}/image")
     @PreAuthorize("hasRole('PATIENT')")
-    public ResponseEntity<PatientDto> updateProfileImageByUsername(@PathVariable String username, @RequestParam String imageUrl) {
+    public ResponseEntity<PatientDto> updateProfileImageByUsername(@PathVariable String username,
+            @RequestParam String imageUrl) {
         try {
             Patient patient = patientService.updateProfileImageByUsername(username, imageUrl);
             return ResponseEntity.ok(new PatientDto(patient));
@@ -190,7 +192,8 @@ public class PatientController {
     // Medical History Management
     @PostMapping("/{patientId}/medical-history")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<MedicalHistory> addMedicalHistory(@PathVariable Long patientId, @RequestBody CreateMedicalHistoryRequest request) {
+    public ResponseEntity<MedicalHistory> addMedicalHistory(@PathVariable Long patientId,
+            @RequestBody CreateMedicalHistoryRequest request) {
         try {
             MedicalHistory medicalHistory = new MedicalHistory();
             medicalHistory.setVisitDate(request.getVisitDate());
@@ -200,7 +203,7 @@ public class PatientController {
             medicalHistory.setMedicine(request.getMedicine());
             medicalHistory.setDoses(request.getDoses());
             medicalHistory.setNotes(request.getNotes());
-            
+
             MedicalHistory savedHistory = patientService.addMedicalHistory(patientId, medicalHistory);
             return ResponseEntity.ok(savedHistory);
         } catch (Exception e) {
@@ -224,7 +227,8 @@ public class PatientController {
         try {
             LocalDate start = LocalDate.parse(startDate);
             LocalDate end = LocalDate.parse(endDate);
-            List<MedicalHistory> medicalHistories = medicalHistoryService.getMedicalHistoryByDateRange(patientId, start, end);
+            List<MedicalHistory> medicalHistories = medicalHistoryService.getMedicalHistoryByDateRange(patientId, start,
+                    end);
             return ResponseEntity.ok(medicalHistories);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
@@ -233,7 +237,8 @@ public class PatientController {
 
     @PutMapping("/medical-history/{historyId}")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<MedicalHistory> updateMedicalHistory(@PathVariable Long historyId, @RequestBody CreateMedicalHistoryRequest request) {
+    public ResponseEntity<MedicalHistory> updateMedicalHistory(@PathVariable Long historyId,
+            @RequestBody CreateMedicalHistoryRequest request) {
         try {
             MedicalHistory medicalHistory = new MedicalHistory();
             medicalHistory.setVisitDate(request.getVisitDate());
@@ -243,7 +248,7 @@ public class PatientController {
             medicalHistory.setMedicine(request.getMedicine());
             medicalHistory.setDoses(request.getDoses());
             medicalHistory.setNotes(request.getNotes());
-            
+
             MedicalHistory updatedHistory = medicalHistoryService.updateMedicalHistory(historyId, medicalHistory);
             return ResponseEntity.ok(updatedHistory);
         } catch (Exception e) {
@@ -278,10 +283,10 @@ public class PatientController {
             UserDto userDto = userService.getUserByUsername(authentication.getName());
             String username = authentication.getName();
             String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
-            
+
             Document document = documentService.uploadDocumentForPatient(
-                file, patientId, Document.DocumentType.PROFILE_IMAGE, description, username, userType);
-            
+                    file, patientId, Document.DocumentType.PROFILE_IMAGE, description, username, userType);
+
             Map<String, Object> response = createDocumentResponse(document);
             return ResponseEntity.ok(response);
         } catch (IOException e) {
@@ -308,11 +313,11 @@ public class PatientController {
             UserDto userDto = userService.getUserByUsername(authentication.getName());
             String username = authentication.getName();
             String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
-            
+
             Document.DocumentType type = Document.DocumentType.valueOf(documentType.toUpperCase());
             Document document = documentService.uploadDocumentForPatient(
-                file, patientId, type, description, username, userType);
-            
+                    file, patientId, type, description, username, userType);
+
             Map<String, Object> response = createDocumentResponse(document);
             response.put("documentType", document.getDocumentType());
             return ResponseEntity.ok(response);
@@ -337,12 +342,12 @@ public class PatientController {
             Authentication authentication) {
         try {
             UserDto userDto = userService.getUserByUsername(authentication.getName());
-        String username = authentication.getName();
-        String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
-        
-        Document document = documentService.uploadDocumentForPatient(
-            file, patientId, Document.DocumentType.PRESCRIPTION, description, username, userType);
-            
+            String username = authentication.getName();
+            String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
+
+            Document document = documentService.uploadDocumentForPatient(
+                    file, patientId, Document.DocumentType.PRESCRIPTION, description, username, userType);
+
             Map<String, Object> response = createDocumentResponse(document);
             return ResponseEntity.ok(response);
         } catch (IOException e) {
@@ -368,10 +373,10 @@ public class PatientController {
             UserDto userDto = userService.getUserByUsername(authentication.getName());
             String username = authentication.getName();
             String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
-            
+
             Document document = documentService.uploadDocumentForPatient(
-                file, patientId, Document.DocumentType.LAB_REPORT, description, username, userType);
-            
+                    file, patientId, Document.DocumentType.LAB_REPORT, description, username, userType);
+
             Map<String, Object> response = createDocumentResponse(document);
             return ResponseEntity.ok(response);
         } catch (IOException e) {
@@ -397,10 +402,10 @@ public class PatientController {
             UserDto userDto = userService.getUserByUsername(authentication.getName());
             String username = authentication.getName();
             String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
-            
+
             Document document = documentService.uploadDocumentForPatient(
-                file, patientId, Document.DocumentType.INSURANCE_DOCUMENT, description, username, userType);
-            
+                    file, patientId, Document.DocumentType.INSURANCE_DOCUMENT, description, username, userType);
+
             Map<String, Object> response = createDocumentResponse(document);
             return ResponseEntity.ok(response);
         } catch (IOException e) {
@@ -426,10 +431,10 @@ public class PatientController {
             UserDto userDto = userService.getUserByUsername(authentication.getName());
             String username = authentication.getName();
             String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
-            
+
             Document document = documentService.uploadDocumentForPatient(
-                file, patientId, Document.DocumentType.IDENTIFICATION, description, username, userType);
-            
+                    file, patientId, Document.DocumentType.IDENTIFICATION, description, username, userType);
+
             Map<String, Object> response = createDocumentResponse(document);
             return ResponseEntity.ok(response);
         } catch (IOException e) {
@@ -480,7 +485,7 @@ public class PatientController {
     public ResponseEntity<List<Document>> getPatientProfileImage(@PathVariable Long patientId) {
         try {
             List<Document> documents = documentService.getDocumentsByPatientIdAndType(
-                patientId, Document.DocumentType.PROFILE_IMAGE);
+                    patientId, Document.DocumentType.PROFILE_IMAGE);
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();

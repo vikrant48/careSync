@@ -11,8 +11,8 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@ToString(exclude = {"doctor", "patient", "feedback"})
-@EqualsAndHashCode(exclude = {"doctor", "patient", "feedback"})
+@ToString(exclude = { "doctor", "patient", "feedback" })
+@EqualsAndHashCode(exclude = { "doctor", "patient", "feedback" })
 @Entity
 @Table(name = "appointments")
 public class Appointment {
@@ -57,7 +57,7 @@ public class Appointment {
     private Feedback feedback;
 
     public enum Status {
-        BOOKED, SCHEDULED, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED
+        BOOKED, SCHEDULED, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED, CANCELLED_BY_PATIENT, CANCELLED_BY_DOCTOR
     }
 
     @PrePersist
@@ -78,14 +78,15 @@ public class Appointment {
 
     // Helper method to check if status can be changed
     public boolean canChangeStatus(Status newStatus) {
-        if (status == Status.CANCELLED) {
+        if (status == Status.CANCELLED || status == Status.CANCELLED_BY_PATIENT
+                || status == Status.CANCELLED_BY_DOCTOR) {
             return false; // Cannot change cancelled appointments
         }
-        
+
         if (status == Status.COMPLETED && newStatus != Status.COMPLETED) {
             return false; // Cannot change completed appointments
         }
-        
+
         return true;
     }
 
@@ -94,7 +95,7 @@ public class Appointment {
         if (!canChangeStatus(newStatus)) {
             throw new IllegalStateException("Cannot change status from " + status + " to " + newStatus);
         }
-        
+
         this.status = newStatus;
         this.statusChangedAt = LocalDateTime.now();
         this.statusChangedBy = changedBy;

@@ -64,7 +64,8 @@ public class SecurityService {
         if (isIPBlocked(ipAddress)) {
             return;
         }
-        long failedAttempts = loginAttemptRepository.countFailedAttemptsByIP(ipAddress, Instant.now().minusMillis(loginAttemptWindowMs));
+        long failedAttempts = loginAttemptRepository.countFailedAttemptsByIP(ipAddress,
+                Instant.now().minusMillis(loginAttemptWindowMs));
         if (failedAttempts >= maxLoginAttempts) {
             BlockedIP blockedIP = BlockedIP.builder()
                     .ipAddress(ipAddress)
