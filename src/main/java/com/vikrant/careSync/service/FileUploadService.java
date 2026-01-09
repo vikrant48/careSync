@@ -1,7 +1,7 @@
 package com.vikrant.careSync.service;
 
 import com.vikrant.careSync.constants.AppConstants;
-import com.vikrant.careSync.service.CloudinaryService;
+import com.vikrant.careSync.service.SupabaseStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -18,7 +18,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class FileUploadService {
 
-    private final CloudinaryService cloudinaryService;
+    private final SupabaseStorageService supabaseStorageService;
 
     // Using constants from AppConstants instead of @Value annotations
     private static final long MAX_FILE_SIZE = AppConstants.Config.MAX_FILE_SIZE;
@@ -27,35 +27,36 @@ public class FileUploadService {
 
     public String uploadCertificate(MultipartFile file, Long doctorId) throws IOException {
         validateFile(file);
-        return cloudinaryService.uploadFile(file, CloudinaryService.FileType.CERTIFICATE, doctorId);
+        return supabaseStorageService.uploadFile(file, SupabaseStorageService.FileType.CERTIFICATE, doctorId);
     }
 
     public String uploadProfileImage(MultipartFile file, Long userId, String userType) throws IOException {
         validateProfileImageFile(file);
-        return cloudinaryService.uploadFile(file, CloudinaryService.FileType.PROFILE_IMAGE, userId);
+        return supabaseStorageService.uploadFile(file, SupabaseStorageService.FileType.PROFILE_IMAGE, userId);
     }
 
     public String uploadMedicalDocument(MultipartFile file, Long patientId) throws IOException {
         validateFile(file);
-        return cloudinaryService.uploadFile(file, CloudinaryService.FileType.MEDICAL_DOCUMENT, patientId);
+        return supabaseStorageService.uploadFile(file, SupabaseStorageService.FileType.MEDICAL_DOCUMENT, patientId);
     }
 
-    public void deleteFile(String cloudinaryUrl) throws IOException {
-        String publicId = cloudinaryService.extractPublicId(cloudinaryUrl);
-        if (publicId != null) {
-            cloudinaryService.deleteFile(publicId);
+    public void deleteFile(String fileUrl) throws IOException {
+        String key = supabaseStorageService.extractKey(fileUrl);
+        if (key != null) {
+            supabaseStorageService.deleteFile(key);
         }
     }
 
-    public boolean fileExists(String cloudinaryUrl) {
-        String publicId = cloudinaryService.extractPublicId(cloudinaryUrl);
-        return publicId != null && cloudinaryService.fileExists(publicId);
+    public boolean fileExists(String fileUrl) {
+        String key = supabaseStorageService.extractKey(fileUrl);
+        return key != null && supabaseStorageService.fileExists(key);
     }
 
-    public long getFileSize(String cloudinaryUrl) throws IOException {
-        // For Cloudinary URLs, we can't easily get file size without additional API calls
-        // This would require implementing a separate method in CloudinaryService
-        log.warn("File size retrieval not implemented for Cloudinary URLs: {}", cloudinaryUrl);
+    public long getFileSize(String fileUrl) throws IOException {
+        // For Supabase URLs, we can't easily get file size without additional API
+        // calls
+        // This would require implementing a separate method in SupabaseStorageService
+        log.warn("File size retrieval not implemented for Supabase URLs: {}", fileUrl);
         return 0;
     }
 
@@ -65,7 +66,8 @@ public class FileUploadService {
         }
 
         if (file.getSize() > MAX_FILE_SIZE) {
-            throw new IllegalArgumentException("File size exceeds maximum allowed size of " + (MAX_FILE_SIZE / 1024 / 1024) + "MB");
+            throw new IllegalArgumentException(
+                    "File size exceeds maximum allowed size of " + (MAX_FILE_SIZE / 1024 / 1024) + "MB");
         }
 
         String originalFilename = file.getOriginalFilename();
@@ -75,7 +77,8 @@ public class FileUploadService {
 
         String extension = getFileExtension(originalFilename);
         if (!isDocumentExtensionAllowed(extension)) {
-            throw new IllegalArgumentException("File type not allowed. Allowed types: " + String.join(", ", ALLOWED_DOCUMENT_EXTENSIONS));
+            throw new IllegalArgumentException(
+                    "File type not allowed. Allowed types: " + String.join(", ", ALLOWED_DOCUMENT_EXTENSIONS));
         }
     }
 
@@ -84,8 +87,8 @@ public class FileUploadService {
         if (originalFilename != null) {
             String extension = getFileExtension(originalFilename);
             if (!isImageExtensionAllowed(extension)) {
-                throw new IllegalArgumentException("Only image files (" + 
-                    String.join(", ", ALLOWED_IMAGE_EXTENSIONS) + ") are allowed");
+                throw new IllegalArgumentException("Only image files (" +
+                        String.join(", ", ALLOWED_IMAGE_EXTENSIONS) + ") are allowed");
             }
         }
     }
@@ -96,7 +99,8 @@ public class FileUploadService {
         }
 
         if (file.getSize() > MAX_FILE_SIZE) {
-            throw new IllegalArgumentException("File size exceeds maximum allowed size of " + (MAX_FILE_SIZE / 1024 / 1024) + "MB");
+            throw new IllegalArgumentException(
+                    "File size exceeds maximum allowed size of " + (MAX_FILE_SIZE / 1024 / 1024) + "MB");
         }
 
         String originalFilename = file.getOriginalFilename();
@@ -106,8 +110,8 @@ public class FileUploadService {
 
         String extension = getFileExtension(originalFilename);
         if (!isImageExtensionAllowed(extension)) {
-            throw new IllegalArgumentException("Only image files (" + 
-                String.join(", ", ALLOWED_IMAGE_EXTENSIONS) + ") are allowed for profile images");
+            throw new IllegalArgumentException("Only image files (" +
+                    String.join(", ", ALLOWED_IMAGE_EXTENSIONS) + ") are allowed for profile images");
         }
     }
 
@@ -142,24 +146,26 @@ public class FileUploadService {
         String extension = getFileExtension(originalFilename);
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
         String uniqueId = UUID.randomUUID().toString().substring(0, 8);
-        
+
         return String.format("%s_%s_%s_%s.%s", type, userId, timestamp, uniqueId, extension);
     }
 
-    public String getFileUrl(String cloudinaryUrl) {
-        // For Cloudinary URLs, return the URL directly as it's already accessible
-        return cloudinaryUrl;
+    public String getFileUrl(String fileUrl) {
+        // For Supabase URLs, return the URL directly as it's already accessible
+        return fileUrl;
     }
 
-    public byte[] getFileContent(String cloudinaryUrl) throws IOException {
-        // For Cloudinary URLs, we would need to download the file content
-        // This is not commonly needed as Cloudinary URLs are directly accessible
-        throw new UnsupportedOperationException("Direct file content retrieval not supported for Cloudinary URLs. Use the URL directly: " + cloudinaryUrl);
+    public byte[] getFileContent(String fileUrl) throws IOException {
+        // For Supabase URLs, we would need to download the file content
+        // This is not commonly needed as URLs are directly accessible
+        throw new UnsupportedOperationException(
+                "Direct file content retrieval not supported for Supabase URLs. Use the URL directly: " + fileUrl);
     }
 
     public void cleanupOrphanedFiles() throws IOException {
-        // This method would clean up files that are no longer referenced in Cloudinary
-        // Implementation would require checking database records against Cloudinary assets
-        log.info("Cloudinary cleanup would require checking database records against Cloudinary assets");
+        // This method would clean up files that are no longer referenced in Supabase
+        // Implementation would require checking database records against Supabase
+        // assets
+        log.info("Supabase cleanup would require checking database records against Supabase assets");
     }
 }

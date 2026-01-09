@@ -93,10 +93,8 @@ public class Document {
     }
 
     public String getDownloadUrl() {
-        // For Cloudinary URLs, we can return the direct URL or use the API endpoint for
-        // tracking
-        // Using API endpoint for download tracking and security
-        return "/api/files/download/" + this.id;
+        // Return direct Supabase URL
+        return this.filePath;
     }
 
     public boolean isImage() {

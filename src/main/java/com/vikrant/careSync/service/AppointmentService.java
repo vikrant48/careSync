@@ -8,9 +8,13 @@ import com.vikrant.careSync.repository.AppointmentRepository;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.PatientRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -24,8 +28,13 @@ public class AppointmentService {
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
     private final NotificationService notificationService;
+    private final DoctorLeaveService doctorLeaveService;
 
     // Only patients can book appointments - status automatically set to BOOKED
+    @Caching(evict = {
+            @CacheEvict(value = "patientData", key = "'upcoming_appointments_' + #patientId"),
+            @CacheEvict(value = "doctorListing", key = "'upcoming_appointments_' + #doctorId")
+    })
     public Appointment bookAppointment(Long doctorId, Long patientId, LocalDateTime appointmentDateTime,
             String reason) {
         Doctor doctor = doctorRepository.findById(doctorId)
@@ -41,6 +50,11 @@ public class AppointmentService {
 
         if (!patient.canBookAppointment()) {
             throw new RuntimeException("Patient account is not active");
+        }
+
+        // Check if doctor is on leave
+        if (doctorLeaveService.isDoctorOnLeave(doctorId, appointmentDateTime.toLocalDate())) {
+            throw new RuntimeException("Doctor is on leave on this date");
         }
 
         // Check if the appointment time is available
@@ -83,6 +97,11 @@ public class AppointmentService {
 
         if (!patient.canBookAppointment()) {
             throw new RuntimeException("Patient account is not active");
+        }
+
+        // Check if doctor is on leave
+        if (doctorLeaveService.isDoctorOnLeave(doctorId, LocalDate.now())) {
+            throw new RuntimeException("Doctor is currently on leave");
         }
 
         // Set appointment time to current time (emergency booking)
@@ -138,10 +157,12 @@ public class AppointmentService {
         return appointmentRepository.findByPatientIdWithPatientAndDoctorDetails(patientId);
     }
 
+    @Cacheable(value = "doctorListing", key = "'upcoming_appointments_' + #doctorId")
     public List<Appointment> getUpcomingAppointmentsByDoctor(Long doctorId) {
         return appointmentRepository.findUpcomingAppointmentsByDoctorWithDetails(doctorId, LocalDateTime.now());
     }
 
+    @Cacheable(value = "patientData", key = "'upcoming_appointments_' + #patientId")
     public List<Appointment> getUpcomingAppointmentsByPatient(Long patientId) {
         return appointmentRepository.findUpcomingAppointmentsByPatientWithDetails(patientId, LocalDateTime.now());
     }
@@ -196,6 +217,7 @@ public class AppointmentService {
     }
 
     // Update appointment status (for doctors and patients)
+    @CacheEvict(value = { "patientData", "doctorListing", "analytics" }, allEntries = true)
     public Appointment updateAppointmentStatus(Long appointmentId, Appointment.Status newStatus, User currentUser) {
         Appointment appointment = appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
@@ -366,7 +388,7 @@ public class AppointmentService {
 
     public List<Appointment> getTodayAppointments(Long doctorId) {
         LocalDateTime today = LocalDateTime.now();
-        return getDoctorAppointmentsByDate(doctorId, today);
+        return appointmentRepository.findTodayAppointmentsByDoctorWithDetails(doctorId, today);
     }
 
     public List<Appointment> getAppointmentsByDateRange(Long doctorId, LocalDateTime startDate, LocalDateTime endDate) {
@@ -391,18 +413,40 @@ public class AppointmentService {
     }
 
     public List<String> getAvailableSlots(Long doctorId, String date) {
+        // First check if doctor is on leave on this date
+        LocalDate requestedLocalDate = LocalDate.parse(date);
+        if (doctorLeaveService.isDoctorOnLeave(doctorId, requestedLocalDate)) {
+            return new java.util.ArrayList<>(); // No slots available if on leave
+        }
+
         // Generate all possible 30-minute slots for doctor working hours
-        // Morning: 9:00 AM - 1:00 PM (9:00-13:00)
-        // Afternoon: 2:00 PM - 6:00 PM (14:00-18:00)
         List<String> allSlots = generateDoctorWorkingSlots();
 
         // Get existing appointments for the date
         LocalDateTime dateTime = LocalDateTime.parse(date + "T00:00:00");
         List<Appointment> existingAppointments = getDoctorAppointmentsByDate(doctorId, dateTime);
 
-        // Filter out booked and confirmed slots
+        // If the date is today, filter out past slots
+        java.time.LocalDate requestedDate = dateTime.toLocalDate();
+        java.time.LocalDate today = java.time.LocalDate.now();
+        java.time.LocalTime now = java.time.LocalTime.now();
+
+        // Filter out booked/confirmed slots and past slots if today
         return allSlots.stream()
-                .filter(slot -> !isSlotUnavailable(existingAppointments, slot))
+                .filter(slot -> {
+                    // Check if slot is already taken
+                    if (isSlotUnavailable(existingAppointments, slot)) {
+                        return false;
+                    }
+
+                    // If today, check if slot is in the future
+                    if (requestedDate.equals(today)) {
+                        java.time.LocalTime slotTime = java.time.LocalTime.parse(slot);
+                        return slotTime.isAfter(now);
+                    }
+
+                    return true;
+                })
                 .toList();
     }
 

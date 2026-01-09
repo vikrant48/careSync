@@ -31,6 +31,8 @@ public class DoctorDto {
     private List<ExperienceDto> experiences;
     private List<EducationDto> educations;
     private List<CertificateDto> certificates;
+    private Double averageRating;
+    private Long reviewCount;
 
     public DoctorDto(Doctor doctor) {
         this.id = doctor.getId();
@@ -47,20 +49,23 @@ public class DoctorDto {
         this.gender = doctor.getGender();
         this.consultationFees = doctor.getConsultationFees();
         this.address = doctor.getAddress();
-        this.languages = doctor.getLanguages() != null ? java.util.Arrays.stream(doctor.getLanguages().split(",")).map(String::trim).filter(s -> !s.isEmpty()).collect(java.util.stream.Collectors.toList()) : null;
-        
+        this.languages = doctor.getLanguages() != null
+                ? java.util.Arrays.stream(doctor.getLanguages().split(",")).map(String::trim).filter(s -> !s.isEmpty())
+                        .collect(java.util.stream.Collectors.toList())
+                : null;
+
         if (doctor.getExperiences() != null) {
             this.experiences = doctor.getExperiences().stream()
                     .map(ExperienceDto::new)
                     .collect(Collectors.toList());
         }
-        
+
         if (doctor.getEducations() != null) {
             this.educations = doctor.getEducations().stream()
                     .map(EducationDto::new)
                     .collect(Collectors.toList());
         }
-        
+
         if (doctor.getCertificates() != null) {
             this.certificates = doctor.getCertificates().stream()
                     .map(CertificateDto::new)

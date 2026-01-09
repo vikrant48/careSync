@@ -52,9 +52,17 @@ public class Appointment {
     @Column(name = "status_changed_by")
     private String statusChangedBy;
 
+    @Column(name = "video_room_id", unique = true, length = 50)
+    @Builder.Default
+    private String videoRoomId = java.util.UUID.randomUUID().toString();
+
     @OneToOne(mappedBy = "appointment", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JsonIgnore
     private Feedback feedback;
+
+    @Column(name = "is_active", nullable = false, columnDefinition = "boolean default true")
+    @Builder.Default
+    private Boolean isActive = true;
 
     public enum Status {
         BOOKED, SCHEDULED, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED, CANCELLED_BY_PATIENT, CANCELLED_BY_DOCTOR
@@ -67,6 +75,12 @@ public class Appointment {
         if (status == null) {
             status = Status.BOOKED;
         }
+        if (videoRoomId == null) {
+            videoRoomId = java.util.UUID.randomUUID().toString();
+        }
+        if (isActive == null) {
+            isActive = true;
+        }
         statusChangedAt = LocalDateTime.now();
         statusChangedBy = "SYSTEM";
     }
@@ -78,6 +92,9 @@ public class Appointment {
 
     // Helper method to check if status can be changed
     public boolean canChangeStatus(Status newStatus) {
+        if (Boolean.FALSE.equals(isActive)) {
+            return false; // Cannot change status if inactive
+        }
         if (status == Status.CANCELLED || status == Status.CANCELLED_BY_PATIENT
                 || status == Status.CANCELLED_BY_DOCTOR) {
             return false; // Cannot change cancelled appointments
@@ -99,5 +116,11 @@ public class Appointment {
         this.status = newStatus;
         this.statusChangedAt = LocalDateTime.now();
         this.statusChangedBy = changedBy;
+
+        // Automatically deactivate if cancelled
+        if (newStatus == Status.CANCELLED || newStatus == Status.CANCELLED_BY_PATIENT
+                || newStatus == Status.CANCELLED_BY_DOCTOR) {
+            this.isActive = false;
+        }
     }
 }

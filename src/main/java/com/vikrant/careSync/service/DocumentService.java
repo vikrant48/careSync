@@ -10,9 +10,12 @@ import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.PatientRepository;
 import com.vikrant.careSync.repository.BookingRepository;
 import com.vikrant.careSync.constants.AppConstants;
+import com.vikrant.careSync.dto.DocumentDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
@@ -25,6 +28,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -35,7 +39,7 @@ public class DocumentService {
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
     private final BookingRepository bookingRepository;
-    private final CloudinaryService cloudinaryService;
+    private final SupabaseStorageService supabaseStorageService;
 
     // Using constants from AppConstants instead of @Value annotation
     private static final long MAX_FILE_SIZE = AppConstants.Config.MAX_FILE_SIZE;
@@ -90,29 +94,30 @@ public class DocumentService {
     /**
      * Core upload method
      */
+    @CacheEvict(value = "patientData", allEntries = true) // Document upload affects listings
     private Document uploadDocument(MultipartFile file, Doctor doctor, Patient patient, Booking booking,
             Document.DocumentType documentType, String description,
             String uploadedByUsername, String uploadedByType) throws IOException {
         // Validate file based on document type
         validateFileByType(file, documentType);
 
-        // Map document type to Cloudinary file type
-        CloudinaryService.FileType cloudinaryFileType = mapDocumentTypeToCloudinaryFileType(documentType);
+        // Map document type to Supabase file type
+        SupabaseStorageService.FileType supabaseFileType = mapDocumentTypeToSupabaseFileType(documentType);
 
         // Determine user ID for folder organization
         Long userId = doctor != null ? doctor.getId() : (patient != null ? patient.getId() : null);
 
-        // Upload to Cloudinary
-        String cloudinaryUrl = cloudinaryService.uploadFile(file, cloudinaryFileType, userId);
+        // Upload to Supabase
+        String supabaseUrl = supabaseStorageService.uploadFile(file, supabaseFileType, userId);
 
-        // Extract public ID from Cloudinary URL for future reference
-        String publicId = cloudinaryService.extractPublicId(cloudinaryUrl);
+        // Extract key from URL
+        String fileKey = supabaseStorageService.extractKey(supabaseUrl);
 
         // Create document metadata
         Document document = Document.builder()
                 .originalFilename(file.getOriginalFilename())
-                .storedFilename(publicId) // Store Cloudinary public ID
-                .filePath(cloudinaryUrl) // Store Cloudinary URL
+                .storedFilename(fileKey) // Store Supabase key
+                .filePath(supabaseUrl) // Store Supabase URL
                 .fileSize(file.getSize())
                 .contentType(file.getContentType())
                 .documentType(documentType)
@@ -128,7 +133,7 @@ public class DocumentService {
         // Save to database
         Document savedDocument = documentRepository.save(document);
 
-        log.info("Document uploaded successfully to Cloudinary: {} for {} {}",
+        log.info("Document uploaded successfully to Supabase: {} for {} {}",
                 savedDocument.getOriginalFilename(),
                 doctor != null ? "doctor" : "patient",
                 doctor != null ? doctor.getId() : patient.getId());
@@ -143,16 +148,24 @@ public class DocumentService {
         return documentRepository.findById(id);
     }
 
-    /**
-     * Get documents by doctor ID
-     */
+    @Cacheable(value = "doctorListing", key = "'docs_' + #doctorId")
+    public List<DocumentDto> getDocumentsDtoByDoctorId(Long doctorId) {
+        return documentRepository.findByDoctorId(doctorId).stream()
+                .map(doc -> new DocumentDto(doc, doc.getFilePath(), doc.getFilePath()))
+                .collect(Collectors.toList());
+    }
+
+    @Cacheable(value = "patientData", key = "'docs_' + #patientId")
+    public List<DocumentDto> getDocumentsDtoByPatientId(Long patientId) {
+        return documentRepository.findByPatientId(patientId).stream()
+                .map(doc -> new DocumentDto(doc, doc.getFilePath(), doc.getFilePath()))
+                .collect(Collectors.toList());
+    }
+
     public List<Document> getDocumentsByDoctorId(Long doctorId) {
         return documentRepository.findByDoctorId(doctorId);
     }
 
-    /**
-     * Get documents by patient ID
-     */
     public List<Document> getDocumentsByPatientId(Long patientId) {
         return documentRepository.findByPatientId(patientId);
     }
@@ -178,20 +191,21 @@ public class DocumentService {
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new RuntimeException("Document not found with id: " + documentId));
 
-        // For Cloudinary URLs, create a URL resource directly
-        URL cloudinaryUrl = new URL(document.getFilePath());
-        Resource resource = new UrlResource(cloudinaryUrl);
+        // For Supabase URLs, create a URL resource directly
+        URL supabaseUrl = new URL(document.getFilePath());
+        Resource resource = new UrlResource(supabaseUrl);
 
         if (resource.exists() && resource.isReadable()) {
             return resource;
         } else {
-            throw new IOException("File not found or not readable from Cloudinary: " + document.getFilePath());
+            throw new IOException("File not found or not readable from Supabase: " + document.getFilePath());
         }
     }
 
     /**
      * Delete document (soft delete)
      */
+    @CacheEvict(value = { "patientData", "doctorListing" }, allEntries = true)
     public void deleteDocument(Long documentId) throws IOException {
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new RuntimeException("Document not found with id: " + documentId));
@@ -200,12 +214,12 @@ public class DocumentService {
         document.setIsActive(false);
         documentRepository.save(document);
 
-        // Delete file from Cloudinary using the stored filename (public_id)
+        // Delete file from Supabase using the stored filename (key)
         try {
-            cloudinaryService.deleteFile(document.getStoredFilename());
-            log.info("File deleted from Cloudinary: {}", document.getStoredFilename());
+            supabaseStorageService.deleteFile(document.getStoredFilename());
+            log.info("File deleted from Supabase: {}", document.getStoredFilename());
         } catch (Exception e) {
-            log.warn("Failed to delete file from Cloudinary: {}", document.getStoredFilename(), e);
+            log.warn("Failed to delete file from Supabase: {}", document.getStoredFilename(), e);
         }
     }
 
@@ -251,12 +265,12 @@ public class DocumentService {
         // Validate extension based on document type
         if (documentType == Document.DocumentType.PROFILE_IMAGE) {
             if (!isImageExtensionAllowed(extension)) {
-                throw new IllegalArgumentException("File type not allowed. Allowed types: " +
+                throw new IllegalArgumentException("File type (." + extension + ") not allowed. Allowed types: " +
                         String.join(", ", ALLOWED_IMAGE_EXTENSIONS));
             }
         } else {
             if (!isDocumentExtensionAllowed(extension)) {
-                throw new IllegalArgumentException("File type not allowed. Allowed types: " +
+                throw new IllegalArgumentException("File type (." + extension + ") not allowed. Allowed types: " +
                         String.join(", ", ALLOWED_DOCUMENT_EXTENSIONS));
             }
         }
@@ -288,7 +302,7 @@ public class DocumentService {
 
         String extension = getFileExtension(filename);
         if (!isDocumentExtensionAllowed(extension)) {
-            throw new IllegalArgumentException("File type not allowed. Allowed types: " +
+            throw new IllegalArgumentException("File type (." + extension + ") not allowed. Allowed types: " +
                     String.join(", ", ALLOWED_DOCUMENT_EXTENSIONS));
         }
 
@@ -362,32 +376,36 @@ public class DocumentService {
     }
 
     /**
-     * Map document type to Cloudinary file type
+     * Map document type to Supabase file type
      */
-    private CloudinaryService.FileType mapDocumentTypeToCloudinaryFileType(Document.DocumentType documentType) {
+    private SupabaseStorageService.FileType mapDocumentTypeToSupabaseFileType(Document.DocumentType documentType) {
         return switch (documentType) {
-            case PROFILE_IMAGE -> CloudinaryService.FileType.PROFILE_IMAGE;
-            case CERTIFICATE -> CloudinaryService.FileType.CERTIFICATE;
-            case MEDICAL_DOCUMENT -> CloudinaryService.FileType.MEDICAL_DOCUMENT;
-            case PRESCRIPTION -> CloudinaryService.FileType.PRESCRIPTION;
-            case LAB_REPORT -> CloudinaryService.FileType.LAB_REPORT;
-            case INSURANCE_DOCUMENT -> CloudinaryService.FileType.INSURANCE_DOCUMENT;
-            case IDENTIFICATION -> CloudinaryService.FileType.IDENTIFICATION;
-            case OTHER -> CloudinaryService.FileType.OTHER;
+            case PROFILE_IMAGE -> SupabaseStorageService.FileType.PROFILE_IMAGE;
+            case CERTIFICATE -> SupabaseStorageService.FileType.CERTIFICATE;
+            case MEDICAL_DOCUMENT -> SupabaseStorageService.FileType.MEDICAL_DOCUMENT;
+            case PRESCRIPTION -> SupabaseStorageService.FileType.PRESCRIPTION;
+            case LAB_REPORT -> SupabaseStorageService.FileType.LAB_REPORT;
+            case INSURANCE_DOCUMENT -> SupabaseStorageService.FileType.INSURANCE_DOCUMENT;
+            case IDENTIFICATION -> SupabaseStorageService.FileType.IDENTIFICATION;
+            case OTHER -> SupabaseStorageService.FileType.OTHER;
         };
     }
 
     /**
-     * Get file URL for frontend access
+     * Get file URL for frontend access (Direct Supabase URL)
      */
     public String getFileUrl(Long documentId) {
-        return "/api/files/view/" + documentId;
+        return documentRepository.findById(documentId)
+                .map(Document::getFilePath)
+                .orElse("/api/files/view/" + documentId);
     }
 
     /**
-     * Get download URL for frontend access
+     * Get download URL for frontend access (Direct Supabase URL)
      */
     public String getDownloadUrl(Long documentId) {
-        return "/api/files/download/" + documentId;
+        return documentRepository.findById(documentId)
+                .map(Document::getFilePath)
+                .orElse("/api/files/download/" + documentId);
     }
 }

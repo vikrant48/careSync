@@ -5,7 +5,12 @@ import com.vikrant.careSync.entity.MedicalHistory;
 import com.vikrant.careSync.repository.PatientRepository;
 import com.vikrant.careSync.repository.MedicalHistoryRepository;
 import com.vikrant.careSync.service.interfaces.IPatientService;
+import com.vikrant.careSync.dto.PatientDto;
+import com.vikrant.careSync.dto.MedicalHistoryDto;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -24,6 +29,16 @@ public class PatientService implements IPatientService {
         return patientRepository.findAll();
     }
 
+    @Cacheable(value = "patientData", key = "'id_' + #id")
+    public Optional<PatientDto> getPatientDtoById(Long id) {
+        return patientRepository.findById(id).map(PatientDto::new);
+    }
+
+    @Cacheable(value = "patientData", key = "'username_' + #username")
+    public Optional<PatientDto> getPatientDtoByUsername(String username) {
+        return patientRepository.findByUsername(username).map(PatientDto::new);
+    }
+
     public Optional<Patient> getPatientById(Long id) {
         return patientRepository.findById(id);
     }
@@ -32,6 +47,10 @@ public class PatientService implements IPatientService {
         return patientRepository.findByUsername(username);
     }
 
+    @Caching(evict = {
+            @CacheEvict(value = "patientData", key = "'id_' + #patientId"),
+            @CacheEvict(value = "patientData", key = "'username_' + #updatedPatient.username")
+    })
     public Patient updatePatientProfile(Long patientId, Patient updatedPatient) {
         Patient patient = patientRepository.findById(patientId)
                 .orElseThrow(() -> new RuntimeException("Patient not found"));
@@ -54,6 +73,7 @@ public class PatientService implements IPatientService {
     }
 
     // Medical History Management
+    @CacheEvict(value = "patientData", key = "'history_' + #patientId")
     public MedicalHistory addMedicalHistory(Long patientId, MedicalHistory medicalHistory) {
         Patient patient = patientRepository.findById(patientId)
                 .orElseThrow(() -> new RuntimeException("Patient not found"));
@@ -62,10 +82,19 @@ public class PatientService implements IPatientService {
         return medicalHistoryRepository.save(medicalHistory);
     }
 
+    @Cacheable(value = "patientData", key = "'history_' + #patientId")
+    public List<MedicalHistoryDto> getPatientMedicalHistoryDto(Long patientId) {
+        return medicalHistoryRepository.findByPatientId(patientId).stream()
+                .map(MedicalHistoryDto::new)
+                .toList();
+    }
+
     public List<MedicalHistory> getPatientMedicalHistory(Long patientId) {
         return medicalHistoryRepository.findByPatientId(patientId);
     }
 
+    @CacheEvict(value = "patientData", allEntries = true) // Safer since we don't have patientId here easily without
+                                                          // fetching
     public MedicalHistory updateMedicalHistory(Long historyId, MedicalHistory updatedHistory) {
         MedicalHistory history = medicalHistoryRepository.findById(historyId)
                 .orElseThrow(() -> new RuntimeException("Medical history not found"));

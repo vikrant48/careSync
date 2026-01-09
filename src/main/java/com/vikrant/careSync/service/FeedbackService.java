@@ -11,6 +11,7 @@ import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.PatientRepository;
 import com.vikrant.careSync.service.interfaces.IFeedbackService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -97,27 +98,28 @@ public class FeedbackService implements IFeedbackService {
         feedbackRepository.delete(feedback);
     }
 
+    @Cacheable(value = "analytics", key = "'doctor_rating_' + #doctorId")
     public double getAverageRatingByDoctor(Long doctorId) {
         List<Feedback> feedbacks = feedbackRepository.findByDoctorId(doctorId);
         if (feedbacks.isEmpty()) {
             return 0.0;
         }
-        
+
         double totalRating = feedbacks.stream()
                 .mapToInt(Feedback::getRating)
                 .sum();
-        
+
         return (double) totalRating / feedbacks.size();
     }
 
+    @Cacheable(value = "analytics", key = "'doctor_rating_dist_' + #doctorId")
     public Map<Integer, Long> getRatingDistributionByDoctor(Long doctorId) {
         List<Feedback> feedbacks = feedbackRepository.findByDoctorId(doctorId);
-        
+
         return feedbacks.stream()
                 .collect(Collectors.groupingBy(
-                    Feedback::getRating,
-                    Collectors.counting()
-                ));
+                        Feedback::getRating,
+                        Collectors.counting()));
     }
 
     public Feedback submitFeedback(Long appointmentId, Long patientId, int rating, String comment) {
@@ -171,7 +173,8 @@ public class FeedbackService implements IFeedbackService {
     @Override
     public List<PatientAppointmentResponse> getPendingFeedbackAppointmentsForPatient(Long patientId) {
         // Get completed appointments for the patient
-        List<Appointment> completed = appointmentRepository.findByPatientIdAndStatus(patientId, Appointment.Status.COMPLETED);
+        List<Appointment> completed = appointmentRepository.findByPatientIdAndStatus(patientId,
+                Appointment.Status.COMPLETED);
         // Filter out appointments that already have feedback
         List<Appointment> pending = completed.stream()
                 .filter(a -> feedbackRepository.findByAppointmentId(a.getId()).isEmpty())

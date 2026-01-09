@@ -7,14 +7,15 @@ import com.vikrant.careSync.entity.Document;
 import com.vikrant.careSync.dto.UpdatePatientRequest;
 import com.vikrant.careSync.dto.CreateMedicalHistoryRequest;
 import com.vikrant.careSync.dto.PatientDto;
+import com.vikrant.careSync.dto.MedicalHistoryDto;
+import com.vikrant.careSync.dto.DocumentDto;
 import com.vikrant.careSync.service.interfaces.IPatientService;
 import com.vikrant.careSync.service.interfaces.IMedicalHistoryService;
 import com.vikrant.careSync.service.DocumentService;
 import com.vikrant.careSync.service.UserService;
 import com.vikrant.careSync.dto.UserDto;
-import com.vikrant.careSync.repository.DoctorRepository;
-import com.vikrant.careSync.repository.PatientRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -28,53 +29,60 @@ import java.util.Map;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/patients")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "${app.cors.allowed-origins}")
+@Slf4j
 public class PatientController {
 
     private final IPatientService patientService;
     private final IMedicalHistoryService medicalHistoryService;
     private final DocumentService documentService;
     private final UserService userService;
-    private final DoctorRepository doctorRepository;
-    private final PatientRepository patientRepository;
 
     @GetMapping
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<List<Patient>> getAllPatients() {
-        List<Patient> patients = patientService.getAllPatients();
+    public ResponseEntity<List<PatientDto>> getAllPatients() {
+        List<PatientDto> patients = patientService.getAllPatients().stream()
+                .map(PatientDto::new)
+                .collect(Collectors.toList());
         return ResponseEntity.ok(patients);
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT')")
-    public ResponseEntity<Patient> getPatientById(@PathVariable Long id) {
-        Optional<Patient> patient = patientService.getPatientById(id);
+    public ResponseEntity<PatientDto> getPatientById(@PathVariable Long id) {
+        Optional<PatientDto> patient = patientService.getPatientById(id)
+                .map(PatientDto::new);
         return patient.map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/username/{username}")
-    public ResponseEntity<Patient> getPatientByUsername(@PathVariable String username) {
-        Optional<Patient> patient = patientService.getPatientByUsername(username);
+    public ResponseEntity<PatientDto> getPatientByUsername(@PathVariable String username) {
+        Optional<PatientDto> patient = patientService.getPatientByUsername(username)
+                .map(PatientDto::new);
         return patient.map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/profile/{username}")
-    @PreAuthorize("hasRole('PATIENT')")
+    @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR') or hasRole('ADMIN')")
     public ResponseEntity<PatientDto> getPatientProfile(@PathVariable String username) {
-        try {
-            Patient patient = patientService.getPatientByUsername(username)
-                    .orElseThrow(() -> new RuntimeException("Patient not found with username: " + username));
-            PatientDto patientDto = new PatientDto(patient);
-            return ResponseEntity.ok(patientDto);
-        } catch (Exception e) {
-            return ResponseEntity.notFound().build();
+        log.info("Fetching profile for username: {} by authenticated user", username);
+        org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        if (auth != null) {
+            log.info("Authenticated user: {}, authorities: {}", auth.getName(), auth.getAuthorities());
+        } else {
+            log.warn("No authentication found in SecurityContext for profile request");
         }
+        return patientService.getPatientDtoByUsername(username)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/{patientId}/complete-data")
@@ -94,11 +102,16 @@ public class PatientController {
             completeData.put("patient", patientDto);
 
             // Medical history
-            List<MedicalHistory> medicalHistory = patientService.getPatientMedicalHistory(patientId);
+            List<MedicalHistoryDto> medicalHistory = patientService.getPatientMedicalHistory(patientId).stream()
+                    .map(MedicalHistoryDto::new)
+                    .collect(Collectors.toList());
             completeData.put("medicalHistory", medicalHistory);
 
             // Documents
-            List<Document> documents = documentService.getDocumentsByPatientId(patientId);
+            List<DocumentDto> documents = documentService.getDocumentsByPatientId(patientId).stream()
+                    .map(doc -> new DocumentDto(doc, documentService.getFileUrl(doc.getId()),
+                            documentService.getDownloadUrl(doc.getId())))
+                    .collect(Collectors.toList());
             completeData.put("documents", documents);
 
             return ResponseEntity.ok(completeData);
@@ -133,8 +146,10 @@ public class PatientController {
 
     @GetMapping("/illness/{illnessKeyword}")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<List<Patient>> getPatientsByIllness(@PathVariable String illnessKeyword) {
-        List<Patient> patients = patientService.getPatientsByIllness(illnessKeyword);
+    public ResponseEntity<List<PatientDto>> getPatientsByIllness(@PathVariable String illnessKeyword) {
+        List<PatientDto> patients = patientService.getPatientsByIllness(illnessKeyword).stream()
+                .map(PatientDto::new)
+                .collect(Collectors.toList());
         return ResponseEntity.ok(patients);
     }
 
@@ -192,7 +207,7 @@ public class PatientController {
     // Medical History Management
     @PostMapping("/{patientId}/medical-history")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<MedicalHistory> addMedicalHistory(@PathVariable Long patientId,
+    public ResponseEntity<MedicalHistoryDto> addMedicalHistory(@PathVariable Long patientId,
             @RequestBody CreateMedicalHistoryRequest request) {
         try {
             MedicalHistory medicalHistory = new MedicalHistory();
@@ -205,7 +220,7 @@ public class PatientController {
             medicalHistory.setNotes(request.getNotes());
 
             MedicalHistory savedHistory = patientService.addMedicalHistory(patientId, medicalHistory);
-            return ResponseEntity.ok(savedHistory);
+            return ResponseEntity.ok(new MedicalHistoryDto(savedHistory));
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
@@ -213,22 +228,26 @@ public class PatientController {
 
     @GetMapping("/{patientId}/medical-history")
     @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT')")
-    public ResponseEntity<List<MedicalHistory>> getPatientMedicalHistory(@PathVariable Long patientId) {
-        List<MedicalHistory> medicalHistories = medicalHistoryService.getMedicalHistoryByPatient(patientId);
+    public ResponseEntity<List<MedicalHistoryDto>> getPatientMedicalHistory(@PathVariable Long patientId) {
+        List<MedicalHistoryDto> medicalHistories = medicalHistoryService.getMedicalHistoryByPatient(patientId).stream()
+                .map(MedicalHistoryDto::new)
+                .collect(Collectors.toList());
         return ResponseEntity.ok(medicalHistories);
     }
 
     @GetMapping("/{patientId}/medical-history/date-range")
     @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT')")
-    public ResponseEntity<List<MedicalHistory>> getMedicalHistoryByDateRange(
+    public ResponseEntity<List<MedicalHistoryDto>> getMedicalHistoryByDateRange(
             @PathVariable Long patientId,
             @RequestParam String startDate,
             @RequestParam String endDate) {
         try {
             LocalDate start = LocalDate.parse(startDate);
             LocalDate end = LocalDate.parse(endDate);
-            List<MedicalHistory> medicalHistories = medicalHistoryService.getMedicalHistoryByDateRange(patientId, start,
-                    end);
+            List<MedicalHistoryDto> medicalHistories = medicalHistoryService
+                    .getMedicalHistoryByDateRange(patientId, start, end).stream()
+                    .map(MedicalHistoryDto::new)
+                    .collect(Collectors.toList());
             return ResponseEntity.ok(medicalHistories);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
@@ -237,7 +256,7 @@ public class PatientController {
 
     @PutMapping("/medical-history/{historyId}")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<MedicalHistory> updateMedicalHistory(@PathVariable Long historyId,
+    public ResponseEntity<MedicalHistoryDto> updateMedicalHistory(@PathVariable Long historyId,
             @RequestBody CreateMedicalHistoryRequest request) {
         try {
             MedicalHistory medicalHistory = new MedicalHistory();
@@ -250,7 +269,7 @@ public class PatientController {
             medicalHistory.setNotes(request.getNotes());
 
             MedicalHistory updatedHistory = medicalHistoryService.updateMedicalHistory(historyId, medicalHistory);
-            return ResponseEntity.ok(updatedHistory);
+            return ResponseEntity.ok(new MedicalHistoryDto(updatedHistory));
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
@@ -451,9 +470,12 @@ public class PatientController {
      */
     @GetMapping("/{patientId}/documents")
     @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR')")
-    public ResponseEntity<List<Document>> getPatientDocuments(@PathVariable Long patientId) {
+    public ResponseEntity<List<DocumentDto>> getPatientDocuments(@PathVariable Long patientId) {
         try {
-            List<Document> documents = documentService.getDocumentsByPatientId(patientId);
+            List<DocumentDto> documents = documentService.getDocumentsByPatientId(patientId).stream()
+                    .map(doc -> new DocumentDto(doc, documentService.getFileUrl(doc.getId()),
+                            documentService.getDownloadUrl(doc.getId())))
+                    .collect(Collectors.toList());
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
@@ -465,12 +487,15 @@ public class PatientController {
      */
     @GetMapping("/{patientId}/documents/type/{documentType}")
     @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR')")
-    public ResponseEntity<List<Document>> getPatientDocumentsByType(
+    public ResponseEntity<List<DocumentDto>> getPatientDocumentsByType(
             @PathVariable Long patientId,
             @PathVariable String documentType) {
         try {
             Document.DocumentType type = Document.DocumentType.valueOf(documentType.toUpperCase());
-            List<Document> documents = documentService.getDocumentsByPatientIdAndType(patientId, type);
+            List<DocumentDto> documents = documentService.getDocumentsByPatientIdAndType(patientId, type).stream()
+                    .map(doc -> new DocumentDto(doc, documentService.getFileUrl(doc.getId()),
+                            documentService.getDownloadUrl(doc.getId())))
+                    .collect(Collectors.toList());
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
@@ -482,10 +507,13 @@ public class PatientController {
      */
     @GetMapping("/{patientId}/profile-image")
     @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR')")
-    public ResponseEntity<List<Document>> getPatientProfileImage(@PathVariable Long patientId) {
+    public ResponseEntity<List<DocumentDto>> getPatientProfileImage(@PathVariable Long patientId) {
         try {
-            List<Document> documents = documentService.getDocumentsByPatientIdAndType(
-                    patientId, Document.DocumentType.PROFILE_IMAGE);
+            List<DocumentDto> documents = documentService.getDocumentsByPatientIdAndType(
+                    patientId, Document.DocumentType.PROFILE_IMAGE).stream()
+                    .map(doc -> new DocumentDto(doc, documentService.getFileUrl(doc.getId()),
+                            documentService.getDownloadUrl(doc.getId())))
+                    .collect(Collectors.toList());
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
@@ -499,9 +527,9 @@ public class PatientController {
         Map<String, Object> response = new HashMap<>();
         response.put("id", document.getId());
         response.put("filename", document.getOriginalFilename());
-        response.put("url", documentService.getFileUrl(document.getId()));
-        response.put("downloadUrl", documentService.getDownloadUrl(document.getId()));
-        response.put("cloudinaryUrl", document.getFileUrl()); // Direct Cloudinary URL
+        response.put("url", document.getFilePath());
+        response.put("downloadUrl", document.getFilePath());
+        response.put("fileUrl", document.getFilePath()); // Direct Supabase URL
         response.put("size", document.getFileSize());
         response.put("uploadDate", document.getUploadDate());
         response.put("description", document.getDescription());

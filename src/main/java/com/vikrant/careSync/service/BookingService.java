@@ -17,6 +17,8 @@ import com.vikrant.careSync.repository.PatientRepository;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.DocumentRepository; // Added
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -55,6 +57,10 @@ public class BookingService {
     /**
      * Create booking with payment for patients (integrated flow)
      */
+    @Caching(evict = {
+            @CacheEvict(value = "analytics", allEntries = true),
+            @CacheEvict(value = "patientData", key = "'financial_' + #currentPatient.id", condition = "#currentPatient != null")
+    })
     public BookingResponse createBookingWithPayment(BookingRequest request, PaymentRequestDto paymentRequest) {
         // Validate authentication
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -149,6 +155,10 @@ public class BookingService {
     /**
      * Create booking for doctors (no payment required)
      */
+    @Caching(evict = {
+            @CacheEvict(value = "analytics", allEntries = true),
+            @CacheEvict(value = "patientData", key = "'financial_' + #request.patientId", condition = "#request.patientId != null")
+    })
     public BookingResponse createDoctorBooking(BookingRequest request) {
         // Validate authentication
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();

@@ -4,7 +4,7 @@ import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Experience;
 import com.vikrant.careSync.entity.Education;
 import com.vikrant.careSync.entity.Certificate;
-import com.vikrant.careSync.dto.UpdateDoctorRequest;
+import com.vikrant.careSync.dto.*;
 
 import java.util.List;
 import java.util.Optional;
@@ -17,27 +17,31 @@ public interface IDoctorService {
 
     /**
      * Retrieve all doctors
+     * 
      * @return List of all doctors
      */
     List<Doctor> getAllDoctors();
 
     /**
      * Get doctor by ID
+     * 
      * @param id Doctor ID
      * @return Optional containing doctor if found
      */
     Optional<Doctor> getDoctorById(Long id);
 
-    /**
-     * Get doctor by username
-     * @param username Doctor username
-     * @return Optional containing doctor if found
-     */
     Optional<Doctor> getDoctorByUsername(String username);
+
+    List<DoctorDto> getAllDoctorsDto();
+
+    Optional<DoctorDto> getDoctorDtoById(Long id);
+
+    Optional<DoctorDto> getDoctorDtoByUsername(String username);
 
     /**
      * Update doctor profile
-     * @param doctorId Doctor ID
+     * 
+     * @param doctorId      Doctor ID
      * @param updatedDoctor Updated doctor information
      * @return Updated doctor
      */
@@ -45,14 +49,16 @@ public interface IDoctorService {
 
     /**
      * Update doctor profile by username
+     * 
      * @param username Doctor username
-     * @param request Update request
+     * @param request  Update request
      * @return Updated doctor
      */
     Doctor updateDoctorProfileByUsername(String username, UpdateDoctorRequest request);
 
     /**
      * Update doctor profile image
+     * 
      * @param doctorId Doctor ID
      * @param imageUrl New image URL
      * @return Updated doctor
@@ -61,6 +67,7 @@ public interface IDoctorService {
 
     /**
      * Update doctor profile image by username
+     * 
      * @param username Doctor username
      * @param imageUrl New image URL
      * @return Updated doctor
@@ -69,7 +76,8 @@ public interface IDoctorService {
 
     /**
      * Add experience to doctor
-     * @param doctorId Doctor ID
+     * 
+     * @param doctorId   Doctor ID
      * @param experience Experience to add
      * @return Added experience
      */
@@ -77,21 +85,20 @@ public interface IDoctorService {
 
     /**
      * Add experience to doctor by username
-     * @param username Doctor username
+     * 
+     * @param username   Doctor username
      * @param experience Experience to add
      * @return Added experience
      */
     Experience addExperienceByUsername(String username, Experience experience);
 
-    /**
-     * Get doctor experiences
-     * @param doctorId Doctor ID
-     * @return List of experiences
-     */
     List<Experience> getDoctorExperiences(Long doctorId);
+
+    List<ExperienceDto> getDoctorExperiencesDto(Long doctorId);
 
     /**
      * Get doctor experiences by username
+     * 
      * @param username Doctor username
      * @return List of experiences
      */
@@ -99,7 +106,8 @@ public interface IDoctorService {
 
     /**
      * Update experience
-     * @param experienceId Experience ID
+     * 
+     * @param experienceId      Experience ID
      * @param updatedExperience Updated experience
      * @return Updated experience
      */
@@ -107,13 +115,15 @@ public interface IDoctorService {
 
     /**
      * Delete experience
+     * 
      * @param experienceId Experience ID
      */
     void deleteExperience(Long experienceId);
 
     /**
      * Add education to doctor
-     * @param doctorId Doctor ID
+     * 
+     * @param doctorId  Doctor ID
      * @param education Education to add
      * @return Added education
      */
@@ -121,21 +131,20 @@ public interface IDoctorService {
 
     /**
      * Add education to doctor by username
-     * @param username Doctor username
+     * 
+     * @param username  Doctor username
      * @param education Education to add
      * @return Added education
      */
     Education addEducationByUsername(String username, Education education);
 
-    /**
-     * Get doctor educations
-     * @param doctorId Doctor ID
-     * @return List of educations
-     */
     List<Education> getDoctorEducations(Long doctorId);
+
+    List<EducationDto> getDoctorEducationsDto(Long doctorId);
 
     /**
      * Get doctor educations by username
+     * 
      * @param username Doctor username
      * @return List of educations
      */
@@ -143,7 +152,8 @@ public interface IDoctorService {
 
     /**
      * Update education
-     * @param educationId Education ID
+     * 
+     * @param educationId      Education ID
      * @param updatedEducation Updated education
      * @return Updated education
      */
@@ -151,13 +161,15 @@ public interface IDoctorService {
 
     /**
      * Delete education
+     * 
      * @param educationId Education ID
      */
     void deleteEducation(Long educationId);
 
     /**
      * Add certificate to doctor
-     * @param doctorId Doctor ID
+     * 
+     * @param doctorId    Doctor ID
      * @param certificate Certificate to add
      * @return Added certificate
      */
@@ -165,21 +177,20 @@ public interface IDoctorService {
 
     /**
      * Add certificate to doctor by username
-     * @param username Doctor username
+     * 
+     * @param username    Doctor username
      * @param certificate Certificate to add
      * @return Added certificate
      */
     Certificate addCertificateByUsername(String username, Certificate certificate);
 
-    /**
-     * Get doctor certificates
-     * @param doctorId Doctor ID
-     * @return List of certificates
-     */
     List<Certificate> getDoctorCertificates(Long doctorId);
+
+    List<CertificateDto> getDoctorCertificatesDto(Long doctorId);
 
     /**
      * Get doctor certificates by username
+     * 
      * @param username Doctor username
      * @return List of certificates
      */
@@ -187,7 +198,8 @@ public interface IDoctorService {
 
     /**
      * Update certificate
-     * @param certificateId Certificate ID
+     * 
+     * @param certificateId      Certificate ID
      * @param updatedCertificate Updated certificate
      * @return Updated certificate
      */
@@ -195,20 +207,23 @@ public interface IDoctorService {
 
     /**
      * Update certificate URL
+     * 
      * @param certificateId Certificate ID
-     * @param url New URL for the certificate
+     * @param url           New URL for the certificate
      * @return Updated certificate
      */
     Certificate updateCertificateUrl(Long certificateId, String url);
 
     /**
      * Delete certificate
+     * 
      * @param certificateId Certificate ID
      */
     void deleteCertificate(Long certificateId);
 
     /**
      * Get doctors by specialization
+     * 
      * @param specialization Specialization
      * @return List of doctors
      */
@@ -216,6 +231,7 @@ public interface IDoctorService {
 
     /**
      * Get doctor profile
+     * 
      * @param username Doctor username
      * @return Doctor profile
      */

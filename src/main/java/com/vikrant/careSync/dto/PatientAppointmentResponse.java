@@ -25,6 +25,8 @@ public class PatientAppointmentResponse {
     private String updatedAt;
     private String statusChangedAt;
     private String statusChangedBy;
+    private String videoRoomId;
+    private Boolean isActive;
 
     private String doctorProfileImageUrl;
 
@@ -57,5 +59,7 @@ public class PatientAppointmentResponse {
                     .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
         }
         this.statusChangedBy = appointment.getStatusChangedBy();
+        this.videoRoomId = appointment.getVideoRoomId();
+        this.isActive = appointment.getIsActive();
     }
 }

@@ -4,18 +4,22 @@ import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Experience;
 import com.vikrant.careSync.entity.Education;
 import com.vikrant.careSync.entity.Certificate;
-import com.vikrant.careSync.dto.UpdateDoctorRequest;
+import com.vikrant.careSync.dto.*;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.ExperienceRepository;
 import com.vikrant.careSync.repository.EducationRepository;
 import com.vikrant.careSync.repository.CertificateRepository;
 import com.vikrant.careSync.service.interfaces.IDoctorService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -25,9 +29,34 @@ public class DoctorService implements IDoctorService {
     private final ExperienceRepository experienceRepository;
     private final EducationRepository educationRepository;
     private final CertificateRepository certificateRepository;
+    private final FeedbackService feedbackService;
+
+    @Cacheable(value = "doctorListing", key = "'all'")
+    public List<DoctorDto> getAllDoctorsDto() {
+        return doctorRepository.findAll().stream()
+                .map(this::convertToDtoWithStats)
+                .collect(Collectors.toList());
+    }
+
+    private DoctorDto convertToDtoWithStats(Doctor doctor) {
+        DoctorDto dto = new DoctorDto(doctor);
+        dto.setAverageRating(feedbackService.getAverageRatingByDoctor(doctor.getId()));
+        dto.setReviewCount(feedbackService.getTotalFeedbacksCount(doctor.getId()));
+        return dto;
+    }
 
     public List<Doctor> getAllDoctors() {
         return doctorRepository.findAll();
+    }
+
+    @Cacheable(value = "doctorListing", key = "'id_' + #id")
+    public Optional<DoctorDto> getDoctorDtoById(Long id) {
+        return doctorRepository.findById(id).map(this::convertToDtoWithStats);
+    }
+
+    @Cacheable(value = "doctorListing", key = "'username_' + #username")
+    public Optional<DoctorDto> getDoctorDtoByUsername(String username) {
+        return doctorRepository.findByUsername(username).map(this::convertToDtoWithStats);
     }
 
     public Optional<Doctor> getDoctorById(Long id) {
@@ -38,6 +67,7 @@ public class DoctorService implements IDoctorService {
         return doctorRepository.findByUsername(username);
     }
 
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public Doctor updateDoctorProfile(Long doctorId, Doctor updatedDoctor) {
         Doctor doctor = doctorRepository.findById(doctorId)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
@@ -114,6 +144,13 @@ public class DoctorService implements IDoctorService {
         return experienceRepository.save(experience);
     }
 
+    @Cacheable(value = "doctorListing", key = "'experience_' + #doctorId")
+    public List<ExperienceDto> getDoctorExperiencesDto(Long doctorId) {
+        return experienceRepository.findByDoctorId(doctorId).stream()
+                .map(ExperienceDto::new)
+                .toList();
+    }
+
     public List<Experience> getDoctorExperiences(Long doctorId) {
         return experienceRepository.findByDoctorId(doctorId);
     }
@@ -155,6 +192,13 @@ public class DoctorService implements IDoctorService {
 
         education.setDoctor(doctor);
         return educationRepository.save(education);
+    }
+
+    @Cacheable(value = "doctorListing", key = "'education_' + #doctorId")
+    public List<EducationDto> getDoctorEducationsDto(Long doctorId) {
+        return educationRepository.findByDoctorId(doctorId).stream()
+                .map(EducationDto::new)
+                .toList();
     }
 
     public List<Education> getDoctorEducations(Long doctorId) {
@@ -200,6 +244,13 @@ public class DoctorService implements IDoctorService {
         return certificateRepository.save(certificate);
     }
 
+    @Cacheable(value = "doctorListing", key = "'certificate_' + #doctorId")
+    public List<CertificateDto> getDoctorCertificatesDto(Long doctorId) {
+        return certificateRepository.findByDoctorId(doctorId).stream()
+                .map(CertificateDto::new)
+                .toList();
+    }
+
     public List<Certificate> getDoctorCertificates(Long doctorId) {
         return certificateRepository.findByDoctorId(doctorId);
     }
@@ -234,6 +285,7 @@ public class DoctorService implements IDoctorService {
         return certificateRepository.save(certificate);
     }
 
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public void deleteCertificate(Long certificateId) {
         certificateRepository.deleteById(certificateId);
     }

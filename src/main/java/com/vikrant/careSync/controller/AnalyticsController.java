@@ -1,7 +1,10 @@
 package com.vikrant.careSync.controller;
 
 import com.vikrant.careSync.service.AnalyticsService;
+import com.vikrant.careSync.dto.OverallAnalyticsDto;
+import com.vikrant.careSync.dto.PatientFinancialStatsDto;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -14,17 +17,18 @@ import java.util.Map;
 @RequestMapping("/api/analytics")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "${app.cors.allowed-origins}")
+@Slf4j
 public class AnalyticsController {
 
     private final AnalyticsService analyticsService;
 
     @GetMapping("/overall")
     @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN')")
-    public ResponseEntity<Map<String, Object>> getOverallAnalytics(
+    public ResponseEntity<OverallAnalyticsDto> getOverallAnalytics(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
         try {
-            Map<String, Object> analysis = analyticsService.getOverallAnalytics(startDate, endDate);
+            OverallAnalyticsDto analysis = analyticsService.getOverallAnalytics(startDate, endDate);
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
@@ -77,7 +81,8 @@ public class AnalyticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
         try {
-            Map<String, Object> analysis = analyticsService.getAppointmentDurationAnalysis(doctorId, startDate, endDate);
+            Map<String, Object> analysis = analyticsService.getAppointmentDurationAnalysis(doctorId, startDate,
+                    endDate);
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
@@ -126,10 +131,25 @@ public class AnalyticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
         try {
-            Map<String, Object> analysis = analyticsService.getCancellationPatternAnalysis(doctorId, startDate, endDate);
+            Map<String, Object> analysis = analyticsService.getCancellationPatternAnalysis(doctorId, startDate,
+                    endDate);
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @GetMapping("/patient/{patientId}/financial")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<?> getPatientFinancialStats(@PathVariable Long patientId) {
+        try {
+            PatientFinancialStatsDto analysis = analyticsService.getPatientFinancialStats(patientId);
+            return ResponseEntity.ok(analysis);
+        } catch (Exception e) {
+            log.error("Error in getPatientFinancialStats for patient {}: {}", patientId, e.getMessage(), e);
+            java.util.Map<String, String> error = new java.util.HashMap<>();
+            error.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
+            return ResponseEntity.badRequest().body(error);
         }
     }
 }

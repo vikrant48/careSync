@@ -7,6 +7,8 @@ import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Patient;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.PatientRepository;
+import com.vikrant.careSync.dto.BlockedIPDto;
+import com.vikrant.careSync.dto.UserSessionDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,6 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -27,9 +30,11 @@ public class AdminController {
     private final PatientRepository patientRepository;
 
     @GetMapping("/blocked-ips")
-    public ResponseEntity<List<BlockedIP>> getAllBlockedIPs() {
+    public ResponseEntity<List<BlockedIPDto>> getAllBlockedIPs() {
         try {
-            List<BlockedIP> blockedIPs = securityService.getAllBlockedIPs();
+            List<BlockedIPDto> blockedIPs = securityService.getAllBlockedIPs().stream()
+                    .map(BlockedIPDto::new)
+                    .collect(Collectors.toList());
             return ResponseEntity.ok(blockedIPs);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
@@ -202,7 +207,9 @@ public class AdminController {
     @GetMapping("/sessions/{username}")
     public ResponseEntity<?> getUserSessions(@PathVariable String username) {
         try {
-            List<UserSession> sessions = securityService.getActiveSessions(username);
+            List<UserSessionDto> sessions = securityService.getActiveSessions(username).stream()
+                    .map(UserSessionDto::new)
+                    .collect(Collectors.toList());
             return ResponseEntity.ok(sessions);
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();

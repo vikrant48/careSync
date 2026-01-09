@@ -30,6 +30,8 @@ public class DoctorAppointmentResponse {
     private String updatedAt;
     private String statusChangedAt;
     private String statusChangedBy;
+    private String videoRoomId;
+    private Boolean isActive;
     private List<PatientMedicalHistoryDto> medicalHistory;
 
     public DoctorAppointmentResponse(Appointment appointment) {
@@ -62,6 +64,8 @@ public class DoctorAppointmentResponse {
                     .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
         }
         this.statusChangedBy = appointment.getStatusChangedBy();
+        this.videoRoomId = appointment.getVideoRoomId();
+        this.isActive = appointment.getIsActive();
 
         // Convert medical history to DTOs
         if (appointment.getPatient() != null && appointment.getPatient().getMedicalHistories() != null) {

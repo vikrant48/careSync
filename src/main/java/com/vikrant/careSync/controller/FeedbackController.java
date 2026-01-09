@@ -44,13 +44,12 @@ public class FeedbackController {
     public ResponseEntity<?> createFeedback(@Valid @RequestBody CreateFeedbackRequest request) {
         try {
             Feedback createdFeedback = feedbackService.submitFeedback(
-                request.getAppointmentId(),
-                request.getDoctorId(),
-                request.getRating(),
-                request.getComment(),
-                request.getAnonymous()
-            );
-            return ResponseEntity.ok(createdFeedback);
+                    request.getAppointmentId(),
+                    request.getDoctorId(),
+                    request.getRating(),
+                    request.getComment(),
+                    request.getAnonymous());
+            return ResponseEntity.ok(new FeedbackDto(createdFeedback));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
@@ -62,7 +61,7 @@ public class FeedbackController {
     public ResponseEntity<?> getFeedbackById(@PathVariable Long id) {
         try {
             Feedback feedback = feedbackService.getFeedbackById(id);
-            return ResponseEntity.ok(feedback);
+            return ResponseEntity.ok(new FeedbackDto(feedback));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
@@ -76,7 +75,8 @@ public class FeedbackController {
     public ResponseEntity<?> getPendingFeedbackForCurrentPatient() {
         try {
             User current = getCurrentPatient();
-            List<PatientAppointmentResponse> pending = feedbackService.getPendingFeedbackAppointmentsForPatient(current.getId());
+            List<PatientAppointmentResponse> pending = feedbackService
+                    .getPendingFeedbackAppointmentsForPatient(current.getId());
             return ResponseEntity.ok(pending);
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
@@ -88,8 +88,10 @@ public class FeedbackController {
     @GetMapping("/doctor/{doctorId}")
     public ResponseEntity<?> getFeedbackByDoctor(@PathVariable Long doctorId) {
         try {
-            List<Feedback> feedbacks = feedbackService.getFeedbackByDoctor(doctorId);
-            return ResponseEntity.ok(feedbacks);
+            List<FeedbackDto> dtos = feedbackService.getFeedbackByDoctor(doctorId).stream()
+                    .map(FeedbackDto::new)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(dtos);
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
@@ -116,7 +118,7 @@ public class FeedbackController {
     public ResponseEntity<?> getFeedbackByAppointment(@PathVariable Long appointmentId) {
         try {
             Feedback feedback = feedbackService.getFeedbackByAppointment(appointmentId);
-            return ResponseEntity.ok(feedback);
+            return ResponseEntity.ok(new FeedbackDto(feedback));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
@@ -130,9 +132,9 @@ public class FeedbackController {
             Feedback feedback = new Feedback();
             feedback.setRating(request.getRating());
             feedback.setComment(request.getComment());
-            
+
             Feedback updatedFeedback = feedbackService.updateFeedback(id, feedback);
-            return ResponseEntity.ok(updatedFeedback);
+            return ResponseEntity.ok(new FeedbackDto(updatedFeedback));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());

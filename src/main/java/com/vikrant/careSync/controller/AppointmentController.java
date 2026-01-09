@@ -4,6 +4,7 @@ import com.vikrant.careSync.dto.AppointmentResponse;
 import com.vikrant.careSync.dto.CreateAppointmentRequest;
 import com.vikrant.careSync.dto.DoctorAppointmentResponse;
 import com.vikrant.careSync.dto.PatientAppointmentResponse;
+import com.vikrant.careSync.dto.UserDto;
 import com.vikrant.careSync.entity.Appointment;
 import com.vikrant.careSync.entity.User;
 import com.vikrant.careSync.repository.DoctorRepository;
@@ -370,16 +371,12 @@ public class AppointmentController {
             User currentUser = getCurrentDoctor();
             List<Appointment> appointments = appointmentService.getAppointmentsByDoctor(currentUser.getId());
 
-            // Get unique patients from appointments
-            List<User> uniquePatients = appointments.stream()
+            // Get unique patients from appointments and map to UserDto
+            List<UserDto> uniquePatients = appointments.stream()
                     .map(Appointment::getPatient)
                     .distinct()
+                    .map(UserDto::new)
                     .collect(Collectors.toList());
-
-            // If no patients found, return empty list instead of error
-            if (uniquePatients.isEmpty()) {
-                return ResponseEntity.ok(uniquePatients);
-            }
 
             return ResponseEntity.ok(uniquePatients);
         } catch (Exception e) {

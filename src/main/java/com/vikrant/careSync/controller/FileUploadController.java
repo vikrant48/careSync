@@ -8,6 +8,7 @@ import com.vikrant.careSync.service.UserService;
 import com.vikrant.careSync.service.DoctorService;
 import com.vikrant.careSync.service.PatientService;
 import com.vikrant.careSync.dto.UserDto;
+import com.vikrant.careSync.dto.DocumentDto;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.PatientRepository;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/files")
@@ -54,16 +56,16 @@ public class FileUploadController {
             Document document = documentService.uploadDocumentForDoctor(
                     file, doctorId, Document.DocumentType.CERTIFICATE, description, username, userType);
 
-            String cloudinaryUrl = document.getFileUrl();
+            String fileUrl = document.getFilePath();
             Certificate savedCertificate;
 
             if (certificateId != null) {
                 // Update existing certificate with new file URL
-                savedCertificate = doctorService.updateCertificateUrl(certificateId, cloudinaryUrl);
+                savedCertificate = doctorService.updateCertificateUrl(certificateId, fileUrl);
             } else {
-                // Create a new certificate record with Cloudinary URL
+                // Create a new certificate record with Supabase URL
                 Certificate certificate = new Certificate();
-                certificate.setUrl(cloudinaryUrl);
+                certificate.setUrl(fileUrl);
                 certificate.setName(document.getOriginalFilename());
                 certificate.setDetails(description);
 
@@ -73,9 +75,9 @@ public class FileUploadController {
             Map<String, Object> response = new HashMap<>();
             response.put("id", document.getId());
             response.put("filename", document.getOriginalFilename());
-            response.put("url", documentService.getFileUrl(document.getId()));
-            response.put("downloadUrl", documentService.getDownloadUrl(document.getId()));
-            response.put("cloudinaryUrl", cloudinaryUrl); // Direct Cloudinary URL
+            response.put("url", document.getFilePath());
+            response.put("downloadUrl", document.getFilePath());
+            response.put("fileUrl", document.getFilePath()); // Direct Supabase URL
             response.put("size", document.getFileSize());
             response.put("uploadDate", document.getUploadDate());
             response.put("certificateId", savedCertificate.getId());
@@ -108,15 +110,15 @@ public class FileUploadController {
                     file, doctorId, Document.DocumentType.PROFILE_IMAGE, description, username, userType);
 
             // Automatically update doctor's profile image URL
-            String cloudinaryUrl = document.getFileUrl();
-            doctorService.updateProfileImage(doctorId, cloudinaryUrl);
+            String fileUrl = document.getFilePath();
+            doctorService.updateProfileImage(doctorId, fileUrl);
 
             Map<String, Object> response = new HashMap<>();
             response.put("id", document.getId());
             response.put("filename", document.getOriginalFilename());
-            response.put("url", documentService.getFileUrl(document.getId()));
-            response.put("downloadUrl", documentService.getDownloadUrl(document.getId()));
-            response.put("cloudinaryUrl", cloudinaryUrl); // Direct Cloudinary URL
+            response.put("url", document.getFilePath());
+            response.put("downloadUrl", document.getFilePath());
+            response.put("fileUrl", document.getFilePath()); // Direct Supabase URL
             response.put("size", document.getFileSize());
             response.put("uploadDate", document.getUploadDate());
 
@@ -146,15 +148,15 @@ public class FileUploadController {
                     file, patientId, Document.DocumentType.PROFILE_IMAGE, description, username, userType);
 
             // Automatically update patient's profile image URL
-            String cloudinaryUrl = document.getFileUrl();
-            patientService.updateProfileImage(patientId, cloudinaryUrl);
+            String fileUrl = document.getFilePath();
+            patientService.updateProfileImage(patientId, fileUrl);
 
             Map<String, Object> response = new HashMap<>();
             response.put("id", document.getId());
             response.put("filename", document.getOriginalFilename());
-            response.put("url", documentService.getFileUrl(document.getId()));
-            response.put("downloadUrl", documentService.getDownloadUrl(document.getId()));
-            response.put("cloudinaryUrl", cloudinaryUrl); // Direct Cloudinary URL
+            response.put("url", document.getFilePath());
+            response.put("downloadUrl", document.getFilePath());
+            response.put("fileUrl", document.getFilePath()); // Direct Supabase URL
             response.put("size", document.getFileSize());
             response.put("uploadDate", document.getUploadDate());
 
@@ -188,9 +190,9 @@ public class FileUploadController {
             Map<String, Object> response = new HashMap<>();
             response.put("id", document.getId());
             response.put("filename", document.getOriginalFilename());
-            response.put("url", documentService.getFileUrl(document.getId()));
-            response.put("downloadUrl", documentService.getDownloadUrl(document.getId()));
-            response.put("cloudinaryUrl", document.getFileUrl()); // Direct Cloudinary URL
+            response.put("url", document.getFilePath());
+            response.put("downloadUrl", document.getFilePath());
+            response.put("fileUrl", document.getFilePath()); // Direct Supabase URL
             response.put("size", document.getFileSize());
             response.put("uploadDate", document.getUploadDate());
             response.put("documentType", document.getDocumentType());
@@ -225,9 +227,9 @@ public class FileUploadController {
             Map<String, Object> response = new HashMap<>();
             response.put("id", document.getId());
             response.put("filename", document.getOriginalFilename());
-            response.put("url", documentService.getFileUrl(document.getId()));
-            response.put("downloadUrl", documentService.getDownloadUrl(document.getId()));
-            response.put("cloudinaryUrl", document.getFileUrl());
+            response.put("url", document.getFilePath());
+            response.put("downloadUrl", document.getFilePath());
+            response.put("fileUrl", document.getFilePath());
             response.put("size", document.getFileSize());
             response.put("uploadDate", document.getUploadDate());
             response.put("documentType", document.getDocumentType());
@@ -261,9 +263,9 @@ public class FileUploadController {
             Map<String, Object> response = new HashMap<>();
             response.put("id", document.getId());
             response.put("filename", document.getOriginalFilename());
-            response.put("url", documentService.getFileUrl(document.getId()));
-            response.put("downloadUrl", documentService.getDownloadUrl(document.getId()));
-            response.put("cloudinaryUrl", document.getFileUrl());
+            response.put("url", document.getFilePath());
+            response.put("downloadUrl", document.getFilePath());
+            response.put("fileUrl", document.getFilePath());
             response.put("size", document.getFileSize());
             response.put("uploadDate", document.getUploadDate());
             response.put("documentType", document.getDocumentType());
@@ -335,22 +337,22 @@ public class FileUploadController {
     // Get documents by doctor ID
     @GetMapping("/doctor/{doctorId}")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<List<Document>> getDoctorDocuments(@PathVariable Long doctorId) {
+    public ResponseEntity<List<DocumentDto>> getDoctorDocuments(@PathVariable Long doctorId) {
         try {
-            List<Document> documents = documentService.getDocumentsByDoctorId(doctorId);
+            List<DocumentDto> documents = documentService.getDocumentsByDoctorId(doctorId).stream()
+                    .map(doc -> new DocumentDto(doc, doc.getFilePath(), doc.getFilePath()))
+                    .collect(Collectors.toList());
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
     }
 
-    // Get documents by patient ID
     @GetMapping("/patient/{patientId}")
     @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT')")
-    public ResponseEntity<List<Document>> getPatientDocuments(@PathVariable Long patientId) {
+    public ResponseEntity<List<DocumentDto>> getPatientDocuments(@PathVariable Long patientId) {
         try {
-            List<Document> documents = documentService.getDocumentsByPatientId(patientId);
-            return ResponseEntity.ok(documents);
+            return ResponseEntity.ok(documentService.getDocumentsDtoByPatientId(patientId));
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
@@ -359,12 +361,14 @@ public class FileUploadController {
     // Get documents by type
     @GetMapping("/doctor/{doctorId}/type/{documentType}")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<List<Document>> getDoctorDocumentsByType(
+    public ResponseEntity<List<DocumentDto>> getDoctorDocumentsByType(
             @PathVariable Long doctorId,
             @PathVariable String documentType) {
         try {
             Document.DocumentType type = Document.DocumentType.valueOf(documentType.toUpperCase());
-            List<Document> documents = documentService.getDocumentsByDoctorIdAndType(doctorId, type);
+            List<DocumentDto> documents = documentService.getDocumentsByDoctorIdAndType(doctorId, type).stream()
+                    .map(doc -> new DocumentDto(doc, doc.getFilePath(), doc.getFilePath()))
+                    .collect(Collectors.toList());
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
@@ -373,12 +377,14 @@ public class FileUploadController {
 
     @GetMapping("/patient/{patientId}/type/{documentType}")
     @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT')")
-    public ResponseEntity<List<Document>> getPatientDocumentsByType(
+    public ResponseEntity<List<DocumentDto>> getPatientDocumentsByType(
             @PathVariable Long patientId,
             @PathVariable String documentType) {
         try {
             Document.DocumentType type = Document.DocumentType.valueOf(documentType.toUpperCase());
-            List<Document> documents = documentService.getDocumentsByPatientIdAndType(patientId, type);
+            List<DocumentDto> documents = documentService.getDocumentsByPatientIdAndType(patientId, type).stream()
+                    .map(doc -> new DocumentDto(doc, doc.getFilePath(), doc.getFilePath()))
+                    .collect(Collectors.toList());
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
@@ -393,7 +399,8 @@ public class FileUploadController {
             @RequestParam String description) {
         try {
             Document document = documentService.updateDocumentDescription(documentId, description);
-            return ResponseEntity.ok(document);
+            DocumentDto dto = new DocumentDto(document, document.getFilePath(), document.getFilePath());
+            return ResponseEntity.ok(dto);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         }
@@ -402,10 +409,12 @@ public class FileUploadController {
     // Get recent documents
     @GetMapping("/recent")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<List<Document>> getRecentDocuments(
+    public ResponseEntity<List<DocumentDto>> getRecentDocuments(
             @RequestParam(defaultValue = "7") int days) {
         try {
-            List<Document> documents = documentService.getRecentDocuments(days);
+            List<DocumentDto> documents = documentService.getRecentDocuments(days).stream()
+                    .map(doc -> new DocumentDto(doc, doc.getFilePath(), doc.getFilePath()))
+                    .collect(Collectors.toList());
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();

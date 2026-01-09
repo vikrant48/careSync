@@ -1,6 +1,7 @@
 package com.vikrant.careSync.controller;
 
 import com.vikrant.careSync.dto.AppointmentReminderRequest;
+import com.vikrant.careSync.dto.NotificationDto;
 import com.vikrant.careSync.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +14,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/notifications")
@@ -35,8 +37,11 @@ public class NotificationController {
 
     @GetMapping("/doctor/{doctorId}/feed")
     @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<List<com.vikrant.careSync.entity.Notification>> getDoctorFeed(@PathVariable Long doctorId) {
-        return ResponseEntity.ok(notificationService.getDoctorFeed(doctorId));
+    public ResponseEntity<List<NotificationDto>> getDoctorFeed(@PathVariable Long doctorId) {
+        List<NotificationDto> notifications = notificationService.getDoctorFeed(doctorId).stream()
+                .map(NotificationDto::new)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(notifications);
     }
 
     @GetMapping("/doctor/{doctorId}/unread-count")
@@ -47,8 +52,11 @@ public class NotificationController {
 
     @GetMapping("/patient/{patientId}/feed")
     @PreAuthorize("hasRole('PATIENT')")
-    public ResponseEntity<List<com.vikrant.careSync.entity.Notification>> getPatientFeed(@PathVariable Long patientId) {
-        return ResponseEntity.ok(notificationService.getPatientFeed(patientId));
+    public ResponseEntity<List<NotificationDto>> getPatientFeed(@PathVariable Long patientId) {
+        List<NotificationDto> notifications = notificationService.getPatientFeed(patientId).stream()
+                .map(NotificationDto::new)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(notifications);
     }
 
     @GetMapping("/patient/{patientId}/unread-count")
@@ -66,13 +74,13 @@ public class NotificationController {
 
     @PostMapping("/appointment-reminder")
     @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT')")
-    public ResponseEntity<String> sendAppointmentReminderWithDetails(@Valid @RequestBody AppointmentReminderRequest request) {
+    public ResponseEntity<String> sendAppointmentReminderWithDetails(
+            @Valid @RequestBody AppointmentReminderRequest request) {
         try {
             notificationService.sendAppointmentReminderWithDetails(
-                request.getAppointmentId(), 
-                request.getReminderType(), 
-                request.getHoursBeforeAppointment()
-            );
+                    request.getAppointmentId(),
+                    request.getReminderType(),
+                    request.getHoursBeforeAppointment());
             return ResponseEntity.ok("Appointment reminder scheduled successfully");
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Failed to schedule appointment reminder: " + e.getMessage());
@@ -194,10 +202,9 @@ public class NotificationController {
     public ResponseEntity<Map<String, Object>> getNotificationStatus() {
         try {
             Map<String, Object> status = Map.of(
-                "service", "Notification Service",
-                "status", "Active",
-                "timestamp", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-            );
+                    "service", "Notification Service",
+                    "status", "Active",
+                    "timestamp", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
             return ResponseEntity.ok(status);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
