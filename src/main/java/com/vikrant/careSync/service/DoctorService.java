@@ -9,7 +9,7 @@ import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.ExperienceRepository;
 import com.vikrant.careSync.repository.EducationRepository;
 import com.vikrant.careSync.repository.CertificateRepository;
-import com.vikrant.careSync.service.interfaces.IDoctorService;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-public class DoctorService implements IDoctorService {
+public class DoctorService {
 
     private final DoctorRepository doctorRepository;
     private final ExperienceRepository experienceRepository;

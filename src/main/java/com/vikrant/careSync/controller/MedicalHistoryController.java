@@ -64,6 +64,7 @@ public class MedicalHistoryController {
             medicalHistory.setMedicine(request.getMedicine());
             medicalHistory.setDoses(request.getDoses());
             medicalHistory.setNotes(request.getNotes());
+            medicalHistory.setAppointmentId(request.getAppointmentId());
 
             MedicalHistory createdHistory = medicalHistoryService.createMedicalHistory(medicalHistory);
             return ResponseEntity.ok(new MedicalHistoryDto(createdHistory, "Medical history created successfully"));
@@ -96,6 +97,7 @@ public class MedicalHistoryController {
             medicalHistory.setMedicine(request.getMedicine());
             medicalHistory.setDoses(request.getDoses());
             medicalHistory.setNotes(request.getNotes());
+            medicalHistory.setAppointmentId(request.getAppointmentId());
 
             MedicalHistory createdHistory = medicalHistoryService.createMedicalHistoryWithDoctor(medicalHistory,
                     currentDoctor.getId());
@@ -181,6 +183,7 @@ public class MedicalHistoryController {
             medicalHistory.setMedicine(request.getMedicine());
             medicalHistory.setDoses(request.getDoses());
             medicalHistory.setNotes(request.getNotes());
+            medicalHistory.setAppointmentId(request.getAppointmentId());
 
             MedicalHistory updatedHistory = medicalHistoryService.updateMedicalHistory(id, medicalHistory);
             return ResponseEntity.ok(new MedicalHistoryDto(updatedHistory));

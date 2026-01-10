@@ -24,6 +24,7 @@ public class MedicalHistoryDto {
     private Long doctorId;
     private String doctorName;
     private String doctorSpecialization;
+    private Long appointmentId;
     private LocalDateTime createdDateTime;
 
     public MedicalHistoryDto(MedicalHistory medicalHistory) {
@@ -37,14 +38,16 @@ public class MedicalHistoryDto {
         this.doses = medicalHistory.getDoses();
         this.notes = medicalHistory.getNotes();
         this.createdDateTime = LocalDateTime.now();
-        
+        this.appointmentId = medicalHistory.getAppointmentId();
+
         if (medicalHistory.getDoctor() != null) {
             this.doctorId = medicalHistory.getDoctor().getId();
-            this.doctorName = medicalHistory.getDoctor().getFirstName() + " " + medicalHistory.getDoctor().getLastName();
+            this.doctorName = medicalHistory.getDoctor().getFirstName() + " "
+                    + medicalHistory.getDoctor().getLastName();
             this.doctorSpecialization = medicalHistory.getDoctor().getSpecialization();
         }
     }
-    
+
     // Constructor with custom message
     public MedicalHistoryDto(MedicalHistory medicalHistory, String customMessage) {
         this(medicalHistory);

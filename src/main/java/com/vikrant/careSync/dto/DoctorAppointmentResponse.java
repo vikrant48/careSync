@@ -89,6 +89,7 @@ public class DoctorAppointmentResponse {
         private String medicine;
         private String doses;
         private String notes;
+        private Long appointmentId;
 
         public PatientMedicalHistoryDto(MedicalHistory medicalHistory) {
             this.id = medicalHistory.getId();
@@ -100,6 +101,7 @@ public class DoctorAppointmentResponse {
             this.medicine = medicalHistory.getMedicine();
             this.doses = medicalHistory.getDoses();
             this.notes = medicalHistory.getNotes();
+            this.appointmentId = medicalHistory.getAppointmentId();
         }
     }
 }

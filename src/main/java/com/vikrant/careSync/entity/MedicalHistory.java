@@ -33,6 +33,9 @@ public class MedicalHistory {
     private String doses;
     private String notes;
 
+    @Column(name = "appointment_id")
+    private Long appointmentId;
+
     // Getters and setters
     // ...
 }

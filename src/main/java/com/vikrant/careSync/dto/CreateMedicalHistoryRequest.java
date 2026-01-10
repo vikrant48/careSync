@@ -16,21 +16,23 @@ import java.time.LocalDate;
 public class CreateMedicalHistoryRequest {
     @NotNull(message = "Patient ID is required")
     private Long patientId;
-    
+
     @NotNull(message = "Visit date is required")
     private LocalDate visitDate;
-    
+
     @NotBlank(message = "Symptoms are required")
     private String symptoms;
-    
+
     private String diagnosis;
-    
+
     private String treatment;
-    
+
     // Prescription fields
     private String medicine;
-    
+
     private String doses;
-    
+
     private String notes;
+
+    private Long appointmentId;
 }

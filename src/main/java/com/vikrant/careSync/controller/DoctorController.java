@@ -12,7 +12,7 @@ import com.vikrant.careSync.dto.DoctorDto;
 import com.vikrant.careSync.dto.ExperienceDto;
 import com.vikrant.careSync.dto.EducationDto;
 import com.vikrant.careSync.dto.CertificateDto;
-import com.vikrant.careSync.service.interfaces.IDoctorService;
+import com.vikrant.careSync.service.DoctorService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -30,7 +30,7 @@ import java.util.stream.Collectors;
 @io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 public class DoctorController {
 
-    private final IDoctorService doctorService;
+    private final DoctorService doctorService;
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Get all doctors", description = "Retrieves a list of all registered doctors")
     @GetMapping

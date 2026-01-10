@@ -80,6 +80,7 @@ public class MedicalHistoryService implements IMedicalHistoryService {
 
         medicalHistory.setPatient(patient);
         medicalHistory.setDoctor(doctor);
+        // Ensure appointmentId is set if provided in the entity (from request)
         return medicalHistoryRepository.save(medicalHistory);
     }
 
@@ -105,7 +106,7 @@ public class MedicalHistoryService implements IMedicalHistoryService {
         try {
             LocalDate start = LocalDate.parse(startDate);
             LocalDate end = LocalDate.parse(endDate);
-            
+
             return medicalHistoryRepository.findByPatientId(patientId).stream()
                     .filter(history -> {
                         LocalDate visitDate = history.getVisitDate();
@@ -149,6 +150,9 @@ public class MedicalHistoryService implements IMedicalHistoryService {
         if (updatedHistory.getNotes() != null) {
             existingHistory.setNotes(updatedHistory.getNotes());
         }
+        if (updatedHistory.getAppointmentId() != null) {
+            existingHistory.setAppointmentId(updatedHistory.getAppointmentId());
+        }
 
         return medicalHistoryRepository.save(existingHistory);
     }
@@ -163,22 +167,22 @@ public class MedicalHistoryService implements IMedicalHistoryService {
     @Override
     public Map<String, Object> getMedicalHistorySummary(Long patientId) {
         List<MedicalHistory> histories = medicalHistoryRepository.findByPatientId(patientId);
-        
+
         Map<String, Object> summary = new HashMap<>();
         summary.put("totalVisits", histories.size());
         summary.put("patientId", patientId);
-        
+
         if (!histories.isEmpty()) {
             summary.put("firstVisit", histories.stream()
                     .mapToLong(h -> h.getVisitDate().toEpochDay())
                     .min()
                     .orElse(0));
-            
+
             summary.put("lastVisit", histories.stream()
                     .mapToLong(h -> h.getVisitDate().toEpochDay())
                     .max()
                     .orElse(0));
-            
+
             // Get unique diagnoses
             List<String> diagnoses = histories.stream()
                     .map(MedicalHistory::getDiagnosis)
@@ -187,7 +191,7 @@ public class MedicalHistoryService implements IMedicalHistoryService {
             summary.put("uniqueDiagnoses", diagnoses);
             summary.put("diagnosisCount", diagnoses.size());
         }
-        
+
         return summary;
     }
 
@@ -200,34 +204,53 @@ public class MedicalHistoryService implements IMedicalHistoryService {
 
     @Override
     public List<MedicalHistoryWithDoctorDto> getMedicalHistoryWithDoctorByPatient(Long patientId) {
-        // Get all completed appointments for the patient
-        List<Appointment> completedAppointments = appointmentRepository.findByPatientIdAndStatus(patientId, Appointment.Status.COMPLETED);
-        
+        // Get all appointments (not just completed) for the patient to ensure we find
+        // matches
+        List<Appointment> allAppointments = appointmentRepository.findByPatientId(patientId);
+
         // Get all medical histories for the patient
         List<MedicalHistory> medicalHistories = medicalHistoryRepository.findByPatientId(patientId);
-        
+
         List<MedicalHistoryWithDoctorDto> result = new ArrayList<>();
-        
-        // For each medical history, try to find a matching completed appointment
+
         for (MedicalHistory history : medicalHistories) {
-            // Find the closest completed appointment by date
-            Appointment matchingAppointment = completedAppointments.stream()
-                    .filter(appointment -> appointment.getAppointmentDateTime().toLocalDate().equals(history.getVisitDate()) ||
-                                         appointment.getAppointmentDateTime().toLocalDate().isEqual(history.getVisitDate()))
-                    .findFirst()
-                    .orElse(null);
-            
+            Appointment matchingAppointment = null;
+
+            // 1. Try to find by explicit appointmentId
+            if (history.getAppointmentId() != null) {
+                matchingAppointment = allAppointments.stream()
+                        .filter(a -> a.getId().equals(history.getAppointmentId()))
+                        .findFirst()
+                        .orElse(null);
+            }
+
+            // 2. Fallback to closest appointment by date (legacy support)
+            if (matchingAppointment == null) {
+                matchingAppointment = allAppointments.stream()
+                        .filter(appointment -> appointment.getAppointmentDateTime().toLocalDate()
+                                .equals(history.getVisitDate()))
+                        .findFirst()
+                        .orElse(null);
+            }
+
             if (matchingAppointment != null) {
                 MedicalHistoryWithDoctorDto dto = new MedicalHistoryWithDoctorDto(
-                    history,
-                    matchingAppointment.getDoctor(),
-                    matchingAppointment.getId(),
-                    matchingAppointment.getAppointmentDateTime().toString()
-                );
+                        history,
+                        matchingAppointment.getDoctor(),
+                        matchingAppointment.getId(),
+                        matchingAppointment.getAppointmentDateTime().toString());
+                result.add(dto);
+            } else if (history.getDoctor() != null) {
+                // If no matching appointment but doctor exists, still return with basic info
+                MedicalHistoryWithDoctorDto dto = new MedicalHistoryWithDoctorDto(
+                        history,
+                        history.getDoctor(),
+                        history.getAppointmentId(),
+                        history.getVisitDate() != null ? history.getVisitDate().toString() : null);
                 result.add(dto);
             }
         }
-        
+
         return result;
     }
 }
