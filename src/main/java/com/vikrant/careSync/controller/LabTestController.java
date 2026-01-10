@@ -19,6 +19,8 @@ import java.util.Optional;
 @RequestMapping("/api/lab-tests")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "${app.cors.allowed-origins}")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Lab Tests", description = "Endpoints for managing laboratory tests and categories")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 public class LabTestController {
 
     private final LabTestService labTestService;
@@ -27,6 +29,7 @@ public class LabTestController {
      * Get all available lab tests
      * Accessible by all authenticated users
      */
+    @io.swagger.v3.oas.annotations.Operation(summary = "Get all lab tests", description = "Retrieves a list of all available laboratory tests")
     @GetMapping
     @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT') or hasRole('ADMIN')")
     public ResponseEntity<List<LabTestDto>> getAllLabTests() {

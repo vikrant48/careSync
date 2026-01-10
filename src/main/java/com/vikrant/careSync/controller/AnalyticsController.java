@@ -18,10 +18,13 @@ import java.util.Map;
 @RequiredArgsConstructor
 @CrossOrigin(origins = "${app.cors.allowed-origins}")
 @Slf4j
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Analytics", description = "Endpoints for project analytics and financial statistics")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 public class AnalyticsController {
 
     private final AnalyticsService analyticsService;
 
+    @io.swagger.v3.oas.annotations.Operation(summary = "Get overall analytics", description = "Retrieves high-level system analytics for a given date range (Doctor/Admin only)")
     @GetMapping("/overall")
     @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN')")
     public ResponseEntity<OverallAnalyticsDto> getOverallAnalytics(

@@ -31,6 +31,8 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/files")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "File Uploads", description = "Endpoints for uploading certificates, profile images, medical documents, and lab reports")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 public class FileUploadController {
 
     private final DocumentService documentService;
@@ -40,7 +42,8 @@ public class FileUploadController {
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
 
-    @PostMapping("/upload/certificate")
+    @io.swagger.v3.oas.annotations.Operation(summary = "Upload certificate", description = "Uploads a professional certificate for a doctor")
+    @PostMapping(value = "/upload/certificate", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> uploadCertificate(
             @RequestParam("file") MultipartFile file,
@@ -94,7 +97,8 @@ public class FileUploadController {
         }
     }
 
-    @PostMapping("/upload/profile-image/doctor")
+    @io.swagger.v3.oas.annotations.Operation(summary = "Upload doctor profile image", description = "Uploads and updates a doctor's profile photo")
+    @PostMapping(value = "/upload/profile-image/doctor", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> uploadDoctorProfileImage(
             @RequestParam("file") MultipartFile file,
@@ -132,7 +136,8 @@ public class FileUploadController {
         }
     }
 
-    @PostMapping("/upload/profile-image/patient")
+    @io.swagger.v3.oas.annotations.Operation(summary = "Upload patient profile image", description = "Uploads and updates a patient's profile photo")
+    @PostMapping(value = "/upload/profile-image/patient", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR')")
     public ResponseEntity<?> uploadPatientProfileImage(
             @RequestParam("file") MultipartFile file,
@@ -170,7 +175,8 @@ public class FileUploadController {
         }
     }
 
-    @PostMapping("/upload/medical-document")
+    @io.swagger.v3.oas.annotations.Operation(summary = "Upload medical document", description = "Uploads a generic medical document for a patient (Doctor only)")
+    @PostMapping(value = "/upload/medical-document", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> uploadMedicalDocument(
             @RequestParam("file") MultipartFile file,
@@ -244,7 +250,8 @@ public class FileUploadController {
         }
     }
 
-    @PostMapping("/upload/lab-report")
+    @io.swagger.v3.oas.annotations.Operation(summary = "Upload lab report", description = "Uploads a laboratory report linked to a specific booking")
+    @PostMapping(value = "/upload/lab-report", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR')")
     public ResponseEntity<?> uploadLabReport(
             @RequestParam("file") MultipartFile file,

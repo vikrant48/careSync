@@ -29,6 +29,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 @Validated
 @CrossOrigin(origins = "${app.cors.allowed-origins}")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Authentication", description = "Endpoints for user registration, login, and token management")
 public class AuthController {
 
     private final AuthenticationService authenticationService;
@@ -40,6 +41,7 @@ public class AuthController {
     private final PatientRepository patientRepository;
     private final EmailVerificationService emailVerificationService;
 
+    @io.swagger.v3.oas.annotations.Operation(summary = "Register a new user", description = "Creates a new doctor or patient account")
     @PostMapping("/register")
     public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
         try {
@@ -100,6 +102,7 @@ public class AuthController {
         }
     }
 
+    @io.swagger.v3.oas.annotations.Operation(summary = "Authenticate user", description = "Returns JWT access and refresh tokens upon successful login")
     @PostMapping("/login")
     public ResponseEntity<?> authenticate(
             @Valid @RequestBody AuthenticationRequest request,

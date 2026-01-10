@@ -24,11 +24,13 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/medical-history")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "${app.cors.allowed-origins}")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Medical History", description = "Endpoints for recording and retrieving patient medical history and prescriptions")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 public class MedicalHistoryController {
 
     private final IMedicalHistoryService medicalHistoryService;
     private final DoctorRepository doctorRepository;
-    
+
     // Get current authenticated doctor
     private Doctor getCurrentDoctor() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -40,20 +42,21 @@ public class MedicalHistoryController {
         throw new RuntimeException("User not authenticated");
     }
 
+    @io.swagger.v3.oas.annotations.Operation(summary = "Create medical history", description = "Records a new medical visit entry for a patient (Doctor only)")
     @PostMapping
     public ResponseEntity<?> createMedicalHistory(@Valid @RequestBody CreateMedicalHistoryRequest request) {
         try {
             MedicalHistory medicalHistory = new MedicalHistory();
-            
+
             // Set patient from patientId
             Patient patient = new Patient();
             patient.setId(request.getPatientId());
             medicalHistory.setPatient(patient);
-            
+
             // Set doctor from current authenticated user
             Doctor currentDoctor = getCurrentDoctor();
             medicalHistory.setDoctor(currentDoctor);
-            
+
             medicalHistory.setVisitDate(request.getVisitDate());
             medicalHistory.setSymptoms(request.getSymptoms());
             medicalHistory.setDiagnosis(request.getDiagnosis());
@@ -61,7 +64,7 @@ public class MedicalHistoryController {
             medicalHistory.setMedicine(request.getMedicine());
             medicalHistory.setDoses(request.getDoses());
             medicalHistory.setNotes(request.getNotes());
-            
+
             MedicalHistory createdHistory = medicalHistoryService.createMedicalHistory(medicalHistory);
             return ResponseEntity.ok(new MedicalHistoryDto(createdHistory, "Medical history created successfully"));
         } catch (Exception e) {
@@ -76,16 +79,16 @@ public class MedicalHistoryController {
             @Valid @RequestBody CreateMedicalHistoryRequest request) {
         try {
             MedicalHistory medicalHistory = new MedicalHistory();
-            
+
             // Set patient from patientId
             Patient patient = new Patient();
             patient.setId(request.getPatientId());
             medicalHistory.setPatient(patient);
-            
+
             // Set doctor from current authenticated user
             Doctor currentDoctor = getCurrentDoctor();
             medicalHistory.setDoctor(currentDoctor);
-            
+
             medicalHistory.setVisitDate(request.getVisitDate());
             medicalHistory.setSymptoms(request.getSymptoms());
             medicalHistory.setDiagnosis(request.getDiagnosis());
@@ -93,8 +96,9 @@ public class MedicalHistoryController {
             medicalHistory.setMedicine(request.getMedicine());
             medicalHistory.setDoses(request.getDoses());
             medicalHistory.setNotes(request.getNotes());
-            
-            MedicalHistory createdHistory = medicalHistoryService.createMedicalHistoryWithDoctor(medicalHistory, currentDoctor.getId());
+
+            MedicalHistory createdHistory = medicalHistoryService.createMedicalHistoryWithDoctor(medicalHistory,
+                    currentDoctor.getId());
             return ResponseEntity.ok(new MedicalHistoryDto(createdHistory, "Medical history created successfully"));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
@@ -131,7 +135,8 @@ public class MedicalHistoryController {
     }
 
     @GetMapping("/patient/{patientId}/recent")
-    public ResponseEntity<?> getRecentMedicalHistory(@PathVariable Long patientId, @RequestParam(defaultValue = "10") int limit) {
+    public ResponseEntity<?> getRecentMedicalHistory(@PathVariable Long patientId,
+            @RequestParam(defaultValue = "10") int limit) {
         try {
             List<MedicalHistory> medicalHistories = medicalHistoryService.getRecentMedicalHistory(patientId, limit);
             List<MedicalHistoryDto> dtos = medicalHistories.stream()
@@ -151,7 +156,8 @@ public class MedicalHistoryController {
             @RequestParam String startDate,
             @RequestParam String endDate) {
         try {
-            List<MedicalHistory> medicalHistories = medicalHistoryService.getMedicalHistoryByDateRange(patientId, startDate, endDate);
+            List<MedicalHistory> medicalHistories = medicalHistoryService.getMedicalHistoryByDateRange(patientId,
+                    startDate, endDate);
             List<MedicalHistoryDto> dtos = medicalHistories.stream()
                     .map(MedicalHistoryDto::new)
                     .collect(Collectors.toList());
@@ -164,7 +170,8 @@ public class MedicalHistoryController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateMedicalHistory(@PathVariable Long id, @Valid @RequestBody CreateMedicalHistoryRequest request) {
+    public ResponseEntity<?> updateMedicalHistory(@PathVariable Long id,
+            @Valid @RequestBody CreateMedicalHistoryRequest request) {
         try {
             MedicalHistory medicalHistory = new MedicalHistory();
             medicalHistory.setVisitDate(request.getVisitDate());
@@ -174,7 +181,7 @@ public class MedicalHistoryController {
             medicalHistory.setMedicine(request.getMedicine());
             medicalHistory.setDoses(request.getDoses());
             medicalHistory.setNotes(request.getNotes());
-            
+
             MedicalHistory updatedHistory = medicalHistoryService.updateMedicalHistory(id, medicalHistory);
             return ResponseEntity.ok(new MedicalHistoryDto(updatedHistory));
         } catch (Exception e) {
@@ -215,7 +222,8 @@ public class MedicalHistoryController {
             @PathVariable Long patientId,
             @PathVariable String diagnosis) {
         try {
-            List<MedicalHistory> medicalHistories = medicalHistoryService.getMedicalHistoryByDiagnosis(patientId, diagnosis);
+            List<MedicalHistory> medicalHistories = medicalHistoryService.getMedicalHistoryByDiagnosis(patientId,
+                    diagnosis);
             List<MedicalHistoryDto> dtos = medicalHistories.stream()
                     .map(MedicalHistoryDto::new)
                     .collect(Collectors.toList());
@@ -230,7 +238,8 @@ public class MedicalHistoryController {
     @GetMapping("/patient/{patientId}/with-doctor")
     public ResponseEntity<?> getMedicalHistoryWithDoctorByPatient(@PathVariable Long patientId) {
         try {
-            List<MedicalHistoryWithDoctorDto> medicalHistories = medicalHistoryService.getMedicalHistoryWithDoctorByPatient(patientId);
+            List<MedicalHistoryWithDoctorDto> medicalHistories = medicalHistoryService
+                    .getMedicalHistoryWithDoctorByPatient(patientId);
             return ResponseEntity.ok(medicalHistories);
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();

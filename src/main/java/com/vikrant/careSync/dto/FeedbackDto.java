@@ -19,6 +19,7 @@ public class FeedbackDto {
     private String doctorName;
     private int rating;
     private String comment;
+    private Boolean anonymous;
     private LocalDateTime createdAt;
 
     public FeedbackDto(Feedback feedback) {
@@ -36,6 +37,7 @@ public class FeedbackDto {
         }
         this.rating = feedback.getRating();
         this.comment = feedback.getComment();
+        this.anonymous = feedback.getAnonymous();
         this.createdAt = feedback.getCreatedAt();
     }
 }

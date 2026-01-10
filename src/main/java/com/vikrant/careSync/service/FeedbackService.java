@@ -89,6 +89,10 @@ public class FeedbackService implements IFeedbackService {
             existingFeedback.setComment(updatedFeedback.getComment());
         }
 
+        if (updatedFeedback.getAnonymous() != null) {
+            existingFeedback.setAnonymous(updatedFeedback.getAnonymous());
+        }
+
         return feedbackRepository.save(existingFeedback);
     }
 

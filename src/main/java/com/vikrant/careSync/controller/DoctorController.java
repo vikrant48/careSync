@@ -26,10 +26,13 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/doctors")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "${app.cors.allowed-origins}")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Doctors", description = "Endpoints for doctor profile, experience, and education management")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 public class DoctorController {
 
     private final IDoctorService doctorService;
 
+    @io.swagger.v3.oas.annotations.Operation(summary = "Get all doctors", description = "Retrieves a list of all registered doctors")
     @GetMapping
     public ResponseEntity<List<DoctorDto>> getAllDoctors() {
         return ResponseEntity.ok(doctorService.getAllDoctorsDto());
@@ -41,6 +44,7 @@ public class DoctorController {
         return ResponseEntity.ok(doctorService.getAllDoctorsDto());
     }
 
+    @io.swagger.v3.oas.annotations.Operation(summary = "Get public profile", description = "Retrieves a doctor's public profile by username (no auth required)")
     @GetMapping("/public/{username}")
     public ResponseEntity<DoctorDto> getDoctorByUsername(@PathVariable String username) {
         return doctorService.getDoctorDtoByUsername(username)
@@ -48,6 +52,7 @@ public class DoctorController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @io.swagger.v3.oas.annotations.Operation(summary = "Get doctor profile", description = "Retrieves the full profile of the authenticated doctor")
     @GetMapping("/profile/{username}")
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<DoctorDto> getDoctorProfile(@PathVariable String username) {

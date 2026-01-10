@@ -36,6 +36,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @CrossOrigin(origins = "${app.cors.allowed-origins}")
 @Slf4j
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Patients", description = "Endpoints for patient profile and medical history management")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 public class PatientController {
 
     private final IPatientService patientService;
@@ -43,6 +45,7 @@ public class PatientController {
     private final DocumentService documentService;
     private final UserService userService;
 
+    @io.swagger.v3.oas.annotations.Operation(summary = "Get all patients", description = "Retrieves a list of all registered patients (Doctor/Admin only)")
     @GetMapping
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<List<PatientDto>> getAllPatients() {
@@ -69,6 +72,7 @@ public class PatientController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @io.swagger.v3.oas.annotations.Operation(summary = "Get patient profile", description = "Retrieves a patient's profile by username")
     @GetMapping("/profile/{username}")
     @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR') or hasRole('ADMIN')")
     public ResponseEntity<PatientDto> getPatientProfile(@PathVariable String username) {
@@ -122,6 +126,7 @@ public class PatientController {
         }
     }
 
+    @io.swagger.v3.oas.annotations.Operation(summary = "Update patient profile", description = "Updates basic profile information for a patient")
     @PutMapping("/{id}/profile")
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<PatientDto> updatePatientProfile(@PathVariable Long id,

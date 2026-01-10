@@ -29,6 +29,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @CrossOrigin(origins = "${app.cors.allowed-origins}")
 @Slf4j
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Appointments", description = "Endpoints for booking, managing, and tracking medical appointments")
+@io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 public class AppointmentController {
 
     private final AppointmentService appointmentService;
@@ -59,6 +61,7 @@ public class AppointmentController {
 
     // PATIENT ENDPOINTS - Only accessible by patients
 
+    @io.swagger.v3.oas.annotations.Operation(summary = "Book an appointment", description = "Creates a new appointment booking for a patient")
     @PostMapping("/patient/book")
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<?> bookAppointment(@Valid @RequestBody CreateAppointmentRequest request) {
@@ -96,6 +99,7 @@ public class AppointmentController {
         }
     }
 
+    @io.swagger.v3.oas.annotations.Operation(summary = "Get my appointments", description = "Retrieves a list of all appointments for the authenticated patient")
     @GetMapping("/patient/my-appointments")
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<?> getMyAppointments() {
