@@ -80,6 +80,7 @@ public class DoctorService {
         return doctorRepository.save(doctor);
     }
 
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public Doctor updateDoctorProfileByUsername(String username, UpdateDoctorRequest request) {
         Doctor doctor = doctorRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
@@ -110,6 +111,7 @@ public class DoctorService {
         return doctorRepository.save(doctor);
     }
 
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public Doctor updateProfileImage(Long doctorId, String imageUrl) {
         Doctor doctor = doctorRepository.findById(doctorId)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
@@ -118,6 +120,7 @@ public class DoctorService {
         return doctorRepository.save(doctor);
     }
 
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public Doctor updateProfileImageByUsername(String username, String imageUrl) {
         Doctor doctor = doctorRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
@@ -128,6 +131,7 @@ public class DoctorService {
     }
 
     // Experience Management
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public Experience addExperience(Long doctorId, Experience experience) {
         Doctor doctor = doctorRepository.findById(doctorId)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
@@ -136,6 +140,7 @@ public class DoctorService {
         return experienceRepository.save(experience);
     }
 
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public Experience addExperienceByUsername(String username, Experience experience) {
         Doctor doctor = doctorRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
@@ -161,6 +166,7 @@ public class DoctorService {
         return experienceRepository.findByDoctorId(doctor.getId());
     }
 
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public Experience updateExperience(Long experienceId, Experience updatedExperience) {
         Experience experience = experienceRepository.findById(experienceId)
                 .orElseThrow(() -> new RuntimeException("Experience not found"));
@@ -173,11 +179,13 @@ public class DoctorService {
         return experienceRepository.save(experience);
     }
 
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public void deleteExperience(Long experienceId) {
         experienceRepository.deleteById(experienceId);
     }
 
     // Education Management
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public Education addEducation(Long doctorId, Education education) {
         Doctor doctor = doctorRepository.findById(doctorId)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
@@ -186,6 +194,7 @@ public class DoctorService {
         return educationRepository.save(education);
     }
 
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public Education addEducationByUsername(String username, Education education) {
         Doctor doctor = doctorRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
@@ -211,6 +220,7 @@ public class DoctorService {
         return educationRepository.findByDoctorId(doctor.getId());
     }
 
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public Education updateEducation(Long educationId, Education updatedEducation) {
         Education education = educationRepository.findById(educationId)
                 .orElseThrow(() -> new RuntimeException("Education not found"));
@@ -223,11 +233,13 @@ public class DoctorService {
         return educationRepository.save(education);
     }
 
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public void deleteEducation(Long educationId) {
         educationRepository.deleteById(educationId);
     }
 
     // Certificate Management
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public Certificate addCertificate(Long doctorId, Certificate certificate) {
         Doctor doctor = doctorRepository.findById(doctorId)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
@@ -236,6 +248,7 @@ public class DoctorService {
         return certificateRepository.save(certificate);
     }
 
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public Certificate addCertificateByUsername(String username, Certificate certificate) {
         Doctor doctor = doctorRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
@@ -261,6 +274,7 @@ public class DoctorService {
         return certificateRepository.findByDoctorId(doctor.getId());
     }
 
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public Certificate updateCertificate(Long certificateId, Certificate updatedCertificate) {
         Certificate certificate = certificateRepository.findById(certificateId)
                 .orElseThrow(() -> new RuntimeException("Certificate not found"));
@@ -277,6 +291,7 @@ public class DoctorService {
         return certificateRepository.save(certificate);
     }
 
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public Certificate updateCertificateUrl(Long certificateId, String url) {
         Certificate certificate = certificateRepository.findById(certificateId)
                 .orElseThrow(() -> new RuntimeException("Certificate not found"));

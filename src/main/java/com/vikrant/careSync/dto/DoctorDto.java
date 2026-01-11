@@ -33,6 +33,7 @@ public class DoctorDto {
     private List<CertificateDto> certificates;
     private Double averageRating;
     private Long reviewCount;
+    private Boolean isVerified;
 
     public DoctorDto(Doctor doctor) {
         this.id = doctor.getId();
@@ -46,6 +47,7 @@ public class DoctorDto {
         this.profileImageUrl = doctor.getProfileImageUrl();
         this.contactInfo = doctor.getContactInfo();
         this.isActive = doctor.getIsActive();
+        this.isVerified = doctor.getIsVerified() != null && doctor.getIsVerified();
         this.gender = doctor.getGender();
         this.consultationFees = doctor.getConsultationFees();
         this.address = doctor.getAddress();

@@ -23,6 +23,7 @@ public class PatientDto {
     private String contactInfo;
     private String illnessDetails;
     private String gender;
+    private String bloodGroup;
     private Boolean isActive;
 
     public PatientDto(Patient patient) {
@@ -38,6 +39,7 @@ public class PatientDto {
         this.contactInfo = patient.getContactInfo();
         this.illnessDetails = patient.getIllnessDetails();
         this.gender = patient.getGender();
+        this.bloodGroup = patient.getBloodGroup();
         this.isActive = patient.getIsActive();
     }
 }

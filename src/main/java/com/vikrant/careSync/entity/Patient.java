@@ -11,32 +11,38 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@ToString(exclude = {"appointments", "medicalHistories", "documents"})
-@EqualsAndHashCode(exclude = {"appointments", "medicalHistories", "documents"})
+@ToString(exclude = { "appointments", "medicalHistories", "documents" })
+@EqualsAndHashCode(exclude = { "appointments", "medicalHistories", "documents" })
 @Entity
 @Table(name = "patients")
 public class Patient extends User {
-    
+
     @Column(name = "first_name", nullable = false, length = 50)
     private String firstName;
-    
+
     @Column(name = "last_name", nullable = false, length = 50)
     private String lastName;
-    
+
     @Column(name = "date_of_birth")
     private LocalDate dateOfBirth;
-    
+
     @Column(name = "contact_info", length = 100)
     private String contactInfo;
-    
+
     @Column(name = "illness_details", length = 1000)
     private String illnessDetails;
-    
+
     @Column(name = "profile_image_url", length = 255)
     private String profileImageUrl;
 
     @Column(name = "gender", length = 20)
     private String gender;
+
+    @Column(name = "blood_group", length = 10)
+    private String bloodGroup;
+
+    @Column(name = "is_active")
+    private Boolean isActive;
 
     @OneToMany(mappedBy = "patient", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JsonManagedReference

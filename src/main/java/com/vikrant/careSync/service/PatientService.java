@@ -62,6 +62,8 @@ public class PatientService implements IPatientService {
         patient.setIllnessDetails(updatedPatient.getIllnessDetails());
         patient.setGender(updatedPatient.getGender());
         patient.setEmail(updatedPatient.getEmail());
+        patient.setGender(updatedPatient.getGender());
+        patient.setBloodGroup(updatedPatient.getBloodGroup());
         patient.setIsActive(updatedPatient.getIsActive());
 
         return patientRepository.save(patient);

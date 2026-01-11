@@ -1,4 +1,5 @@
 package com.vikrant.careSync.security.dto;
+
 import jakarta.validation.constraints.*;
 import lombok.*;
 
@@ -49,5 +50,8 @@ public class RegisterRequest {
 
     @Size(max = 200, message = "Specialization must not exceed 200 characters")
     private String specialization;
+
+    @Size(max = 10, message = "Blood group must not exceed 10 characters")
+    private String bloodGroup;
 
 }

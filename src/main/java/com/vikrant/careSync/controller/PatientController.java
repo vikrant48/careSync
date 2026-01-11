@@ -141,6 +141,7 @@ public class PatientController {
             updatedPatient.setEmail(request.getEmail());
             updatedPatient.setIsActive(request.getIsActive());
             updatedPatient.setGender(request.getGender());
+            updatedPatient.setBloodGroup(request.getBloodGroup());
 
             Patient patient = patientService.updatePatientProfile(id, updatedPatient);
             return ResponseEntity.ok(new PatientDto(patient));

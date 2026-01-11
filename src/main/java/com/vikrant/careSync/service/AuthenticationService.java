@@ -17,6 +17,7 @@ import com.vikrant.careSync.security.repository.PasswordResetOtpRepository;
 import com.vikrant.careSync.service.interfaces.IAuthenticationService;
 import com.vikrant.careSync.service.EmailService;
 import com.vikrant.careSync.service.EmailVerificationService;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -67,6 +68,7 @@ public class AuthenticationService implements IAuthenticationService {
         this.emailVerificationService = emailVerificationService;
     }
 
+    @CacheEvict(value = "doctorListing", allEntries = true)
     public AuthenticationResponse register(RegisterRequest request) {
 
         // Check if username or email already exists
@@ -146,6 +148,8 @@ public class AuthenticationService implements IAuthenticationService {
 
         patient.setIllnessDetails(request.getIllnessDetails());
         patient.setGender(request.getGender());
+        patient.setBloodGroup(request.getBloodGroup());
+        patient.setIsActive(true);
 
         Patient savedPatient = patientRepository.save(patient);
 

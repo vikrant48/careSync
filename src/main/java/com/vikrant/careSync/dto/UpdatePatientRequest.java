@@ -18,4 +18,5 @@ public class UpdatePatientRequest {
     private String email;
     private Boolean isActive;
     private String gender;
+    private String bloodGroup;
 }
