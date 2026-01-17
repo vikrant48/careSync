@@ -10,6 +10,8 @@ import com.vikrant.careSync.repository.AppointmentRepository;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.MedicalHistoryRepository;
 import com.vikrant.careSync.repository.PatientRepository;
+import com.vikrant.careSync.repository.master.SpecializationMasterRepository;
+import com.vikrant.careSync.entity.master.SpecializationMaster;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -46,12 +48,9 @@ public class AiService {
     private final DoctorLeaveService doctorLeaveService;
     private final FeedbackService feedbackService;
     private final LabTestService labTestService;
+    private final SpecializationMasterRepository specializationMasterRepository;
 
-    private static final List<String> FALLBACK_SPECIALIZATIONS = List.of(
-            "Cardiology", "Dermatology", "Endocrinology", "Gastroenterology",
-            "General Medicine", "Gynecology", "Neurology", "Oncology",
-            "Ophthalmology", "Orthopedics", "Pediatrics", "Psychiatry",
-            "Pulmonology", "Radiology", "Surgery", "Urology");
+    private static final Long DEFAULT_ORG_ID = 91L;
 
     public AiChatResponse getResponse(AiChatRequest request) {
         if (apiKey == null || apiKey.isBlank()) {
@@ -321,7 +320,9 @@ public class AiService {
     }
 
     private List<String> getAvailableSpecializations() {
-        Set<String> allSpecs = new HashSet<>(FALLBACK_SPECIALIZATIONS);
+        Set<String> allSpecs = specializationMasterRepository.findByOrgId(DEFAULT_ORG_ID)
+                .stream().map(SpecializationMaster::getValue).collect(Collectors.toSet());
+
         doctorRepository.findAll().stream()
                 .map(Doctor::getSpecialization)
                 .filter(s -> s != null && !s.isBlank())

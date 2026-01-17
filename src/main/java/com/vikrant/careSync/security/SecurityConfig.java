@@ -41,6 +41,7 @@ public class SecurityConfig {
                                 })
                                 .authorizeHttpRequests(auth -> auth
                                                 .requestMatchers("/api/auth/**").permitAll()
+                                                .requestMatchers("/api/master/**").permitAll()
                                                 .requestMatchers("/api/notifications/status").permitAll()
                                                 .requestMatchers("/api/admin/**")
                                                 .hasAnyRole(AppConstants.Roles.DOCTOR, AppConstants.Roles.ADMIN)
