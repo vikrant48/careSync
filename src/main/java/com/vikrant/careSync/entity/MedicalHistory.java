@@ -24,13 +24,24 @@ public class MedicalHistory {
     private Doctor doctor;
 
     private LocalDate visitDate;
+
+    @Column(columnDefinition = "TEXT")
     private String symptoms;
+
+    @Column(columnDefinition = "TEXT")
     private String diagnosis;
+
+    @Column(columnDefinition = "TEXT")
     private String treatment;
 
     // Prescription fields
+    @Column(columnDefinition = "TEXT")
     private String medicine;
+
+    @Column(columnDefinition = "TEXT")
     private String doses;
+
+    @Column(columnDefinition = "TEXT")
     private String notes;
 
     @Column(name = "appointment_id")

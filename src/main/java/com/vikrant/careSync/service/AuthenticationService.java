@@ -15,14 +15,13 @@ import com.vikrant.careSync.security.entity.UserSession;
 import com.vikrant.careSync.security.repository.PasswordResetTokenRepository;
 import com.vikrant.careSync.security.repository.PasswordResetOtpRepository;
 import com.vikrant.careSync.service.interfaces.IAuthenticationService;
-import com.vikrant.careSync.service.EmailService;
-import com.vikrant.careSync.service.EmailVerificationService;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
 import org.springframework.transaction.annotation.Transactional;
 
 import lombok.extern.slf4j.Slf4j;

@@ -3,6 +3,8 @@ package com.vikrant.careSync.controller;
 import com.vikrant.careSync.dto.AiChatRequest;
 import com.vikrant.careSync.dto.AiChatResponse;
 import com.vikrant.careSync.dto.MedicalSummaryResponse;
+import com.vikrant.careSync.dto.DiagnosisRequest;
+import com.vikrant.careSync.dto.DiagnosisSuggestionDto;
 import com.vikrant.careSync.service.AiService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +20,7 @@ public class AiController {
     private final AiService aiService;
 
     @PostMapping("/chat")
-    @PreAuthorize("hasRole('PATIENT')")
+    @PreAuthorize("hasAnyRole('PATIENT', 'DOCTOR')")
     public ResponseEntity<AiChatResponse> chat(@Valid @RequestBody AiChatRequest request) {
         return ResponseEntity.ok(aiService.getResponse(request));
     }
@@ -27,5 +29,11 @@ public class AiController {
     @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN')")
     public ResponseEntity<MedicalSummaryResponse> summarize(@PathVariable Long patientId) {
         return ResponseEntity.ok(aiService.summarizePatientHistory(patientId));
+    }
+
+    @PostMapping("/suggest-diagnosis")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<DiagnosisSuggestionDto> suggestDiagnosis(@RequestBody DiagnosisRequest request) {
+        return ResponseEntity.ok(aiService.suggestDiagnosis(request.getSymptoms()));
     }
 }

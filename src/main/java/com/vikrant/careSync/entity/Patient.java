@@ -6,13 +6,12 @@ import lombok.*;
 import java.time.LocalDate;
 import java.util.List;
 
-@Setter
-@Getter
+@Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 @ToString(exclude = { "appointments", "medicalHistories", "documents" })
-@EqualsAndHashCode(exclude = { "appointments", "medicalHistories", "documents" })
+@EqualsAndHashCode(callSuper = false)
 @Entity
 @Table(name = "patients")
 public class Patient extends User {

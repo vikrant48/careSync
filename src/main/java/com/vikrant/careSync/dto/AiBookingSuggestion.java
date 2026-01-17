@@ -13,12 +13,13 @@ import java.math.BigDecimal;
 @Builder
 public class AiBookingSuggestion {
     public enum SuggestionType {
-        SPECIALIZATIONS, DOCTORS, DATES, SLOTS, CONFIRM
+        SPECIALIZATIONS, DOCTORS, DATES, SLOTS, CONFIRM, MY_APPOINTMENTS
     }
 
     private SuggestionType type;
     private List<String> specializations;
     private List<DoctorSuggestion> doctors;
+    private List<AppointmentDto> appointments;
     private List<String> slots;
 
     // For single selection / confirmation
@@ -27,7 +28,11 @@ public class AiBookingSuggestion {
     private String specialization;
     private String slot;
     private String date; // YYYY-MM-DD
+    private String originalDate; // For rescheduling: original date
+    private String originalSlot; // For rescheduling: original slot
+    private Long appointmentId; // For rescheduling: original appointment ID
     private BigDecimal consultationFee;
+    private String reason;
 
     @Data
     @Builder
@@ -43,5 +48,6 @@ public class AiBookingSuggestion {
         private Integer experience; // Total years of service
         private Boolean isOnLeave;
         private String leaveMessage;
+        private Boolean isVerified;
     }
 }
