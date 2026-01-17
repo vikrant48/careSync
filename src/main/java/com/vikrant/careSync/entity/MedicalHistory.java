@@ -1,6 +1,7 @@
 package com.vikrant.careSync.entity;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.vikrant.careSync.security.EncryptionConverter;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDate;
@@ -25,22 +26,28 @@ public class MedicalHistory {
 
     private LocalDate visitDate;
 
+    @Convert(converter = EncryptionConverter.class)
     @Column(columnDefinition = "TEXT")
     private String symptoms;
 
+    @Convert(converter = EncryptionConverter.class)
     @Column(columnDefinition = "TEXT")
     private String diagnosis;
 
+    @Convert(converter = EncryptionConverter.class)
     @Column(columnDefinition = "TEXT")
     private String treatment;
 
     // Prescription fields
+    @Convert(converter = EncryptionConverter.class)
     @Column(columnDefinition = "TEXT")
     private String medicine;
 
+    @Convert(converter = EncryptionConverter.class)
     @Column(columnDefinition = "TEXT")
     private String doses;
 
+    @Convert(converter = EncryptionConverter.class)
     @Column(columnDefinition = "TEXT")
     private String notes;
 

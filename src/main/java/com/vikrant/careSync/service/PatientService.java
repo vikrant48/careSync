@@ -49,7 +49,7 @@ public class PatientService implements IPatientService {
 
     @Caching(evict = {
             @CacheEvict(value = "patientData", key = "'id_' + #patientId"),
-            @CacheEvict(value = "patientData", key = "'username_' + #updatedPatient.username")
+            @CacheEvict(value = "patientData", allEntries = true) // Safer way to ensure username cache is also cleared
     })
     public Patient updatePatientProfile(Long patientId, Patient updatedPatient) {
         Patient patient = patientRepository.findById(patientId)
@@ -62,7 +62,6 @@ public class PatientService implements IPatientService {
         patient.setIllnessDetails(updatedPatient.getIllnessDetails());
         patient.setGender(updatedPatient.getGender());
         patient.setEmail(updatedPatient.getEmail());
-        patient.setGender(updatedPatient.getGender());
         patient.setBloodGroup(updatedPatient.getBloodGroup());
         patient.setIsActive(updatedPatient.getIsActive());
 
@@ -127,6 +126,7 @@ public class PatientService implements IPatientService {
                 .toList();
     }
 
+    @CacheEvict(value = "patientData", allEntries = true)
     public Patient updateIllnessDetails(Long patientId, String illnessDetails) {
         Patient patient = patientRepository.findById(patientId)
                 .orElseThrow(() -> new RuntimeException("Patient not found"));
@@ -135,6 +135,7 @@ public class PatientService implements IPatientService {
         return patientRepository.save(patient);
     }
 
+    @CacheEvict(value = "patientData", allEntries = true)
     public Patient updateContactInfo(Long patientId, String contactInfo) {
         Patient patient = patientRepository.findById(patientId)
                 .orElseThrow(() -> new RuntimeException("Patient not found"));

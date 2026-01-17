@@ -1,6 +1,7 @@
 package com.vikrant.careSync.entity;
 
 import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.vikrant.careSync.security.EncryptionConverter;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDate;
@@ -16,19 +17,23 @@ import java.util.List;
 @Table(name = "patients")
 public class Patient extends User {
 
-    @Column(name = "first_name", nullable = false, length = 50)
+    @Convert(converter = EncryptionConverter.class)
+    @Column(name = "first_name", nullable = false, length = 200) // Increased length for encrypted data
     private String firstName;
 
-    @Column(name = "last_name", nullable = false, length = 50)
+    @Convert(converter = EncryptionConverter.class)
+    @Column(name = "last_name", nullable = false, length = 200)
     private String lastName;
 
     @Column(name = "date_of_birth")
     private LocalDate dateOfBirth;
 
-    @Column(name = "contact_info", length = 100)
+    @Convert(converter = EncryptionConverter.class)
+    @Column(name = "contact_info", length = 500)
     private String contactInfo;
 
-    @Column(name = "illness_details", length = 1000)
+    @Convert(converter = EncryptionConverter.class)
+    @Column(name = "illness_details", length = 2000)
     private String illnessDetails;
 
     @Column(name = "profile_image_url", length = 255)
