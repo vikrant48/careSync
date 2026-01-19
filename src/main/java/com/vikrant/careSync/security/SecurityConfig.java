@@ -40,6 +40,7 @@ public class SecurityConfig {
                                 .cors(cors -> {
                                 })
                                 .authorizeHttpRequests(auth -> auth
+                                                .requestMatchers("/api/auth/check-availability").permitAll()
                                                 .requestMatchers("/api/auth/**").permitAll()
                                                 .requestMatchers("/api/master/**").permitAll()
                                                 .requestMatchers("/api/notifications/status").permitAll()

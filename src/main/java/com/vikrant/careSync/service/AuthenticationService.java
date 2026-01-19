@@ -95,6 +95,27 @@ public class AuthenticationService implements IAuthenticationService {
         }
     }
 
+    public Map<String, Boolean> checkAvailability(String username, String email) {
+        Map<String, Boolean> response = new HashMap<>();
+
+        boolean usernameExists = false;
+        if (username != null && !username.isEmpty()) {
+            usernameExists = doctorRepository.existsByUsername(username) ||
+                    patientRepository.existsByUsername(username);
+        }
+
+        boolean emailExists = false;
+        if (email != null && !email.isEmpty()) {
+            emailExists = doctorRepository.existsByEmail(email) ||
+                    patientRepository.existsByEmail(email);
+        }
+
+        response.put("usernameAvailable", !usernameExists);
+        response.put("emailAvailable", !emailExists);
+
+        return response;
+    }
+
     private AuthenticationResponse registerDoctor(RegisterRequest request) {
         Doctor doctor = new Doctor();
         doctor.setUsername(request.getUsername());

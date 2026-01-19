@@ -102,6 +102,13 @@ public class AuthController {
         }
     }
 
+    @GetMapping("/check-availability")
+    public ResponseEntity<Map<String, Boolean>> checkAvailability(
+            @RequestParam(required = false) String username,
+            @RequestParam(required = false) String email) {
+        return ResponseEntity.ok(authenticationService.checkAvailability(username, email));
+    }
+
     @io.swagger.v3.oas.annotations.Operation(summary = "Authenticate user", description = "Returns JWT access and refresh tokens upon successful login")
     @PostMapping("/login")
     public ResponseEntity<?> authenticate(
