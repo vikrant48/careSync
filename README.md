@@ -5,7 +5,7 @@ A concise summary of the backend capabilities implemented in this project.
 ## Database ERD
 
 Link to the database entity-relationship diagram:
-https://dbdiagram.io/d/6919c7fb6735e11170077862
+[https://dbdiagram.io/d/6919c7fb6735e11170077862](https://dbdiagram.io/d/6970e7c2bd82f5fce22c9b1d)
 
 ## Core Modules
 - `Auth`: Registration, login, refresh tokens, logout, password change/reset with OTP.
