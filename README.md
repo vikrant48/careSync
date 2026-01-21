@@ -29,8 +29,15 @@ The system follows a **Layered Architecture** leveraging the **DTO Pattern** to 
 - **Razorpay Payment Gateway**: Seamlessly integrated Razorpay for booking payments.
 - **Webhook Handling**: Secure webhook endpoints verify payment checksums to ensure transaction integrity and handle async payment success/failure events.
 
+### 🧠 AI-Powered Healthcare
+- **Google Gemini Integration**: Leveraged **Gemini 1.5 Flash** model to provide intelligent insights.
+- **Medical Summarization**: Automatically generates concise summaries of complex patient medical histories.
+- **Diagnostic Assistant**: Analyzes reported symptoms to suggest potential diagnoses to doctors (Decision Support).
+- **Interactive Chat**: Context-aware AI assistant for patients and doctors.
+
 ### 🚀 Performance & Scalability
-- **Cloudinary Storage**: Offloaded static asset and medical document storage to Cloudinary, ensuring faster API response times and scalable file handling.
+- **AWS S3 / Supabase Storage**: Migrated from Cloudinary to **AWS S3 SDK** (via Supabase) for secure, compliant, and scalable storage of medical documents and prescriptions.
+- **Redis Caching**: Implemented **Redis** as a distributed cache to speed up master data retrieval and manage user sessions, significantly reducing database latency.
 - **Database Optimization**: Utilized JPA/Hibernate with optimized queries and relationships (One-To-Many, Many-To-Many) to handle complex entity graphs efficiently.
 
 ---
@@ -44,8 +51,10 @@ The system follows a **Layered Architecture** leveraging the **DTO Pattern** to 
 | **ORM** | Hibernate / Spring Data JPA |
 | **Security** | Spring Security 6, JWT (jjwt) |
 | **Real-time** | Spring WebSocket, STOMP |
+| **AI / ML** | Google Gemini Generative AI |
+| **Caching** | Redis (Lettuce Client) |
 | **Payments** | Razorpay SDK |
-| **Cloud Storage** | Cloudinary |
+| **Cloud Storage** | AWS S3 SDK (Supabase) |
 | **Documentation** | OpenAPI / Swagger UI |
 
 ---
