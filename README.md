@@ -86,8 +86,8 @@ Link to the database entity-relationship diagram:
 
 ## 🔗 Live API Documentation
 The API is fully documented using Swagger/OpenAPI.
-- **Swagger UI**: `http://localhost:8080/swagger-ui.html`
-- **OpenAPI Json**: `http://localhost:8080/v3/api-docs`
+- **Swagger UI**: `http://caresync-backend-aq8e.onrender.com/swagger-ui`
+- **OpenAPI Json**: `http://caresync-backend-aq8e.onrender.com/v3/api-docs`
 
 ---
 *Built by Vikrant - Focused on Clean Code, Scalability, and Modern Java Principles.*
