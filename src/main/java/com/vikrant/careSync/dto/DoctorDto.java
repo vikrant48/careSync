@@ -34,6 +34,7 @@ public class DoctorDto {
     private Double averageRating;
     private Long reviewCount;
     private Boolean isVerified;
+    private int completionPercentage;
 
     public DoctorDto(Doctor doctor) {
         this.id = doctor.getId();

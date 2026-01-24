@@ -1,81 +1,19 @@
-# Git
-.git
-.gitignore
-.gitattributes
-
-# Maven
 target/
+!.mvn/wrapper/maven-wrapper.jar
 !target/careSync-*.jar
-.mvn/wrapper/maven-wrapper.jar
-
-# IDE
+*.class
+.git/
+.gitignore
 .idea/
 .vscode/
 *.iml
-*.ipr
-*.iws
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-logs/
-
-# Temporary files
-*.tmp
-*.temp
-
-# Docker
-Dockerfile
+HELP.md
+mvnw
+mvnw.cmd
+deploy.ps1
 docker-compose.yml
-.dockerignore
-
-# Documentation
-README.md
-*.md
-
-# Node modules (if any)
-node_modules/
-
-# Environment files
-.env
-.env.local
-.env.*.local
-.env.development
-.env.production
-.env.test
-.env.*
-!*.env_sample
-
-# Test files
-src/test/
-
-# Build artifacts
-build/
-dist/
-
-# Uploads directory (will be mounted as volume)
+Dockerfile
+.DS_Store
+thumbs.db
+logs/
 uploads/
-
-# Eclipse/STS project files
-.classpath
-.project
-.settings/
-
-# Secrets and certificates
-*.pem
-*.key
-*.crt
-*.cert
-*.jks
-*.p12
-*.der
-
-# Editor swap files
-*.swp
-*.swo
-
-# Misc caches
-.cache/

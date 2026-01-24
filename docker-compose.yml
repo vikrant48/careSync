@@ -1,6 +1,27 @@
 version: '3.8'
 
 services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: caresync-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: caresync
+      POSTGRES_USER: ${SPRING_DATASOURCE_USERNAME:-caresync}
+      POSTGRES_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-caresync}
+    ports:
+      - "5433:5432" # Host port 5433 to avoid conflict with local postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - caresync-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SPRING_DATASOURCE_USERNAME:-caresync}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Spring Boot application
   app:
     build:
@@ -12,9 +33,10 @@ services:
       - "8080:8080"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
-      - SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}
-      - SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME}
-      - SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD}
+      # Override URL to point to internal postgres service by service name "postgres"
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/caresync
+      - SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME:-caresync}
+      - SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD:-caresync}
       - APP_CORS_ALLOWED_ORIGINS=${APP_CORS_ALLOWED_ORIGINS}
       - APP_JWT_SECRET=${APP_JWT_SECRET}
       - APP_JWT_EXPIRATION=86400000
@@ -44,7 +66,6 @@ services:
       - SPRING_MAIL_PROPERTIES_MAIL_DEBUG=false
       - MAIL_API_PROVIDER=${MAIL_API_PROVIDER}
       - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL}
-      - SENDGRID_API_KEY=
       # Razorpay
       - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID}
       - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET}
@@ -55,7 +76,7 @@ services:
     volumes:
       - app_uploads:/app/uploads
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
     networks:
       - caresync-network
@@ -67,7 +88,7 @@ services:
       start_period: 120s
 
 volumes:
-  mysql_data:
+  postgres_data:
     driver: local
   app_uploads:
     driver: local

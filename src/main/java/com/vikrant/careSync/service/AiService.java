@@ -386,7 +386,16 @@ public class AiService {
         String reason = parts.length > 2 ? parts[2] : "AI Assisted Booking";
 
         Doctor d = doctorRepository.findById(doctorId).orElseThrow();
-        List<String> slots = appointmentService.getAvailableSlots(doctorId, date);
+        com.vikrant.careSync.dto.SlotAvailabilityResponse slotResponse = appointmentService.getAvailableSlots(doctorId,
+                date);
+        if (slotResponse.isOnLeave()) {
+            return AiChatResponse.builder()
+                    .response(slotResponse.getLeaveMessage())
+                    .success(true)
+                    .build();
+        }
+
+        List<String> slots = slotResponse.getAvailableSlots();
 
         AiBookingSuggestion.AiBookingSuggestionBuilder suggestionBuilder = AiBookingSuggestion.builder()
                 .type(AiBookingSuggestion.SuggestionType.SLOTS)

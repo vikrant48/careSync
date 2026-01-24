@@ -56,12 +56,9 @@ public class DoctorController {
     @GetMapping("/profile/{username}")
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<DoctorDto> getDoctorProfile(@PathVariable String username) {
-        try {
-            Doctor doctor = doctorService.getDoctorProfile(username);
-            return ResponseEntity.ok(new DoctorDto(doctor));
-        } catch (Exception e) {
-            return ResponseEntity.notFound().build();
-        }
+        return doctorService.getDoctorDtoByUsername(username)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @PutMapping("/profile/{username}")
@@ -69,8 +66,10 @@ public class DoctorController {
     public ResponseEntity<DoctorDto> updateDoctorProfile(@PathVariable String username,
             @RequestBody UpdateDoctorRequest request) {
         try {
-            Doctor doctor = doctorService.updateDoctorProfileByUsername(username, request);
-            return ResponseEntity.ok(new DoctorDto(doctor));
+            doctorService.updateDoctorProfileByUsername(username, request);
+            return doctorService.getDoctorDtoByUsername(username)
+                    .map(ResponseEntity::ok)
+                    .orElse(ResponseEntity.notFound().build());
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
@@ -80,8 +79,10 @@ public class DoctorController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<DoctorDto> updateProfileImage(@PathVariable String username, @RequestParam String imageUrl) {
         try {
-            Doctor doctor = doctorService.updateProfileImageByUsername(username, imageUrl);
-            return ResponseEntity.ok(new DoctorDto(doctor));
+            doctorService.updateProfileImageByUsername(username, imageUrl);
+            return doctorService.getDoctorDtoByUsername(username)
+                    .map(ResponseEntity::ok)
+                    .orElse(ResponseEntity.notFound().build());
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }

@@ -412,11 +412,27 @@ public class AppointmentService {
                 .toList();
     }
 
-    public List<String> getAvailableSlots(Long doctorId, String date) {
-        // First check if doctor is on leave on this date
+    public com.vikrant.careSync.dto.SlotAvailabilityResponse getAvailableSlots(Long doctorId, String date) {
         LocalDate requestedLocalDate = LocalDate.parse(date);
+
+        // Check if doctor is on leave
         if (doctorLeaveService.isDoctorOnLeave(doctorId, requestedLocalDate)) {
-            return new java.util.ArrayList<>(); // No slots available if on leave
+            com.vikrant.careSync.entity.DoctorLeave leave = doctorLeaveService.getActiveLeave(doctorId,
+                    requestedLocalDate);
+            String message = "Doctor is on leave";
+            LocalDate endDate = null;
+
+            if (leave != null) {
+                endDate = leave.getEndDate();
+                message = "Doctor is on leave until " + endDate.toString();
+            }
+
+            return com.vikrant.careSync.dto.SlotAvailabilityResponse.builder()
+                    .availableSlots(new java.util.ArrayList<>())
+                    .isOnLeave(true)
+                    .leaveMessage(message)
+                    .leaveEndDate(endDate)
+                    .build();
         }
 
         // Generate all possible 30-minute slots for doctor working hours
@@ -432,7 +448,7 @@ public class AppointmentService {
         java.time.LocalTime now = java.time.LocalTime.now();
 
         // Filter out booked/confirmed slots and past slots if today
-        return allSlots.stream()
+        List<String> availableSlots = allSlots.stream()
                 .filter(slot -> {
                     // Check if slot is already taken
                     if (isSlotUnavailable(existingAppointments, slot)) {
@@ -448,6 +464,11 @@ public class AppointmentService {
                     return true;
                 })
                 .toList();
+
+        return com.vikrant.careSync.dto.SlotAvailabilityResponse.builder()
+                .availableSlots(availableSlots)
+                .isOnLeave(false)
+                .build();
     }
 
     private List<String> generateDoctorWorkingSlots() {

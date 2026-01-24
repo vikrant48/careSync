@@ -42,7 +42,50 @@ public class DoctorService {
         DoctorDto dto = new DoctorDto(doctor);
         dto.setAverageRating(feedbackService.getAverageRatingByDoctor(doctor.getId()));
         dto.setReviewCount(feedbackService.getTotalFeedbacksCount(doctor.getId()));
+        dto.setCompletionPercentage(calculateCompletionPercentage(doctor));
         return dto;
+    }
+
+    private int calculateCompletionPercentage(Doctor doctor) {
+        int percentage = 0;
+
+        // Basic Info (20%)
+        if (doctor.getFirstName() != null && !doctor.getFirstName().isEmpty() &&
+                doctor.getLastName() != null && !doctor.getLastName().isEmpty() &&
+                doctor.getEmail() != null && !doctor.getEmail().isEmpty() &&
+                doctor.getContactInfo() != null && !doctor.getContactInfo().isEmpty() &&
+                doctor.getGender() != null && !doctor.getGender().isEmpty()) {
+            percentage += 20;
+        }
+
+        // Professional Details (20%)
+        if (doctor.getSpecialization() != null && !doctor.getSpecialization().isEmpty() &&
+                doctor.getConsultationFees() != null &&
+                doctor.getLanguages() != null && !doctor.getLanguages().isEmpty()) {
+            percentage += 20;
+        }
+
+        // Address & Bio (10%)
+        if (doctor.getAddress() != null && !doctor.getAddress().isEmpty()) {
+            percentage += 10;
+        }
+
+        // Profile Image (10%)
+        if (doctor.getProfileImageUrl() != null && !doctor.getProfileImageUrl().isEmpty()) {
+            percentage += 10;
+        }
+
+        // Experience (20%)
+        if (!experienceRepository.findByDoctorId(doctor.getId()).isEmpty()) {
+            percentage += 20;
+        }
+
+        // Education (20%)
+        if (!educationRepository.findByDoctorId(doctor.getId()).isEmpty()) {
+            percentage += 20;
+        }
+
+        return percentage;
     }
 
     public List<Doctor> getAllDoctors() {

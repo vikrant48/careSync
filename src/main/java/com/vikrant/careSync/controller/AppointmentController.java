@@ -494,8 +494,9 @@ public class AppointmentController {
     @GetMapping("/available-slots")
     public ResponseEntity<?> getAvailableSlots(@RequestParam Long doctorId, @RequestParam String date) {
         try {
-            List<String> availableSlots = appointmentService.getAvailableSlots(doctorId, date);
-            return ResponseEntity.ok(availableSlots);
+            com.vikrant.careSync.dto.SlotAvailabilityResponse response = appointmentService.getAvailableSlots(doctorId,
+                    date);
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());

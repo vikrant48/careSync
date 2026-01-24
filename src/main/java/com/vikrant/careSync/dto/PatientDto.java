@@ -25,6 +25,7 @@ public class PatientDto {
     private String gender;
     private String bloodGroup;
     private Boolean isActive;
+    private int completionPercentage;
 
     public PatientDto(Patient patient) {
         this.id = patient.getId();

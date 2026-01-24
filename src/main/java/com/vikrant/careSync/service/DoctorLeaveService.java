@@ -63,4 +63,9 @@ public class DoctorLeaveService {
     public boolean isDoctorOnLeave(Long doctorId, LocalDate date) {
         return doctorLeaveRepository.isDoctorOnLeave(doctorId, date);
     }
+
+    public DoctorLeave getActiveLeave(Long doctorId, LocalDate date) {
+        List<DoctorLeave> leaves = doctorLeaveRepository.findActiveLeavesByDoctorAndDate(doctorId, date);
+        return leaves.isEmpty() ? null : leaves.get(0);
+    }
 }

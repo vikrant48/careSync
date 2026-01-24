@@ -31,12 +31,49 @@ public class PatientService implements IPatientService {
 
     @Cacheable(value = "patientData", key = "'id_' + #id")
     public Optional<PatientDto> getPatientDtoById(Long id) {
-        return patientRepository.findById(id).map(PatientDto::new);
+        return patientRepository.findById(id).map(this::convertToDtoWithStats);
     }
 
     @Cacheable(value = "patientData", key = "'username_' + #username")
     public Optional<PatientDto> getPatientDtoByUsername(String username) {
-        return patientRepository.findByUsername(username).map(PatientDto::new);
+        return patientRepository.findByUsername(username).map(this::convertToDtoWithStats);
+    }
+
+    private PatientDto convertToDtoWithStats(Patient patient) {
+        PatientDto dto = new PatientDto(patient);
+        dto.setCompletionPercentage(calculateCompletionPercentage(patient));
+        return dto;
+    }
+
+    private int calculateCompletionPercentage(Patient patient) {
+        int percentage = 0;
+
+        // Basic Info (30%)
+        if (patient.getFirstName() != null && !patient.getFirstName().isEmpty() &&
+                patient.getLastName() != null && !patient.getLastName().isEmpty() &&
+                patient.getEmail() != null && !patient.getEmail().isEmpty() &&
+                patient.getContactInfo() != null && !patient.getContactInfo().isEmpty()) {
+            percentage += 30;
+        }
+
+        // Personal Details (30%)
+        if (patient.getDateOfBirth() != null &&
+                patient.getGender() != null && !patient.getGender().isEmpty() &&
+                patient.getBloodGroup() != null && !patient.getBloodGroup().isEmpty()) {
+            percentage += 30;
+        }
+
+        // Profile Image (20%)
+        if (patient.getProfileImageUrl() != null && !patient.getProfileImageUrl().isEmpty()) {
+            percentage += 20;
+        }
+
+        // Medical Context (20%)
+        if (patient.getIllnessDetails() != null && !patient.getIllnessDetails().isEmpty()) {
+            percentage += 20;
+        }
+
+        return percentage;
     }
 
     public Optional<Patient> getPatientById(Long id) {
