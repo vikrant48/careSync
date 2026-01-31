@@ -42,8 +42,9 @@ public class SecurityConfig {
                                 .authorizeHttpRequests(auth -> auth
                                                 .requestMatchers("/api/auth/check-availability").permitAll()
                                                 .requestMatchers("/api/auth/**").permitAll()
+                                                .requestMatchers("/ws/**").permitAll()
                                                 .requestMatchers("/api/master/**").permitAll()
-                                                .requestMatchers("/api/notifications/status").permitAll()
+
                                                 .requestMatchers("/api/admin/**")
                                                 .hasAnyRole(AppConstants.Roles.DOCTOR, AppConstants.Roles.ADMIN)
                                                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()

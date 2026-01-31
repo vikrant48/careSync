@@ -29,6 +29,7 @@ public class AppointmentService {
     private final PatientRepository patientRepository;
     private final NotificationService notificationService;
     private final DoctorLeaveService doctorLeaveService;
+    private final com.vikrant.careSync.repository.ChatRepository chatRepository;
 
     // Only patients can book appointments - status automatically set to BOOKED
     @Caching(evict = {
@@ -285,6 +286,14 @@ public class AppointmentService {
                 notificationService.sendAppointmentStarted(saved.getId());
             } else if (newStatus == Appointment.Status.COMPLETED) {
                 notificationService.sendAppointmentCompleted(saved.getId());
+                // Delete chat history
+                try {
+                    chatRepository.deleteByAppointmentId(saved.getId());
+                } catch (Exception e) {
+                    // Log error but don't fail the transaction just for chat history
+                    System.err.println("Failed to delete chat history: " + e.getMessage());
+                }
+
                 // Optionally prompt feedback after completion
                 notificationService.sendFeedbackReminder(saved.getId());
             }

@@ -198,16 +198,4 @@ public class NotificationController {
         }
     }
 
-    @GetMapping("/status")
-    public ResponseEntity<Map<String, Object>> getNotificationStatus() {
-        try {
-            Map<String, Object> status = Map.of(
-                    "service", "Notification Service",
-                    "status", "Active",
-                    "timestamp", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-            return ResponseEntity.ok(status);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
-    }
 }

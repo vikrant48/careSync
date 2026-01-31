@@ -9,6 +9,8 @@ import com.vikrant.careSync.entity.Notification;
 import com.vikrant.careSync.repository.NotificationRepository;
 import java.time.LocalDateTime;
 import java.util.List;
+import com.vikrant.careSync.dto.NotificationDto;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,7 +28,8 @@ public class NotificationService {
     private final AppointmentRepository appointmentRepository;
     private final NotificationRepository notificationRepository;
     private final DoctorService doctorService;
-    private final PatientService patientService;
+
+    private final SimpMessagingTemplate messagingTemplate;
 
     public void sendDoctorNewAppointmentNotification(Long appointmentId) {
         Appointment appointment = appointmentRepository.findById(appointmentId)
@@ -405,7 +408,26 @@ public class NotificationService {
                 .timestamp(LocalDateTime.now())
                 .link("/doctor")
                 .build();
-        notificationRepository.save(notif);
+        Notification savedNotif = notificationRepository.save(notif);
+
+        // Push to WebSocket
+        try {
+            // Using a user-specific destination using the doctor's ID
+            // The client will subscribe to /user/queue/notifications
+            // Spring Security User Principal Name is typically used here.
+            // If we authenticated with ID, we use ID. If email, we use email.
+            // Assuming the Principal.getName() returns the username/email used for login.
+            // For now, let's also try to send to a topic that includes the ID for
+            // simplicity if user-destinations fail
+            // But standardized way: convertToDto and send
+            NotificationDto dto = new NotificationDto(savedNotif);
+            messagingTemplate.convertAndSendToUser(
+                    doctor.getEmail(), // Assuming email is the Principal name
+                    "/queue/notifications",
+                    dto);
+        } catch (Exception e) {
+            log.error("Failed to send WebSocket notification to doctor", e);
+        }
     }
 
     private void sendToPatient(Appointment appointment, String message) {
@@ -424,7 +446,18 @@ public class NotificationService {
                 .timestamp(LocalDateTime.now())
                 .link("/patient")
                 .build();
-        notificationRepository.save(notif);
+        Notification savedNotif = notificationRepository.save(notif);
+
+        // Push to WebSocket
+        try {
+            NotificationDto dto = new NotificationDto(savedNotif);
+            messagingTemplate.convertAndSendToUser(
+                    patient.getEmail(), // Assuming email is the Principal name
+                    "/queue/notifications",
+                    dto);
+        } catch (Exception e) {
+            log.error("Failed to send WebSocket notification to patient", e);
+        }
     }
 
     public List<Notification> getDoctorFeed(Long doctorId) {
