@@ -94,7 +94,7 @@ public class DocumentService {
     /**
      * Core upload method
      */
-    @CacheEvict(value = "patientData", allEntries = true) // Document upload affects listings
+    @CacheEvict(value = "PATIENT:DOCUMENTS", allEntries = true) // Document upload affects listings
     private Document uploadDocument(MultipartFile file, Doctor doctor, Patient patient, Booking booking,
             Document.DocumentType documentType, String description,
             String uploadedByUsername, String uploadedByType) throws IOException {
@@ -148,14 +148,14 @@ public class DocumentService {
         return documentRepository.findById(id);
     }
 
-    @Cacheable(value = "doctorListing", key = "'docs_' + #doctorId")
+    @Cacheable(value = "DOCTOR:DOCUMENTS", key = "'docs_' + #doctorId")
     public List<DocumentDto> getDocumentsDtoByDoctorId(Long doctorId) {
         return documentRepository.findByDoctorId(doctorId).stream()
                 .map(doc -> new DocumentDto(doc, doc.getFilePath(), doc.getFilePath()))
                 .collect(Collectors.toList());
     }
 
-    @Cacheable(value = "patientData", key = "'docs_' + #patientId")
+    @Cacheable(value = "PATIENT:DOCUMENTS", key = "'docs_' + #patientId")
     public List<DocumentDto> getDocumentsDtoByPatientId(Long patientId) {
         return documentRepository.findByPatientId(patientId).stream()
                 .map(doc -> new DocumentDto(doc, doc.getFilePath(), doc.getFilePath()))
@@ -205,7 +205,7 @@ public class DocumentService {
     /**
      * Delete document (soft delete)
      */
-    @CacheEvict(value = { "patientData", "doctorListing" }, allEntries = true)
+    @CacheEvict(value = { "PATIENT:DOCUMENTS", "DOCTOR:DOCUMENTS" }, allEntries = true)
     public void deleteDocument(Long documentId) throws IOException {
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new RuntimeException("Document not found with id: " + documentId));

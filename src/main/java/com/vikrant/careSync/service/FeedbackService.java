@@ -102,7 +102,7 @@ public class FeedbackService implements IFeedbackService {
         feedbackRepository.delete(feedback);
     }
 
-    @Cacheable(value = "analytics", key = "'doctor_rating_' + #doctorId")
+    @Cacheable(value = "ANALYTICS:RATINGS", key = "'doctor_rating_' + #doctorId")
     public double getAverageRatingByDoctor(Long doctorId) {
         List<Feedback> feedbacks = feedbackRepository.findByDoctorId(doctorId);
         if (feedbacks.isEmpty()) {
@@ -116,7 +116,7 @@ public class FeedbackService implements IFeedbackService {
         return (double) totalRating / feedbacks.size();
     }
 
-    @Cacheable(value = "analytics", key = "'doctor_rating_dist_' + #doctorId")
+    @Cacheable(value = "ANALYTICS:RATINGS", key = "'doctor_rating_dist_' + #doctorId")
     public Map<Integer, Long> getRatingDistributionByDoctor(Long doctorId) {
         List<Feedback> feedbacks = feedbackRepository.findByDoctorId(doctorId);
 

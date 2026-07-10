@@ -58,8 +58,8 @@ public class BookingService {
      * Create booking with payment for patients (integrated flow)
      */
     @Caching(evict = {
-            @CacheEvict(value = "analytics", allEntries = true),
-            @CacheEvict(value = "patientData", key = "'financial_' + #currentPatient.id", condition = "#currentPatient != null")
+            @CacheEvict(value = "ANALYTICS:OVERALL", allEntries = true),
+            @CacheEvict(value = "PATIENT:FINANCIAL", key = "'financial_' + #currentPatient.id", condition = "#currentPatient != null")
     })
     public BookingResponse createBookingWithPayment(BookingRequest request, PaymentRequestDto paymentRequest) {
         // Validate authentication
@@ -156,8 +156,8 @@ public class BookingService {
      * Create booking for doctors (no payment required)
      */
     @Caching(evict = {
-            @CacheEvict(value = "analytics", allEntries = true),
-            @CacheEvict(value = "patientData", key = "'financial_' + #request.patientId", condition = "#request.patientId != null")
+            @CacheEvict(value = "ANALYTICS:OVERALL", allEntries = true),
+            @CacheEvict(value = "PATIENT:FINANCIAL", key = "'financial_' + #request.patientId", condition = "#request.patientId != null")
     })
     public BookingResponse createDoctorBooking(BookingRequest request) {
         // Validate authentication

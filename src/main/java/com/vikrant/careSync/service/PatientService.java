@@ -29,12 +29,12 @@ public class PatientService implements IPatientService {
         return patientRepository.findAll();
     }
 
-    @Cacheable(value = "patientData", key = "'id_' + #id")
+    @Cacheable(value = "PATIENT:PROFILE", key = "'id_' + #id")
     public Optional<PatientDto> getPatientDtoById(Long id) {
         return patientRepository.findById(id).map(this::convertToDtoWithStats);
     }
 
-    @Cacheable(value = "patientData", key = "'username_' + #username")
+    @Cacheable(value = "PATIENT:PROFILE", key = "'username_' + #username")
     public Optional<PatientDto> getPatientDtoByUsername(String username) {
         return patientRepository.findByUsername(username).map(this::convertToDtoWithStats);
     }
@@ -85,8 +85,8 @@ public class PatientService implements IPatientService {
     }
 
     @Caching(evict = {
-            @CacheEvict(value = "patientData", key = "'id_' + #patientId"),
-            @CacheEvict(value = "patientData", allEntries = true) // Safer way to ensure username cache is also cleared
+            @CacheEvict(value = "PATIENT:PROFILE", key = "'id_' + #patientId"),
+            @CacheEvict(value = "PATIENT:PROFILE", allEntries = true)
     })
     public Patient updatePatientProfile(Long patientId, Patient updatedPatient) {
         Patient patient = patientRepository.findById(patientId)
@@ -111,7 +111,7 @@ public class PatientService implements IPatientService {
     }
 
     // Medical History Management
-    @CacheEvict(value = "patientData", key = "'history_' + #patientId")
+    @CacheEvict(value = "PATIENT:HISTORY", key = "'history_' + #patientId")
     public MedicalHistory addMedicalHistory(Long patientId, MedicalHistory medicalHistory) {
         Patient patient = patientRepository.findById(patientId)
                 .orElseThrow(() -> new RuntimeException("Patient not found"));
@@ -120,7 +120,7 @@ public class PatientService implements IPatientService {
         return medicalHistoryRepository.save(medicalHistory);
     }
 
-    @Cacheable(value = "patientData", key = "'history_' + #patientId")
+    @Cacheable(value = "PATIENT:HISTORY", key = "'history_' + #patientId")
     public List<MedicalHistoryDto> getPatientMedicalHistoryDto(Long patientId) {
         return medicalHistoryRepository.findByPatientId(patientId).stream()
                 .map(MedicalHistoryDto::new)
@@ -131,8 +131,7 @@ public class PatientService implements IPatientService {
         return medicalHistoryRepository.findByPatientId(patientId);
     }
 
-    @CacheEvict(value = "patientData", allEntries = true) // Safer since we don't have patientId here easily without
-                                                          // fetching
+    @CacheEvict(value = "PATIENT:HISTORY", allEntries = true)
     public MedicalHistory updateMedicalHistory(Long historyId, MedicalHistory updatedHistory) {
         MedicalHistory history = medicalHistoryRepository.findById(historyId)
                 .orElseThrow(() -> new RuntimeException("Medical history not found"));
@@ -163,7 +162,7 @@ public class PatientService implements IPatientService {
                 .toList();
     }
 
-    @CacheEvict(value = "patientData", allEntries = true)
+    @CacheEvict(value = "PATIENT:PROFILE", allEntries = true)
     public Patient updateIllnessDetails(Long patientId, String illnessDetails) {
         Patient patient = patientRepository.findById(patientId)
                 .orElseThrow(() -> new RuntimeException("Patient not found"));
@@ -172,7 +171,7 @@ public class PatientService implements IPatientService {
         return patientRepository.save(patient);
     }
 
-    @CacheEvict(value = "patientData", allEntries = true)
+    @CacheEvict(value = "PATIENT:PROFILE", allEntries = true)
     public Patient updateContactInfo(Long patientId, String contactInfo) {
         Patient patient = patientRepository.findById(patientId)
                 .orElseThrow(() -> new RuntimeException("Patient not found"));

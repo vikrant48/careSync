@@ -321,7 +321,7 @@ public class AnalyticsService {
         }
 
         // Overall Analytics (System-wide)
-        @Cacheable(value = "analytics", key = "'overall_' + #startDate + '_' + #endDate")
+        @Cacheable(value = "ANALYTICS:OVERALL", key = "'overall_' + #startDate + '_' + #endDate")
         public OverallAnalyticsDto getOverallAnalytics(LocalDate startDate, LocalDate endDate) {
                 try {
                         // Get all appointments in date range
@@ -396,7 +396,7 @@ public class AnalyticsService {
         }
 
         // Patient Financial Stats
-        @Cacheable(value = "patientFinancialAnalytics_v3", key = "#patientId")
+        @Cacheable(value = "PATIENT:FINANCIAL", key = "#patientId")
         public PatientFinancialStatsDto getPatientFinancialStats(Long patientId) {
                 log.info("Fetching financial stats for patient ID: {}", patientId);
                 // Get aggregated stats directly from DB

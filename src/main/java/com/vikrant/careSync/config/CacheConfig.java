@@ -47,12 +47,35 @@ public class CacheConfig implements CachingConfigurer {
                                                 .fromSerializer(new GenericJackson2JsonRedisSerializer(mapper)))
                                 .disableCachingNullValues();
 
-                return RedisCacheManager.builder(connectionFactory)
+                RedisCacheManager manager = RedisCacheManager.builder(connectionFactory)
                                 .cacheDefaults(config)
-                                .withCacheConfiguration("analytics", config.entryTtl(Duration.ofMinutes(15)))
-                                .withCacheConfiguration("patientData", config.entryTtl(Duration.ofMinutes(5)))
-                                .withCacheConfiguration("doctorListing", config.entryTtl(Duration.ofHours(1)))
+                                // Patient caches (5 min TTL)
+                                .withCacheConfiguration("PATIENT:PROFILE", config.entryTtl(Duration.ofMinutes(5)))
+                                .withCacheConfiguration("PATIENT:HISTORY", config.entryTtl(Duration.ofMinutes(5)))
+                                .withCacheConfiguration("PATIENT:APPOINTMENTS", config.entryTtl(Duration.ofMinutes(5)))
+                                .withCacheConfiguration("PATIENT:DOCUMENTS", config.entryTtl(Duration.ofMinutes(5)))
+                                .withCacheConfiguration("PATIENT:FINANCIAL", config.entryTtl(Duration.ofMinutes(5)))
+                                // Doctor caches (1 hour TTL)
+                                .withCacheConfiguration("DOCTOR:PROFILE", config.entryTtl(Duration.ofHours(1)))
+                                .withCacheConfiguration("DOCTOR:EXPERIENCE", config.entryTtl(Duration.ofHours(1)))
+                                .withCacheConfiguration("DOCTOR:EDUCATION", config.entryTtl(Duration.ofHours(1)))
+                                .withCacheConfiguration("DOCTOR:CERTIFICATES", config.entryTtl(Duration.ofHours(1)))
+                                .withCacheConfiguration("DOCTOR:APPOINTMENTS", config.entryTtl(Duration.ofMinutes(5)))
+                                .withCacheConfiguration("DOCTOR:DOCUMENTS", config.entryTtl(Duration.ofHours(1)))
+                                // Analytics caches (15 min TTL)
+                                .withCacheConfiguration("ANALYTICS:OVERALL", config.entryTtl(Duration.ofMinutes(15)))
+                                .withCacheConfiguration("ANALYTICS:RATINGS", config.entryTtl(Duration.ofMinutes(15)))
                                 .build();
+
+                try {
+                        connectionFactory.getConnection().ping();
+                        log.info("[ServiceStatus] - Redis Cache     : CONNECTED ");
+                } catch (Exception e) {
+                        log.warn("[ServiceStatus] - Redis Cache     : DISCONNECTED ⚠ (caching disabled - {})",
+                                        e.getMessage());
+                }
+
+                return manager;
         }
 
         @Override

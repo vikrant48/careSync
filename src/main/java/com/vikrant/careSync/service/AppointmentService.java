@@ -33,8 +33,8 @@ public class AppointmentService {
 
     // Only patients can book appointments - status automatically set to BOOKED
     @Caching(evict = {
-            @CacheEvict(value = "patientData", key = "'upcoming_appointments_' + #patientId"),
-            @CacheEvict(value = "doctorListing", key = "'upcoming_appointments_' + #doctorId")
+            @CacheEvict(value = "PATIENT:APPOINTMENTS", key = "'upcoming_appointments_' + #patientId"),
+            @CacheEvict(value = "DOCTOR:APPOINTMENTS", key = "'upcoming_appointments_' + #doctorId")
     })
     public Appointment bookAppointment(Long doctorId, Long patientId, LocalDateTime appointmentDateTime,
             String reason) {
@@ -158,12 +158,12 @@ public class AppointmentService {
         return appointmentRepository.findByPatientIdWithPatientAndDoctorDetails(patientId);
     }
 
-    @Cacheable(value = "doctorListing", key = "'upcoming_appointments_' + #doctorId")
+    @Cacheable(value = "DOCTOR:APPOINTMENTS", key = "'upcoming_appointments_' + #doctorId")
     public List<Appointment> getUpcomingAppointmentsByDoctor(Long doctorId) {
         return appointmentRepository.findUpcomingAppointmentsByDoctorWithDetails(doctorId, LocalDateTime.now());
     }
 
-    @Cacheable(value = "patientData", key = "'upcoming_appointments_' + #patientId")
+    @Cacheable(value = "PATIENT:APPOINTMENTS", key = "'upcoming_appointments_' + #patientId")
     public List<Appointment> getUpcomingAppointmentsByPatient(Long patientId) {
         return appointmentRepository.findUpcomingAppointmentsByPatientWithDetails(patientId, LocalDateTime.now());
     }
@@ -218,7 +218,7 @@ public class AppointmentService {
     }
 
     // Update appointment status (for doctors and patients)
-    @CacheEvict(value = { "patientData", "doctorListing", "analytics" }, allEntries = true)
+    @CacheEvict(value = { "PATIENT:APPOINTMENTS", "DOCTOR:APPOINTMENTS", "ANALYTICS:OVERALL" }, allEntries = true)
     public Appointment updateAppointmentStatus(Long appointmentId, Appointment.Status newStatus, User currentUser) {
         Appointment appointment = appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
