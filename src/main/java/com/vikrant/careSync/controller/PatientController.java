@@ -19,6 +19,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.Cache;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -44,6 +46,7 @@ public class PatientController {
     private final IMedicalHistoryService medicalHistoryService;
     private final DocumentService documentService;
     private final UserService userService;
+    private final CacheManager cacheManager;
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Get all patients", description = "Retrieves a list of all registered patients (Doctor/Admin only)")
     @GetMapping
@@ -93,30 +96,46 @@ public class PatientController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<Map<String, Object>> getCompletePatientData(@PathVariable Long patientId) {
         try {
-            Optional<Patient> patientOpt = patientService.getPatientById(patientId);
-            if (patientOpt.isEmpty()) {
-                return ResponseEntity.notFound().build();
+            Cache cache = cacheManager.getCache("PATIENT:COMPLETE_DATA");
+            String key = "complete_" + patientId;
+
+            Map<String, Object> completeData = null;
+            if (cache != null) {
+                Cache.ValueWrapper wrapper = cache.get(key);
+                if (wrapper != null) {
+                    completeData = (Map<String, Object>) wrapper.get();
+                }
             }
 
-            Patient patient = patientOpt.get();
-            Map<String, Object> completeData = new HashMap<>();
+            if (completeData == null) {
+                log.info("Cache miss for complete patient data for id: {}. Fetching from database...", patientId);
+                Optional<PatientDto> patientDtoOpt = patientService.getPatientDtoById(patientId);
+                if (patientDtoOpt.isEmpty()) {
+                    return ResponseEntity.notFound().build();
+                }
 
-            // Patient basic information
-            PatientDto patientDto = new PatientDto(patient);
-            completeData.put("patient", patientDto);
+                completeData = new HashMap<>();
 
-            // Medical history
-            List<MedicalHistoryDto> medicalHistory = patientService.getPatientMedicalHistory(patientId).stream()
-                    .map(MedicalHistoryDto::new)
-                    .collect(Collectors.toList());
-            completeData.put("medicalHistory", medicalHistory);
+                // Patient basic information
+                completeData.put("patient", patientDtoOpt.get());
 
-            // Documents
-            List<DocumentDto> documents = documentService.getDocumentsByPatientId(patientId).stream()
-                    .map(doc -> new DocumentDto(doc, documentService.getFileUrl(doc.getId()),
-                            documentService.getDownloadUrl(doc.getId())))
-                    .collect(Collectors.toList());
-            completeData.put("documents", documents);
+                // Medical history
+                List<MedicalHistoryDto> medicalHistory = patientService.getPatientMedicalHistoryDto(patientId);
+                completeData.put("medicalHistory", medicalHistory);
+
+                // Documents (filtered to LAB_REPORT)
+                List<DocumentDto> documents = documentService.getDocumentsDtoByPatientId(patientId).stream()
+                        .filter(doc -> "LAB_REPORT".equals(doc.getDocumentType()))
+                        .collect(Collectors.toList());
+                completeData.put("documents", documents);
+
+                if (cache != null) {
+                    cache.put(key, completeData);
+                    log.info("Saved complete patient data for id: {} to Redis cache.", patientId);
+                }
+            } else {
+                log.info("Cache hit for complete patient data for id: {} in Redis.", patientId);
+            }
 
             return ResponseEntity.ok(completeData);
         } catch (Exception e) {

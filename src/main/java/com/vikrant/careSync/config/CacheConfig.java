@@ -55,6 +55,7 @@ public class CacheConfig implements CachingConfigurer {
                                 .withCacheConfiguration("PATIENT:APPOINTMENTS", config.entryTtl(Duration.ofMinutes(5)))
                                 .withCacheConfiguration("PATIENT:DOCUMENTS", config.entryTtl(Duration.ofMinutes(5)))
                                 .withCacheConfiguration("PATIENT:FINANCIAL", config.entryTtl(Duration.ofMinutes(5)))
+                                .withCacheConfiguration("PATIENT:COMPLETE_DATA", config.entryTtl(Duration.ofMinutes(5)))
                                 // Doctor caches (1 hour TTL)
                                 .withCacheConfiguration("DOCTOR:PROFILE", config.entryTtl(Duration.ofHours(1)))
                                 .withCacheConfiguration("DOCTOR:EXPERIENCE", config.entryTtl(Duration.ofHours(1)))

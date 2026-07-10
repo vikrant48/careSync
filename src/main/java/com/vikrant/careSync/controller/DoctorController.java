@@ -14,6 +14,9 @@ import com.vikrant.careSync.dto.EducationDto;
 import com.vikrant.careSync.dto.CertificateDto;
 import com.vikrant.careSync.service.DoctorService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.Cache;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -26,11 +29,13 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/doctors")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "${app.cors.allowed-origins}")
+@Slf4j
 @io.swagger.v3.oas.annotations.tags.Tag(name = "Doctors", description = "Endpoints for doctor profile, experience, and education management")
 @io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 public class DoctorController {
 
     private final DoctorService doctorService;
+    private final CacheManager cacheManager;
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Get all doctors", description = "Retrieves a list of all registered doctors")
     @GetMapping
@@ -56,9 +61,34 @@ public class DoctorController {
     @GetMapping("/profile/{username}")
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<DoctorDto> getDoctorProfile(@PathVariable String username) {
-        return doctorService.getDoctorDtoByUsername(username)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+        Cache cache = cacheManager.getCache("DOCTOR:PROFILE");
+        String key = "username_" + username;
+
+        DoctorDto doctorDto = null;
+        if (cache != null) {
+            Cache.ValueWrapper wrapper = cache.get(key);
+            if (wrapper != null) {
+                doctorDto = (DoctorDto) wrapper.get();
+            }
+        }
+
+        if (doctorDto == null) {
+            log.info("Cache miss for doctor profile username: {}. Fetching from database...", username);
+            Optional<DoctorDto> doctorDtoOpt = doctorService.getDoctorDtoByUsername(username);
+            if (doctorDtoOpt.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            doctorDto = doctorDtoOpt.get();
+
+            if (cache != null) {
+                cache.put(key, doctorDto);
+                log.info("Saved doctor profile username: {} to Redis cache.", username);
+            }
+        } else {
+            log.info("Cache hit for doctor profile username: {} in Redis.", username);
+        }
+
+        return ResponseEntity.ok(doctorDto);
     }
 
     @PutMapping("/profile/{username}")
