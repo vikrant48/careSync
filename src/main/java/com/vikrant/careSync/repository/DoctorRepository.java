@@ -12,13 +12,17 @@ import java.util.Optional;
 
 public interface DoctorRepository extends JpaRepository<Doctor, Long> {
 
-    Optional<Doctor> findByUsername(String username);
+    @Query("SELECT d FROM Doctor d WHERE d.user.username = :username")
+    Optional<Doctor> findByUsername(@Param("username") String username);
 
-    boolean existsByUsername(String username);
+    @Query("SELECT CASE WHEN COUNT(d) > 0 THEN true ELSE false END FROM Doctor d WHERE d.user.username = :username")
+    boolean existsByUsername(@Param("username") String username);
 
-    Optional<Doctor> findByEmail(String email);
+    @Query("SELECT d FROM Doctor d WHERE d.user.email = :email")
+    Optional<Doctor> findByEmail(@Param("email") String email);
 
-    boolean existsByEmail(String email);
+    @Query("SELECT CASE WHEN COUNT(d) > 0 THEN true ELSE false END FROM Doctor d WHERE d.user.email = :email")
+    boolean existsByEmail(@Param("email") String email);
 
     @Override
     Optional<Doctor> findById(Long id);

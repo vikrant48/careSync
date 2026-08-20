@@ -277,7 +277,7 @@ public class AiService {
     private AiChatResponse handleCancelAppointment(String message) {
         Long apptId = Long.parseLong(message.replace("ACTION_CANCEL_APPOINTMENT_", ""));
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        User currentUser = patientRepository.findByUsername(username).map(p -> (User) p).orElse(null);
+        User currentUser = patientRepository.findByUsername(username).map(Patient::getUser).orElse(null);
 
         try {
             appointmentService.cancelAppointment(apptId, currentUser);

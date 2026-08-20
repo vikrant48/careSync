@@ -27,28 +27,59 @@ public class UserDto {
     private LocalDateTime lastLogin;
 
     public UserDto(User user) {
-        this.id = user.getId();
-        this.username = user.getUsername();
-        this.email = user.getEmail();
-        this.role = user.getRole() != null ? user.getRole().name() : null;
-        this.createdAt = user.getCreatedAt();
-        this.updatedAt = user.getUpdatedAt();
-        this.isActive = user.getIsActive();
-        this.lastLogin = user.getLastLogin();
-        
-        // Set user-specific fields based on user type
-        if (user instanceof com.vikrant.careSync.entity.Doctor) {
-            com.vikrant.careSync.entity.Doctor doctor = (com.vikrant.careSync.entity.Doctor) user;
+        if (user != null) {
+            this.id = user.getId();
+            this.username = user.getUsername();
+            this.email = user.getEmail();
+            this.role = user.getRole() != null ? user.getRole().name() : null;
+            this.createdAt = user.getCreatedAt();
+            this.updatedAt = user.getUpdatedAt();
+            this.isActive = user.getIsActive();
+            this.lastLogin = user.getLastLogin();
+        }
+    }
+
+    public UserDto(Doctor doctor) {
+        if (doctor != null) {
+            User user = doctor.getUser();
+            if (user != null) {
+                this.id = user.getId();
+                this.username = user.getUsername();
+                this.email = user.getEmail();
+                this.role = user.getRole() != null ? user.getRole().name() : null;
+                this.createdAt = user.getCreatedAt();
+                this.updatedAt = user.getUpdatedAt();
+                this.isActive = user.getIsActive();
+                this.lastLogin = user.getLastLogin();
+            } else {
+                this.id = doctor.getId();
+            }
             this.firstName = doctor.getFirstName();
             this.lastName = doctor.getLastName();
             this.phoneNumber = doctor.getContactInfo();
-            this.address = ""; // Doctor doesn't have address field
-        } else if (user instanceof com.vikrant.careSync.entity.Patient) {
-            com.vikrant.careSync.entity.Patient patient = (com.vikrant.careSync.entity.Patient) user;
+            this.address = doctor.getAddress() != null ? doctor.getAddress() : "";
+        }
+    }
+
+    public UserDto(Patient patient) {
+        if (patient != null) {
+            User user = patient.getUser();
+            if (user != null) {
+                this.id = user.getId();
+                this.username = user.getUsername();
+                this.email = user.getEmail();
+                this.role = user.getRole() != null ? user.getRole().name() : null;
+                this.createdAt = user.getCreatedAt();
+                this.updatedAt = user.getUpdatedAt();
+                this.isActive = user.getIsActive();
+                this.lastLogin = user.getLastLogin();
+            } else {
+                this.id = patient.getId();
+            }
             this.firstName = patient.getFirstName();
             this.lastName = patient.getLastName();
             this.phoneNumber = patient.getContactInfo();
-            this.address = ""; // Patient doesn't have address field
+            this.address = "";
         }
     }
 }

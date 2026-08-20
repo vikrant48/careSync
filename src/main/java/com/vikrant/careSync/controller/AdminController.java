@@ -19,6 +19,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import com.vikrant.careSync.entity.User;
+import com.vikrant.careSync.repository.UserRepository;
+import com.vikrant.careSync.dto.UserSummaryDto;
+import com.vikrant.careSync.dto.DoctorDto;
+
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
@@ -28,6 +33,128 @@ public class AdminController {
     private final SecurityService securityService;
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
+    private final UserRepository userRepository;
+
+    @GetMapping("/users")
+    public ResponseEntity<List<UserSummaryDto>> getAllUsersSummary() {
+        List<UserSummaryDto> users = userRepository.findAll().stream()
+                .map(UserSummaryDto::new)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(users);
+    }
+
+    @GetMapping("/doctors")
+    public ResponseEntity<List<DoctorDto>> getAllDoctors() {
+        List<DoctorDto> doctors = doctorRepository.findAll().stream()
+                .map(DoctorDto::new)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(doctors);
+    }
+
+    @PutMapping("/users/{username}/toggle-active")
+    public ResponseEntity<Map<String, Object>> toggleUserActiveStatus(@PathVariable String username) {
+        Optional<User> userOpt = userRepository.findByUsername(username);
+        if (userOpt.isEmpty()) {
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("error", "User not found with username: " + username);
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+
+        User user = userOpt.get();
+        boolean newStatus = !Boolean.TRUE.equals(user.getIsActive());
+        user.setIsActive(newStatus);
+        userRepository.save(user);
+
+        // Sync with linked Doctor or Patient if present
+        doctorRepository.findById(user.getId()).ifPresent(doctor -> {
+            doctor.setIsActive(newStatus);
+            doctorRepository.save(doctor);
+        });
+        patientRepository.findById(user.getId()).ifPresent(patient -> {
+            patient.setIsActive(newStatus);
+            patientRepository.save(patient);
+        });
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "User " + username + " is now " + (newStatus ? "ACTIVE" : "INACTIVE"));
+        response.put("username", username);
+        response.put("isActive", newStatus);
+        return ResponseEntity.ok(response);
+    }
+
+    @PutMapping("/users/{username}/status")
+    public ResponseEntity<Map<String, Object>> setUserActiveStatus(
+            @PathVariable String username,
+            @RequestParam("active") boolean active) {
+        Optional<User> userOpt = userRepository.findByUsername(username);
+        if (userOpt.isEmpty()) {
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("error", "User not found with username: " + username);
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+
+        User user = userOpt.get();
+        user.setIsActive(active);
+        userRepository.save(user);
+
+        doctorRepository.findById(user.getId()).ifPresent(doctor -> {
+            doctor.setIsActive(active);
+            doctorRepository.save(doctor);
+        });
+        patientRepository.findById(user.getId()).ifPresent(patient -> {
+            patient.setIsActive(active);
+            patientRepository.save(patient);
+        });
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "User " + username + " active status set to " + active);
+        response.put("username", username);
+        response.put("isActive", active);
+        return ResponseEntity.ok(response);
+    }
+
+    @PutMapping("/doctors/{doctorId}/verify")
+    public ResponseEntity<Map<String, Object>> verifyDoctor(
+            @PathVariable Long doctorId,
+            @RequestParam(value = "verify", defaultValue = "true") boolean verify) {
+        Optional<Doctor> doctorOpt = doctorRepository.findById(doctorId);
+        if (doctorOpt.isEmpty()) {
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("error", "Doctor not found with ID: " + doctorId);
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+
+        Doctor doctor = doctorOpt.get();
+        doctor.setIsVerified(verify);
+        doctorRepository.save(doctor);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("message",
+                "Doctor " + doctorId + " verification status updated to: " + (verify ? "VERIFIED" : "UNVERIFIED"));
+        response.put("doctorId", doctorId);
+        response.put("isVerified", verify);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/doctors/{doctorId}/verify")
+    public ResponseEntity<Map<String, Object>> verifyDoctorExplicit(@PathVariable Long doctorId) {
+        return verifyDoctor(doctorId, true);
+    }
+
+    @PostMapping("/doctors/{doctorId}/unverify")
+    public ResponseEntity<Map<String, Object>> unverifyDoctorExplicit(@PathVariable Long doctorId) {
+        return verifyDoctor(doctorId, false);
+    }
+
+    @DeleteMapping("/blocked-ips/{ipAddress}")
+    public ResponseEntity<Map<String, String>> deleteBlockedIP(@PathVariable String ipAddress) {
+        return unblockIP(ipAddress);
+    }
+
+    @DeleteMapping("/blocked-ips")
+    public ResponseEntity<Map<String, String>> deleteAllBlockedIPs() {
+        return unblockAllIPs();
+    }
 
     @GetMapping("/blocked-ips")
     public ResponseEntity<List<BlockedIPDto>> getAllBlockedIPs() {

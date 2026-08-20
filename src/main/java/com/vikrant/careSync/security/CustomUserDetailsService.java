@@ -1,13 +1,10 @@
 package com.vikrant.careSync.security;
 
 import com.vikrant.careSync.constants.AppConstants;
-import com.vikrant.careSync.entity.Doctor;
-import com.vikrant.careSync.entity.Patient;
-import com.vikrant.careSync.repository.DoctorRepository;
-import com.vikrant.careSync.repository.PatientRepository;
+import com.vikrant.careSync.entity.User;
+import com.vikrant.careSync.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -19,29 +16,18 @@ import java.util.Collections;
 @RequiredArgsConstructor
 public class CustomUserDetailsService implements UserDetailsService {
 
-    private final DoctorRepository doctorRepository;
-    private final PatientRepository patientRepository;
+    private final UserRepository userRepository;
 
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        // First try to find a doctor
-        Doctor doctor = doctorRepository.findByUsername(username).orElse(null);
-        if (doctor != null) {
-            return new User(
-                    doctor.getUsername(),
-                    doctor.getPassword(),
-                    Collections.singletonList(new SimpleGrantedAuthority(AppConstants.Roles.ROLE_DOCTOR)));
-        }
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found with username: " + username));
 
-        // If not found as doctor, try to find as patient
-        Patient patient = patientRepository.findByUsername(username).orElse(null);
-        if (patient != null) {
-            return new User(
-                    patient.getUsername(),
-                    patient.getPassword(),
-                    Collections.singletonList(new SimpleGrantedAuthority(AppConstants.Roles.ROLE_PATIENT)));
-        }
+        String roleName = user.getRole() != null ? "ROLE_" + user.getRole().name() : AppConstants.Roles.ROLE_PATIENT;
 
-        throw new UsernameNotFoundException("User not found with username: " + username);
+        return new org.springframework.security.core.userdetails.User(
+                user.getUsername(),
+                user.getPassword(),
+                Collections.singletonList(new SimpleGrantedAuthority(roleName)));
     }
 }

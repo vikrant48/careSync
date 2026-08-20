@@ -66,4 +66,70 @@ public class MasterDataService {
         return positionRepo.findByOrgId(orgId != null ? orgId : DEFAULT_ORG_ID)
                 .stream().map(PositionMaster::getValue).collect(Collectors.toList());
     }
+
+    public String addMasterData(String masterType, com.vikrant.careSync.dto.CreateMasterDataRequest request) {
+        Long orgId = request.getOrgId() != null ? request.getOrgId() : DEFAULT_ORG_ID;
+        String val = request.getValue().trim();
+
+        switch (masterType.toLowerCase()) {
+            case "genders":
+            case "gender": {
+                GenderMaster gm = GenderMaster.builder().orgId(orgId).value(val).build();
+                genderRepo.save(gm);
+                break;
+            }
+            case "specializations":
+            case "specialization": {
+                SpecializationMaster sm = SpecializationMaster.builder().orgId(orgId).value(val).build();
+                specRepo.save(sm);
+                break;
+            }
+            case "statuses":
+            case "status": {
+                StatusMaster stm = StatusMaster.builder().orgId(orgId).value(val).build();
+                statusRepo.save(stm);
+                break;
+            }
+            case "bloodgroups":
+            case "blood-groups":
+            case "bloodgroup": {
+                BloodGroupMaster bgm = BloodGroupMaster.builder().orgId(orgId).value(val).build();
+                bloodRepo.save(bgm);
+                break;
+            }
+            case "languages":
+            case "language": {
+                LanguageMaster lm = LanguageMaster.builder().orgId(orgId).value(val).build();
+                languageRepo.save(lm);
+                break;
+            }
+            case "degrees":
+            case "degree": {
+                DegreeMaster dm = DegreeMaster.builder().orgId(orgId).value(val).build();
+                degreeRepo.save(dm);
+                break;
+            }
+            case "institutions":
+            case "institution": {
+                InstitutionMaster im = InstitutionMaster.builder().orgId(orgId).value(val).build();
+                institutionRepo.save(im);
+                break;
+            }
+            case "hospitals":
+            case "hospital": {
+                HospitalMaster hm = HospitalMaster.builder().orgId(orgId).value(val).build();
+                hospitalRepo.save(hm);
+                break;
+            }
+            case "positions":
+            case "position": {
+                PositionMaster pm = PositionMaster.builder().orgId(orgId).value(val).build();
+                positionRepo.save(pm);
+                break;
+            }
+            default:
+                throw new IllegalArgumentException("Unknown master data type: " + masterType);
+        }
+        return "Added '" + val + "' to " + masterType;
+    }
 }

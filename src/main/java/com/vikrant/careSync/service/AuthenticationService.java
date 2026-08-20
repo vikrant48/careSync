@@ -3,8 +3,10 @@ package com.vikrant.careSync.service;
 import com.vikrant.careSync.constants.AppConstants;
 import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Patient;
+import com.vikrant.careSync.entity.User;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.PatientRepository;
+import com.vikrant.careSync.repository.UserRepository;
 import com.vikrant.careSync.security.JwtService;
 import com.vikrant.careSync.security.dto.*;
 import com.vikrant.careSync.security.service.RefreshTokenService;
@@ -31,11 +33,13 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 @Slf4j
 public class AuthenticationService implements IAuthenticationService {
 
+    private final UserRepository userRepository;
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
     private final PasswordEncoder passwordEncoder;
@@ -48,12 +52,14 @@ public class AuthenticationService implements IAuthenticationService {
     private final EmailService emailService;
     private final EmailVerificationService emailVerificationService;
 
-    public AuthenticationService(DoctorRepository doctorRepository, PatientRepository patientRepository,
+    public AuthenticationService(UserRepository userRepository, DoctorRepository doctorRepository,
+            PatientRepository patientRepository,
             PasswordEncoder passwordEncoder, JwtService jwtService, AuthenticationManager authenticationManager,
             RefreshTokenService refreshTokenService, SecurityService securityService,
             PasswordResetTokenRepository passwordResetTokenRepository,
             PasswordResetOtpRepository passwordResetOtpRepository, EmailService emailService,
             EmailVerificationService emailVerificationService) {
+        this.userRepository = userRepository;
         this.doctorRepository = doctorRepository;
         this.patientRepository = patientRepository;
         this.passwordEncoder = passwordEncoder;
@@ -67,17 +73,25 @@ public class AuthenticationService implements IAuthenticationService {
         this.emailVerificationService = emailVerificationService;
     }
 
+    private Long generateSixDigitUserId() {
+        long min = 100000L;
+        long max = 999999L;
+        long userId;
+        do {
+            userId = ThreadLocalRandom.current().nextLong(min, max + 1);
+        } while (userRepository.existsById(userId));
+        return userId;
+    }
+
     @CacheEvict(value = "doctorListing", allEntries = true)
     public AuthenticationResponse register(RegisterRequest request) {
 
-        // Check if username or email already exists
-        if (doctorRepository.findByUsername(request.getUsername()).isPresent() ||
-                patientRepository.findByUsername(request.getUsername()).isPresent()) {
+        // Check if username or email already exists in users table
+        if (userRepository.existsByUsername(request.getUsername())) {
             throw new RuntimeException("Username already exists");
         }
 
-        if (doctorRepository.findByEmail(request.getEmail()).isPresent() ||
-                patientRepository.findByEmail(request.getEmail()).isPresent()) {
+        if (userRepository.existsByEmail(request.getEmail())) {
             throw new RuntimeException("Email already exists");
         }
 
@@ -100,14 +114,12 @@ public class AuthenticationService implements IAuthenticationService {
 
         boolean usernameExists = false;
         if (username != null && !username.isEmpty()) {
-            usernameExists = doctorRepository.existsByUsername(username) ||
-                    patientRepository.existsByUsername(username);
+            usernameExists = userRepository.existsByUsername(username);
         }
 
         boolean emailExists = false;
         if (email != null && !email.isEmpty()) {
-            emailExists = doctorRepository.existsByEmail(email) ||
-                    patientRepository.existsByEmail(email);
+            emailExists = userRepository.existsByEmail(email);
         }
 
         response.put("usernameAvailable", !usernameExists);
@@ -117,11 +129,20 @@ public class AuthenticationService implements IAuthenticationService {
     }
 
     private AuthenticationResponse registerDoctor(RegisterRequest request) {
+        Long userId = generateSixDigitUserId();
+
+        User user = User.builder()
+                .id(userId)
+                .username(request.getUsername())
+                .password(passwordEncoder.encode(request.getPassword()))
+                .email(request.getEmail())
+                .role(User.Role.DOCTOR)
+                .isActive(true)
+                .build();
+        User savedUser = userRepository.save(user);
+
         Doctor doctor = new Doctor();
-        doctor.setUsername(request.getUsername());
-        doctor.setPassword(passwordEncoder.encode(request.getPassword()));
-        doctor.setEmail(request.getEmail());
-        doctor.setRole(com.vikrant.careSync.entity.User.Role.DOCTOR);
+        doctor.setUser(savedUser);
         doctor.setFirstName(request.getFirstName());
         doctor.setLastName(request.getLastName());
         doctor.setContactInfo(request.getContactInfo());
@@ -142,17 +163,26 @@ public class AuthenticationService implements IAuthenticationService {
 
         // Attach userId to verified email record for traceability
         emailVerificationService.attachUserIdIfVerified(request.getEmail(), savedDoctor.getId());
-        return generateAuthResponse(savedDoctor.getUsername(), AppConstants.Roles.DOCTOR,
+        return generateAuthResponse(savedUser.getUsername(), AppConstants.Roles.DOCTOR,
                 "Registration successful as Doctor.",
                 "127.0.0.1", "Registration");
     }
 
     private AuthenticationResponse registerPatient(RegisterRequest request) {
+        Long userId = generateSixDigitUserId();
+
+        User user = User.builder()
+                .id(userId)
+                .username(request.getUsername())
+                .password(passwordEncoder.encode(request.getPassword()))
+                .email(request.getEmail())
+                .role(User.Role.PATIENT)
+                .isActive(true)
+                .build();
+        User savedUser = userRepository.save(user);
+
         Patient patient = new Patient();
-        patient.setUsername(request.getUsername());
-        patient.setPassword(passwordEncoder.encode(request.getPassword()));
-        patient.setEmail(request.getEmail());
-        patient.setRole(com.vikrant.careSync.entity.User.Role.PATIENT);
+        patient.setUser(savedUser);
         patient.setFirstName(request.getFirstName());
         patient.setLastName(request.getLastName());
         patient.setContactInfo(request.getContactInfo());
@@ -175,7 +205,7 @@ public class AuthenticationService implements IAuthenticationService {
 
         // Attach userId to verified email record for traceability
         emailVerificationService.attachUserIdIfVerified(request.getEmail(), savedPatient.getId());
-        return generateAuthResponse(savedPatient.getUsername(), AppConstants.Roles.PATIENT,
+        return generateAuthResponse(savedUser.getUsername(), AppConstants.Roles.PATIENT,
                 "Registration successful as Patient.",
                 "127.0.0.1", "Registration");
     }
@@ -204,21 +234,13 @@ public class AuthenticationService implements IAuthenticationService {
             updateLastLogin(request.getUsername());
 
             // Determine user type and generate response
-            Doctor doctor = doctorRepository.findByUsername(request.getUsername()).orElse(null);
-            if (doctor != null) {
-                return generateAuthResponse(doctor.getUsername(), AppConstants.Roles.DOCTOR,
-                        "Login successful as Doctor.", ipAddress,
-                        userAgent);
-            } else {
-                Patient patient = patientRepository.findByUsername(request.getUsername()).orElse(null);
-                if (patient != null) {
-                    return generateAuthResponse(patient.getUsername(), AppConstants.Roles.PATIENT,
-                            "Login successful as Patient.",
-                            ipAddress, userAgent);
-                }
-            }
+            User user = userRepository.findByUsername(request.getUsername())
+                    .orElseThrow(() -> new RuntimeException("User not found"));
 
-            throw new RuntimeException("User not found");
+            String roleStr = user.getRole() != null ? user.getRole().name() : AppConstants.Roles.PATIENT;
+
+            return generateAuthResponse(user.getUsername(), roleStr,
+                    "Login successful as " + roleStr + ".", ipAddress, userAgent);
 
         } catch (Exception e) {
             // Record failed login attempt
@@ -228,16 +250,10 @@ public class AuthenticationService implements IAuthenticationService {
     }
 
     private void updateLastLogin(String username) {
-        Doctor doctor = doctorRepository.findByUsername(username).orElse(null);
-        if (doctor != null) {
-            doctor.setLastLogin(LocalDateTime.now());
-            doctorRepository.save(doctor);
-        } else {
-            Patient patient = patientRepository.findByUsername(username).orElse(null);
-            if (patient != null) {
-                patient.setLastLogin(LocalDateTime.now());
-                patientRepository.save(patient);
-            }
+        User user = userRepository.findByUsername(username).orElse(null);
+        if (user != null) {
+            user.setLastLogin(LocalDateTime.now());
+            userRepository.save(user);
         }
     }
 
@@ -250,46 +266,24 @@ public class AuthenticationService implements IAuthenticationService {
             throw new RuntimeException("New password must be different from current password");
         }
 
-        // Find user and verify the current password
-        Doctor doctor = doctorRepository.findByUsername(username).orElse(null);
-        Patient patient = null;
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
-        if (doctor == null) {
-            patient = patientRepository.findByUsername(username).orElse(null);
-            if (patient == null) {
-                throw new RuntimeException("User not found");
-            }
-        }
-
-        // Verify the current password
-        String currentPassword = doctor != null ? doctor.getPassword() : patient.getPassword();
-        if (!passwordEncoder.matches(request.getCurrentPassword(), currentPassword)) {
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
             throw new RuntimeException("Current password is incorrect");
         }
 
-        // Update password
-        String encodedNewPassword = passwordEncoder.encode(request.getNewPassword());
-        if (doctor != null) {
-            doctor.setPassword(encodedNewPassword);
-            doctorRepository.save(doctor);
-        } else {
-            patient.setPassword(encodedNewPassword);
-            patientRepository.save(patient);
-        }
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
     }
 
     public void forgotPassword(ForgotPasswordRequest request) {
 
         // Find user by email
-        Doctor doctor = doctorRepository.findByEmail(request.getEmail()).orElse(null);
-        Patient patient = null;
-
-        if (doctor == null) {
-            patient = patientRepository.findByEmail(request.getEmail()).orElse(null);
-            if (patient == null) {
-                // Don't reveal if email exists or not for security
-                return;
-            }
+        User user = userRepository.findByEmail(request.getEmail()).orElse(null);
+        if (user == null) {
+            // Don't reveal if email exists or not for security
+            return;
         }
 
         // Generate reset token
@@ -304,38 +298,39 @@ public class AuthenticationService implements IAuthenticationService {
 
         passwordResetTokenRepository.save(resetToken);
 
-        // TODO: Send email with reset link
-        // For now, just log the token (in production, send email)
         log.info("Password reset token for {}: {}", request.getEmail(), token);
-
     }
 
     // ===================== OTP-based Reset Password Flow =====================
     @Transactional
     public void forgotPasswordOtp(com.vikrant.careSync.security.dto.ForgotPasswordOtpRequest request) {
 
-        Doctor doctor = doctorRepository.findByEmail(request.getEmail()).orElse(null);
-        Patient patient = null;
-        String name;
-        String role;
-        Long userId;
-        String mobile;
+        User user = userRepository.findByEmail(request.getEmail()).orElse(null);
+        if (user == null) {
+            return;
+        }
 
-        if (doctor == null) {
-            patient = patientRepository.findByEmail(request.getEmail()).orElse(null);
-            if (patient == null) {
-                // For security, do not reveal existence
-                return;
+        String name;
+        String role = user.getRole() != null ? user.getRole().name() : User.Role.PATIENT.name();
+        Long userId = user.getId();
+        String mobile = "";
+
+        if (user.getRole() == User.Role.DOCTOR) {
+            Doctor doctor = doctorRepository.findById(userId).orElse(null);
+            if (doctor != null) {
+                name = doctor.getName();
+                mobile = doctor.getContactInfo();
+            } else {
+                name = user.getUsername();
             }
-            name = patient.getName();
-            role = com.vikrant.careSync.entity.User.Role.PATIENT.name();
-            userId = patient.getId();
-            mobile = patient.getContactInfo();
         } else {
-            name = doctor.getName();
-            role = com.vikrant.careSync.entity.User.Role.DOCTOR.name();
-            userId = doctor.getId();
-            mobile = doctor.getContactInfo();
+            Patient patient = patientRepository.findById(userId).orElse(null);
+            if (patient != null) {
+                name = patient.getName();
+                mobile = patient.getContactInfo();
+            } else {
+                name = user.getUsername();
+            }
         }
 
         // Delete expired OTPs for this email
@@ -400,24 +395,11 @@ public class AuthenticationService implements IAuthenticationService {
             throw new RuntimeException("OTP has expired");
         }
 
-        // Find user by email
-        Doctor doctor = doctorRepository.findByEmail(request.getEmail()).orElse(null);
-        Patient patient = null;
-        if (doctor == null) {
-            patient = patientRepository.findByEmail(request.getEmail()).orElse(null);
-            if (patient == null) {
-                throw new RuntimeException("User not found");
-            }
-        }
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
-        String encodedNewPassword = passwordEncoder.encode(request.getNewPassword());
-        if (doctor != null) {
-            doctor.setPassword(encodedNewPassword);
-            doctorRepository.save(doctor);
-        } else {
-            patient.setPassword(encodedNewPassword);
-            patientRepository.save(patient);
-        }
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
 
         otpRecord.setUsed(true);
         passwordResetOtpRepository.save(otpRecord);
@@ -429,8 +411,6 @@ public class AuthenticationService implements IAuthenticationService {
     }
 
     public void resetPassword(ResetPasswordRequest request) {
-        // Validate request
-        // Validate request
         if (!request.getNewPassword().equals(request.getConfirmPassword())) {
             throw new RuntimeException("New password and confirm password do not match");
         }
@@ -447,26 +427,11 @@ public class AuthenticationService implements IAuthenticationService {
             throw new RuntimeException("Reset token has expired");
         }
 
-        // Find user by email
-        Doctor doctor = doctorRepository.findByEmail(resetToken.getEmail()).orElse(null);
-        Patient patient = null;
+        User user = userRepository.findByEmail(resetToken.getEmail())
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
-        if (doctor == null) {
-            patient = patientRepository.findByEmail(resetToken.getEmail()).orElse(null);
-            if (patient == null) {
-                throw new RuntimeException("User not found");
-            }
-        }
-
-        // Update password
-        String encodedNewPassword = passwordEncoder.encode(request.getNewPassword());
-        if (doctor != null) {
-            doctor.setPassword(encodedNewPassword);
-            doctorRepository.save(doctor);
-        } else {
-            patient.setPassword(encodedNewPassword);
-            patientRepository.save(patient);
-        }
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
 
         // Mark token as used
         resetToken.setUsed(true);
@@ -511,31 +476,25 @@ public class AuthenticationService implements IAuthenticationService {
             var patient = patientRepository.findByUsername(username)
                     .orElseThrow(() -> new RuntimeException("Patient not found"));
             return new com.vikrant.careSync.dto.PatientDto(patient);
+        } else if (AppConstants.Roles.ADMIN.equals(role)) {
+            var user = userRepository.findByUsername(username)
+                    .orElseThrow(() -> new RuntimeException("Admin user not found"));
+            return new com.vikrant.careSync.dto.UserSummaryDto(user);
         }
         throw new RuntimeException("Invalid role: " + role);
     }
 
     private UserDetails loadUserDetails(String username) {
-        Doctor doctor = doctorRepository.findByUsername(username).orElse(null);
-        if (doctor != null) {
-            return org.springframework.security.core.userdetails.User.builder()
-                    .username(doctor.getUsername())
-                    .password(doctor.getPassword())
-                    .authorities(AppConstants.Roles.ROLE_DOCTOR)
-                    .disabled(!doctor.getIsActive())
-                    .build();
-        }
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
-        Patient patient = patientRepository.findByUsername(username).orElse(null);
-        if (patient != null) {
-            return org.springframework.security.core.userdetails.User.builder()
-                    .username(patient.getUsername())
-                    .password(patient.getPassword())
-                    .authorities(AppConstants.Roles.ROLE_PATIENT)
-                    .disabled(!patient.getIsActive())
-                    .build();
-        }
+        String roleName = user.getRole() != null ? "ROLE_" + user.getRole().name() : AppConstants.Roles.ROLE_PATIENT;
 
-        throw new RuntimeException("User not found");
+        return org.springframework.security.core.userdetails.User.builder()
+                .username(user.getUsername())
+                .password(user.getPassword())
+                .authorities(roleName)
+                .disabled(user.getIsActive() != null && !user.getIsActive())
+                .build();
     }
 }

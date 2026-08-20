@@ -5,13 +5,17 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import lombok.*;
 
+@Entity
+@Table(name = "users")
 @Getter
 @Setter
-@MappedSuperclass
-public abstract class User {
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class User {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(name = "user_id", nullable = false, unique = true)
+    private Long id; // 6-digit numerical ID (e.g. 100000 - 999999)
 
     @Column(nullable = false, unique = true, length = 50)
     private String username;
@@ -29,13 +33,14 @@ public abstract class User {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
-    
+
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
-    
+
     @Column(name = "is_active", nullable = false)
+    @Builder.Default
     private Boolean isActive = true;
-    
+
     @Column(name = "last_login")
     private LocalDateTime lastLogin;
 

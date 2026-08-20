@@ -51,7 +51,15 @@ public class SecurityService {
     }
 
     public boolean isIPBlocked(String ipAddress) {
+        if (isLocalhost(ipAddress)) {
+            return false;
+        }
         return blockedIPRepository.findByIpAddressAndActiveTrue(ipAddress).isPresent();
+    }
+
+    private boolean isLocalhost(String ipAddress) {
+        return ipAddress == null || "127.0.0.1".equals(ipAddress) || "0:0:0:0:0:0:0:1".equals(ipAddress)
+                || "::1".equals(ipAddress) || "localhost".equalsIgnoreCase(ipAddress);
     }
 
     public boolean isAccountLocked(String username) {
@@ -61,7 +69,7 @@ public class SecurityService {
     }
 
     private void checkAndBlockIP(String ipAddress) {
-        if (isIPBlocked(ipAddress)) {
+        if (isLocalhost(ipAddress) || isIPBlocked(ipAddress)) {
             return;
         }
         long failedAttempts = loginAttemptRepository.countFailedAttemptsByIP(ipAddress,

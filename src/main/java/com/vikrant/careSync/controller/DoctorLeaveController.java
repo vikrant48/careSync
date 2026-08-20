@@ -27,7 +27,7 @@ public class DoctorLeaveController {
     private final DoctorLeaveService doctorLeaveService;
     private final DoctorRepository doctorRepository;
 
-    private User getCurrentDoctor() {
+    private com.vikrant.careSync.entity.Doctor getCurrentDoctor() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()) {
             String username = authentication.getName();
@@ -41,7 +41,7 @@ public class DoctorLeaveController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> addLeave(@RequestBody Map<String, String> request) {
         try {
-            User currentDoctor = getCurrentDoctor();
+            com.vikrant.careSync.entity.Doctor currentDoctor = getCurrentDoctor();
             LocalDate startDate = LocalDate.parse(request.get("startDate"));
             LocalDate endDate = LocalDate.parse(request.get("endDate"));
             String reason = request.get("reason");
@@ -59,7 +59,7 @@ public class DoctorLeaveController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> getMyLeaves() {
         try {
-            User currentDoctor = getCurrentDoctor();
+            com.vikrant.careSync.entity.Doctor currentDoctor = getCurrentDoctor();
             List<DoctorLeaveDto> leaves = doctorLeaveService.getDoctorLeaves(currentDoctor.getId()).stream()
                     .map(DoctorLeaveDto::new)
                     .collect(Collectors.toList());
@@ -75,7 +75,7 @@ public class DoctorLeaveController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> getUpcomingLeaves() {
         try {
-            User currentDoctor = getCurrentDoctor();
+            com.vikrant.careSync.entity.Doctor currentDoctor = getCurrentDoctor();
             List<DoctorLeaveDto> leaves = doctorLeaveService.getUpcomingLeaves(currentDoctor.getId()).stream()
                     .map(DoctorLeaveDto::new)
                     .collect(Collectors.toList());
@@ -91,7 +91,7 @@ public class DoctorLeaveController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> deleteLeave(@PathVariable Long id) {
         try {
-            User currentDoctor = getCurrentDoctor();
+            com.vikrant.careSync.entity.Doctor currentDoctor = getCurrentDoctor();
             doctorLeaveService.deleteLeave(id, currentDoctor.getId());
             Map<String, String> response = new HashMap<>();
             response.put("message", "Leave record deleted successfully");

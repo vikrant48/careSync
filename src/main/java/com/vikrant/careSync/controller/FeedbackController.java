@@ -29,8 +29,8 @@ public class FeedbackController {
     private final IFeedbackService feedbackService;
     private final PatientRepository patientRepository;
 
-    // Helper to get current authenticated patient as a User
-    private User getCurrentPatient() {
+    // Helper to get current authenticated patient as a Patient
+    private com.vikrant.careSync.entity.Patient getCurrentPatient() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()) {
             String username = authentication.getName();
@@ -74,7 +74,7 @@ public class FeedbackController {
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<?> getPendingFeedbackForCurrentPatient() {
         try {
-            User current = getCurrentPatient();
+            com.vikrant.careSync.entity.Patient current = getCurrentPatient();
             List<PatientAppointmentResponse> pending = feedbackService
                     .getPendingFeedbackAppointmentsForPatient(current.getId());
             return ResponseEntity.ok(pending);

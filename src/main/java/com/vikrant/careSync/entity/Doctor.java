@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Getter
@@ -12,11 +13,20 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@ToString(exclude = { "experiences", "educations", "certificates", "appointments", "feedbacks", "documents" })
-@EqualsAndHashCode(exclude = { "experiences", "educations", "certificates", "appointments", "feedbacks", "documents" })
+@ToString(exclude = { "user", "experiences", "educations", "certificates", "appointments", "feedbacks", "documents" })
+@EqualsAndHashCode(exclude = { "user", "experiences", "educations", "certificates", "appointments", "feedbacks",
+        "documents" })
 @Entity
 @Table(name = "doctors")
-public class Doctor extends User {
+public class Doctor {
+
+    @Id
+    private Long id;
+
+    @OneToOne(fetch = FetchType.EAGER, cascade = CascadeType.ALL)
+    @MapsId
+    @JoinColumn(name = "user_id")
+    private User user;
 
     @Column(name = "first_name", nullable = false, length = 50)
     private String firstName;
@@ -76,6 +86,74 @@ public class Doctor extends User {
     @OneToMany(mappedBy = "doctor", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JsonManagedReference
     private List<Document> documents;
+
+    // Helper delegate methods for User attributes
+    public String getUsername() {
+        return user != null ? user.getUsername() : null;
+    }
+
+    public void setUsername(String username) {
+        if (user != null)
+            user.setUsername(username);
+    }
+
+    public String getPassword() {
+        return user != null ? user.getPassword() : null;
+    }
+
+    public void setPassword(String password) {
+        if (user != null)
+            user.setPassword(password);
+    }
+
+    public String getEmail() {
+        return user != null ? user.getEmail() : null;
+    }
+
+    public void setEmail(String email) {
+        if (user != null)
+            user.setEmail(email);
+    }
+
+    public User.Role getRole() {
+        return user != null ? user.getRole() : User.Role.DOCTOR;
+    }
+
+    public void setRole(User.Role role) {
+        if (user != null)
+            user.setRole(role);
+    }
+
+    public Boolean getIsActive() {
+        return user != null ? user.getIsActive() : true;
+    }
+
+    public void setIsActive(Boolean isActive) {
+        if (user != null)
+            user.setIsActive(isActive);
+    }
+
+    public LocalDateTime getLastLogin() {
+        return user != null ? user.getLastLogin() : null;
+    }
+
+    public void setLastLogin(LocalDateTime lastLogin) {
+        if (user != null)
+            user.setLastLogin(lastLogin);
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return user != null ? user.getCreatedAt() : null;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return user != null ? user.getUpdatedAt() : null;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        if (user != null)
+            user.setUpdatedAt(updatedAt);
+    }
 
     public String getName() {
         return firstName + " " + lastName;

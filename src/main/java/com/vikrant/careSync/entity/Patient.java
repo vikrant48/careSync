@@ -5,17 +5,27 @@ import com.vikrant.careSync.security.EncryptionConverter;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@ToString(exclude = { "appointments", "medicalHistories", "documents" })
-@EqualsAndHashCode(callSuper = false)
+@ToString(exclude = { "user", "appointments", "medicalHistories", "documents" })
+@EqualsAndHashCode(exclude = { "user", "appointments", "medicalHistories", "documents" })
 @Entity
 @Table(name = "patients")
-public class Patient extends User {
+public class Patient {
+
+    @Id
+    private Long id;
+
+    @OneToOne(fetch = FetchType.EAGER, cascade = CascadeType.ALL)
+    @MapsId
+    @JoinColumn(name = "user_id")
+    private User user;
 
     @Convert(converter = EncryptionConverter.class)
     @Column(name = "first_name", nullable = false, length = 200) // Increased length for encrypted data
@@ -59,6 +69,77 @@ public class Patient extends User {
     @OneToMany(mappedBy = "patient", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JsonManagedReference
     private List<Document> documents;
+
+    // Helper delegate methods for User attributes
+    public String getUsername() {
+        return user != null ? user.getUsername() : null;
+    }
+
+    public void setUsername(String username) {
+        if (user != null)
+            user.setUsername(username);
+    }
+
+    public String getPassword() {
+        return user != null ? user.getPassword() : null;
+    }
+
+    public void setPassword(String password) {
+        if (user != null)
+            user.setPassword(password);
+    }
+
+    public String getEmail() {
+        return user != null ? user.getEmail() : null;
+    }
+
+    public void setEmail(String email) {
+        if (user != null)
+            user.setEmail(email);
+    }
+
+    public User.Role getRole() {
+        return user != null ? user.getRole() : User.Role.PATIENT;
+    }
+
+    public void setRole(User.Role role) {
+        if (user != null)
+            user.setRole(role);
+    }
+
+    public Boolean getIsActive() {
+        if (user != null && user.getIsActive() != null)
+            return user.getIsActive();
+        return isActive != null ? isActive : true;
+    }
+
+    public void setIsActive(Boolean isActive) {
+        this.isActive = isActive;
+        if (user != null)
+            user.setIsActive(isActive);
+    }
+
+    public LocalDateTime getLastLogin() {
+        return user != null ? user.getLastLogin() : null;
+    }
+
+    public void setLastLogin(LocalDateTime lastLogin) {
+        if (user != null)
+            user.setLastLogin(lastLogin);
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return user != null ? user.getCreatedAt() : null;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return user != null ? user.getUpdatedAt() : null;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        if (user != null)
+            user.setUpdatedAt(updatedAt);
+    }
 
     public String getName() {
         return firstName + " " + lastName;

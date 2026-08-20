@@ -3,17 +3,23 @@ package com.vikrant.careSync.repository;
 import com.vikrant.careSync.entity.Patient;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 
 public interface PatientRepository extends JpaRepository<Patient, Long> {
 
-    Optional<Patient> findByUsername(String username);
+    @Query("SELECT p FROM Patient p WHERE p.user.username = :username")
+    Optional<Patient> findByUsername(@Param("username") String username);
 
-    boolean existsByUsername(String username);
+    @Query("SELECT CASE WHEN COUNT(p) > 0 THEN true ELSE false END FROM Patient p WHERE p.user.username = :username")
+    boolean existsByUsername(@Param("username") String username);
 
-    Optional<Patient> findByEmail(String email);
+    @Query("SELECT p FROM Patient p WHERE p.user.email = :email")
+    Optional<Patient> findByEmail(@Param("email") String email);
 
-    boolean existsByEmail(String email);
+    @Query("SELECT CASE WHEN COUNT(p) > 0 THEN true ELSE false END FROM Patient p WHERE p.user.email = :email")
+    boolean existsByEmail(@Param("email") String email);
 
     @Override
     Optional<Patient> findById(Long id);

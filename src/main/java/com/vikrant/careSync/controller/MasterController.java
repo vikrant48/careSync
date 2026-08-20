@@ -73,4 +73,14 @@ public class MasterController {
     public ResponseEntity<List<String>> getPositions(@RequestParam(required = false) Long orgId) {
         return ResponseEntity.ok(masterDataService.getPositions(orgId));
     }
+
+    @PostMapping("/{type}")
+    public ResponseEntity<Map<String, String>> addMasterData(
+            @PathVariable("type") String type,
+            @jakarta.validation.Valid @RequestBody com.vikrant.careSync.dto.CreateMasterDataRequest request) {
+        String message = masterDataService.addMasterData(type, request);
+        Map<String, String> response = new HashMap<>();
+        response.put("message", message);
+        return ResponseEntity.ok(response);
+    }
 }
