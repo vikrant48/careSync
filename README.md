@@ -77,6 +77,21 @@ Handles the complex lifecycle of a medical appointment:
 
 ---
 
+## 📚 Java Concurrency Learning Lab
+
+This project includes a hands-on Java 21 concurrency and multithreading guide with runnable examples and Mermaid flowcharts:
+
+- [Java Concurrency and Multithreading Learning Lab](docs/java-concurrency-learning-lab.md)
+- Runnable examples: `src/test/java/com/vikrant/careSync/concurrency/ConcurrencyLearningTest.java`
+
+Run the lab:
+
+```bash
+./mvnw -Dtest=ConcurrencyLearningTest test
+```
+
+---
+
 ## 🗄️ Database ERD
 
 Link to the database entity-relationship diagram:

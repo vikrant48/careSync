@@ -2,7 +2,9 @@ package com.vikrant.careSync.repository;
 
 import com.vikrant.careSync.entity.Appointment;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -59,6 +61,26 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
 
         @Override
         Optional<Appointment> findById(Long id);
+
+        @Lock(LockModeType.PESSIMISTIC_WRITE)
+        @Query("SELECT a FROM Appointment a JOIN FETCH a.patient JOIN FETCH a.doctor WHERE a.id = :id")
+        Optional<Appointment> findByIdForUpdate(@Param("id") Long id);
+
+        @Query("""
+                        SELECT COUNT(a)
+                        FROM Appointment a
+                        WHERE a.doctor.id = :doctorId
+                          AND a.isActive = true
+                          AND a.status IN ('BOOKED', 'SCHEDULED', 'CONFIRMED', 'IN_PROGRESS')
+                          AND a.appointmentDateTime > :startTime
+                          AND a.appointmentDateTime < :endTime
+                          AND (:excludedAppointmentId IS NULL OR a.id <> :excludedAppointmentId)
+                        """)
+        long countConflictingAppointments(
+                        @Param("doctorId") Long doctorId,
+                        @Param("startTime") LocalDateTime startTime,
+                        @Param("endTime") LocalDateTime endTime,
+                        @Param("excludedAppointmentId") Long excludedAppointmentId);
 
         @Override
         <S extends Appointment> S save(S entity);

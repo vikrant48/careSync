@@ -16,12 +16,13 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
@@ -33,6 +34,7 @@ public class PaymentService {
     private final PatientRepository patientRepository;
     private final BookingRepository bookingRepository;
     private final RazorpayService razorpayService;
+    private final Semaphore paymentGatewaySemaphore = new Semaphore(10, true);
 
     @Value("${app.payment.transaction-timeout-minutes:30}")
     private int transactionTimeoutMinutes;
@@ -44,11 +46,15 @@ public class PaymentService {
         log.info("Processing payment for booking ID: {}", bookingId);
 
         // Validate booking exists and is in PENDING status
-        Booking booking = bookingRepository.findById(bookingId)
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
                 .orElseThrow(() -> new RuntimeException("Booking not found with ID: " + bookingId));
 
         if (booking.getStatus() != Booking.BookingStatus.PENDING) {
             throw new RuntimeException("Booking is not in PENDING status. Current status: " + booking.getStatus());
+        }
+
+        if (hasActivePaymentForBooking(bookingId)) {
+            throw new RuntimeException("An active payment already exists for this booking");
         }
 
         // Validate patient exists
@@ -72,19 +78,7 @@ public class PaymentService {
             // Process payment based on method
             PaymentResponseDto response = new PaymentResponseDto(payment);
 
-            switch (paymentRequest.getPaymentMethod()) {
-                case UPI:
-                    response = processUpiPayment(payment, paymentRequest);
-                    break;
-                case CARD:
-                    response = processCardPayment(payment, paymentRequest);
-                    break;
-                case QR_CODE:
-                    response = processQrPayment(payment, paymentRequest);
-                    break;
-                default:
-                    throw new RuntimeException("Unsupported payment method: " + paymentRequest.getPaymentMethod());
-            }
+            response = processPaymentThroughGateway(payment, paymentRequest);
 
             // For demo purposes, mark payment as successful immediately
             // In production, this would be handled by webhook callbacks
@@ -129,6 +123,9 @@ public class PaymentService {
         if (request.getBookingId() != null) {
             booking = bookingRepository.findById(request.getBookingId())
                     .orElseThrow(() -> new RuntimeException("Booking not found with ID: " + request.getBookingId()));
+            if (hasActivePaymentForBooking(booking.getId())) {
+                throw new RuntimeException("An active payment already exists for this booking");
+            }
         }
 
         // Create payment record
@@ -139,19 +136,7 @@ public class PaymentService {
         PaymentResponseDto response = new PaymentResponseDto(payment);
 
         try {
-            switch (request.getPaymentMethod()) {
-                case UPI:
-                    response = processUpiPayment(payment, request);
-                    break;
-                case CARD:
-                    response = processCardPayment(payment, request);
-                    break;
-                case QR_CODE:
-                    response = processQrPayment(payment, request);
-                    break;
-                default:
-                    throw new RuntimeException("Unsupported payment method: " + request.getPaymentMethod());
-            }
+            response = processPaymentThroughGateway(payment, request);
 
             // For demo purposes, mark payment as successful immediately
             // In production, this would be handled by webhook callbacks
@@ -192,6 +177,9 @@ public class PaymentService {
         if (request.getBookingId() != null) {
             booking = bookingRepository.findById(request.getBookingId())
                     .orElseThrow(() -> new RuntimeException("Booking not found with ID: " + request.getBookingId()));
+            if (hasActivePaymentForBooking(booking.getId())) {
+                throw new RuntimeException("An active payment already exists for this booking");
+            }
         }
 
         // Create payment record
@@ -201,19 +189,7 @@ public class PaymentService {
         PaymentResponseDto response = new PaymentResponseDto(payment);
 
         try {
-            switch (request.getPaymentMethod()) {
-                case UPI:
-                    response = processUpiPayment(payment, request);
-                    break;
-                case CARD:
-                    response = processCardPayment(payment, request);
-                    break;
-                case QR_CODE:
-                    response = processQrPayment(payment, request);
-                    break;
-                default:
-                    throw new RuntimeException("Unsupported payment method: " + request.getPaymentMethod());
-            }
+            response = processPaymentThroughGateway(payment, request);
 
             // For demo purposes, mark payment as successful immediately
             // In production, this would be handled by webhook callbacks
@@ -319,22 +295,36 @@ public class PaymentService {
         }
 
         // Find payment by gateway transaction ID
-        Optional<Payment> paymentOpt = paymentRepository.findByPaymentGatewayTransactionId(razorpayOrderId);
+        Optional<Payment> paymentOpt = paymentRepository.findByPaymentGatewayTransactionIdForUpdate(razorpayOrderId);
         if (paymentOpt.isEmpty()) {
             log.error("Payment not found for order: {}", razorpayOrderId);
             throw new RuntimeException("Payment not found");
         }
 
         Payment payment = paymentOpt.get();
+        if (payment.getPaymentStatus() == Payment.PaymentStatus.SUCCESS) {
+            log.info("Ignoring duplicate successful callback for transaction: {}", payment.getTransactionId());
+            return;
+        }
 
         try {
             // Get payment details from Razorpay
-            var paymentDetails = razorpayService.getPaymentDetails(razorpayPaymentId);
+            var paymentDetails = callPaymentGateway(() -> razorpayService.getPaymentDetails(razorpayPaymentId));
 
             if ("captured".equals(paymentDetails.get("status"))) {
                 payment.setPaymentStatus(Payment.PaymentStatus.SUCCESS);
                 payment.setPaymentCompletedAt(LocalDateTime.now());
                 payment.setGatewayResponse(paymentDetails.toString());
+
+                if (payment.getBookingId() != null) {
+                    Booking booking = bookingRepository.findByIdForUpdate(payment.getBookingId())
+                            .orElseThrow(() -> new RuntimeException(
+                                    "Booking not found with ID: " + payment.getBookingId()));
+                    if (booking.getStatus() == Booking.BookingStatus.PENDING) {
+                        booking.setStatus(Booking.BookingStatus.COMPLETED);
+                        bookingRepository.save(booking);
+                    }
+                }
 
                 log.info("Payment successful. Transaction ID: {}", payment.getTransactionId());
             } else {
@@ -465,6 +455,38 @@ public class PaymentService {
         payment = paymentRepository.save(payment);
 
         return payment;
+    }
+
+    private PaymentResponseDto processPaymentThroughGateway(Payment payment, PaymentRequestDto request) {
+        return callPaymentGateway(() -> switch (request.getPaymentMethod()) {
+            case UPI -> processUpiPayment(payment, request);
+            case CARD -> processCardPayment(payment, request);
+            case QR_CODE -> processQrPayment(payment, request);
+            default -> throw new RuntimeException("Unsupported payment method: " + request.getPaymentMethod());
+        });
+    }
+
+    private boolean hasActivePaymentForBooking(Long bookingId) {
+        return paymentRepository.countActivePaymentsForBooking(bookingId) > 0;
+    }
+
+    private <T> T callPaymentGateway(Callable<T> gatewayCall) {
+        boolean permitAcquired = false;
+        try {
+            permitAcquired = paymentGatewaySemaphore.tryAcquire(5, TimeUnit.SECONDS);
+            if (!permitAcquired) {
+                throw new RuntimeException("Payment gateway is busy. Please try again shortly.");
+            }
+            return gatewayCall.call();
+        } catch (RuntimeException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new RuntimeException("Payment gateway call failed: " + exception.getMessage(), exception);
+        } finally {
+            if (permitAcquired) {
+                paymentGatewaySemaphore.release();
+            }
+        }
     }
 
     /**

@@ -2,9 +2,11 @@ package com.vikrant.careSync.repository;
 
 import com.vikrant.careSync.entity.Payment;
 import com.vikrant.careSync.entity.Patient;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -23,6 +25,10 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     // Find by payment gateway transaction ID
     Optional<Payment> findByPaymentGatewayTransactionId(String gatewayTransactionId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Payment p WHERE p.paymentGatewayTransactionId = :gatewayTransactionId")
+    Optional<Payment> findByPaymentGatewayTransactionIdForUpdate(@Param("gatewayTransactionId") String gatewayTransactionId);
+
     // Find payments by patient
     List<Payment> findByPatientOrderByCreatedAtDesc(Patient patient);
 
@@ -38,6 +44,9 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     // Find payments by booking ID
     @Query("SELECT p FROM Payment p WHERE p.bookingId = :bookingId")
     List<Payment> findByBookingId(@Param("bookingId") Long bookingId);
+
+    @Query("SELECT COUNT(p) FROM Payment p WHERE p.bookingId = :bookingId AND p.paymentStatus IN ('PENDING', 'PROCESSING', 'SUCCESS')")
+    long countActivePaymentsForBooking(@Param("bookingId") Long bookingId);
 
     // Find successful payments by patient
     @Query("SELECT p FROM Payment p WHERE p.patient = :patient AND p.paymentStatus = :status ORDER BY p.createdAt DESC")

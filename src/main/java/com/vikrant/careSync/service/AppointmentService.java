@@ -28,6 +28,7 @@ public class AppointmentService {
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
     private final NotificationService notificationService;
+    private final AfterCommitTaskDispatcher afterCommitTaskDispatcher;
     private final DoctorLeaveService doctorLeaveService;
     private final com.vikrant.careSync.repository.ChatRepository chatRepository;
 
@@ -38,7 +39,7 @@ public class AppointmentService {
     })
     public Appointment bookAppointment(Long doctorId, Long patientId, LocalDateTime appointmentDateTime,
             String reason) {
-        Doctor doctor = doctorRepository.findById(doctorId)
+        Doctor doctor = doctorRepository.findByIdForUpdate(doctorId)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
 
         Patient patient = patientRepository.findById(patientId)
@@ -59,7 +60,7 @@ public class AppointmentService {
         }
 
         // Check if the appointment time is available
-        if (isAppointmentTimeConflict(doctorId, appointmentDateTime)) {
+        if (isAppointmentTimeConflict(doctorId, appointmentDateTime, null)) {
             throw new RuntimeException("Appointment time is not available");
         }
 
@@ -78,14 +79,14 @@ public class AppointmentService {
                 .build();
 
         Appointment saved = appointmentRepository.save(appointment);
-        // Notify the doctor internally about the new booking
-        notificationService.sendDoctorNewAppointmentNotification(saved.getId());
+        afterCommitTaskDispatcher.submitAfterCommit("new appointment notification " + saved.getId(),
+                () -> notificationService.sendDoctorNewAppointmentNotification(saved.getId()));
         return saved;
     }
 
     // Emergency appointment booking - books at current time
     public Appointment bookEmergencyAppointment(Long doctorId, Long patientId, String reason) {
-        Doctor doctor = doctorRepository.findById(doctorId)
+        Doctor doctor = doctorRepository.findByIdForUpdate(doctorId)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
 
         Patient patient = patientRepository.findById(patientId)
@@ -109,7 +110,7 @@ public class AppointmentService {
         LocalDateTime emergencyTime = LocalDateTime.now();
 
         // Check if doctor has any conflicting appointment at current time
-        if (isAppointmentTimeConflict(doctorId, emergencyTime)) {
+        if (isAppointmentTimeConflict(doctorId, emergencyTime, null)) {
             throw new RuntimeException("Doctor is currently busy. Please try again in a few minutes.");
         }
 
@@ -123,8 +124,8 @@ public class AppointmentService {
                 .build();
 
         Appointment saved = appointmentRepository.save(appointment);
-        // Notify the doctor internally about the new emergency booking
-        notificationService.sendDoctorNewAppointmentNotification(saved.getId());
+        afterCommitTaskDispatcher.submitAfterCommit("new emergency appointment notification " + saved.getId(),
+                () -> notificationService.sendDoctorNewAppointmentNotification(saved.getId()));
         return saved;
     }
 
@@ -185,7 +186,7 @@ public class AppointmentService {
     // Update appointment details (only for patients updating their own
     // appointments)
     public Appointment updateAppointment(Long id, Appointment updatedAppointment, User currentUser) {
-        Appointment existingAppointment = appointmentRepository.findById(id)
+        Appointment existingAppointment = appointmentRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
 
         // Validate ownership
@@ -202,8 +203,10 @@ public class AppointmentService {
         if (updatedAppointment.getAppointmentDateTime() != null) {
             // Check for conflicts if time is being changed
             if (!updatedAppointment.getAppointmentDateTime().equals(existingAppointment.getAppointmentDateTime())) {
+                doctorRepository.findByIdForUpdate(existingAppointment.getDoctor().getId())
+                        .orElseThrow(() -> new RuntimeException("Doctor not found"));
                 if (isAppointmentTimeConflict(existingAppointment.getDoctor().getId(),
-                        updatedAppointment.getAppointmentDateTime())) {
+                        updatedAppointment.getAppointmentDateTime(), existingAppointment.getId())) {
                     throw new RuntimeException("New appointment time is not available");
                 }
             }
@@ -220,7 +223,7 @@ public class AppointmentService {
     // Update appointment status (for doctors and patients)
     @CacheEvict(value = { "PATIENT:APPOINTMENTS", "DOCTOR:APPOINTMENTS", "ANALYTICS:OVERALL" }, allEntries = true)
     public Appointment updateAppointmentStatus(Long appointmentId, Appointment.Status newStatus, User currentUser) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
+        Appointment appointment = appointmentRepository.findByIdForUpdate(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
 
         // Validate status change permissions
@@ -279,13 +282,17 @@ public class AppointmentService {
         Appointment saved = appointmentRepository.save(appointment);
         if (currentUser.getRole() == User.Role.DOCTOR) {
             if (newStatus == Appointment.Status.CONFIRMED) {
-                notificationService.sendAppointmentConfirmation(saved.getId());
+                afterCommitTaskDispatcher.submitAfterCommit("appointment confirmation " + saved.getId(),
+                        () -> notificationService.sendAppointmentConfirmation(saved.getId()));
             } else if (newStatus == Appointment.Status.SCHEDULED) {
-                notificationService.sendAppointmentScheduled(saved.getId());
+                afterCommitTaskDispatcher.submitAfterCommit("appointment scheduled " + saved.getId(),
+                        () -> notificationService.sendAppointmentScheduled(saved.getId()));
             } else if (newStatus == Appointment.Status.IN_PROGRESS) {
-                notificationService.sendAppointmentStarted(saved.getId());
+                afterCommitTaskDispatcher.submitAfterCommit("appointment started " + saved.getId(),
+                        () -> notificationService.sendAppointmentStarted(saved.getId()));
             } else if (newStatus == Appointment.Status.COMPLETED) {
-                notificationService.sendAppointmentCompleted(saved.getId());
+                afterCommitTaskDispatcher.submitAfterCommit("appointment completed " + saved.getId(),
+                        () -> notificationService.sendAppointmentCompleted(saved.getId()));
                 // Delete chat history
                 try {
                     chatRepository.deleteByAppointmentId(saved.getId());
@@ -295,7 +302,8 @@ public class AppointmentService {
                 }
 
                 // Optionally prompt feedback after completion
-                notificationService.sendFeedbackReminder(saved.getId());
+                afterCommitTaskDispatcher.submitAfterCommit("feedback reminder " + saved.getId(),
+                        () -> notificationService.sendFeedbackReminder(saved.getId()));
             }
         }
         return saved;
@@ -303,7 +311,7 @@ public class AppointmentService {
 
     // Legacy method for backward compatibility
     public Appointment updateAppointmentStatus(Long id, String status) {
-        Appointment appointment = appointmentRepository.findById(id)
+        Appointment appointment = appointmentRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
 
         try {
@@ -316,7 +324,7 @@ public class AppointmentService {
     }
 
     public Appointment rescheduleAppointment(Long appointmentId, LocalDateTime newDateTime, User currentUser) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
+        Appointment appointment = appointmentRepository.findByIdForUpdate(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
 
         // Validate ownership
@@ -330,7 +338,9 @@ public class AppointmentService {
         }
 
         // Check if the new time is available
-        if (isAppointmentTimeConflict(appointment.getDoctor().getId(), newDateTime)) {
+        doctorRepository.findByIdForUpdate(appointment.getDoctor().getId())
+                .orElseThrow(() -> new RuntimeException("Doctor not found"));
+        if (isAppointmentTimeConflict(appointment.getDoctor().getId(), newDateTime, appointment.getId())) {
             throw new RuntimeException("New appointment time is not available");
         }
 
@@ -341,13 +351,13 @@ public class AppointmentService {
 
         appointment.setAppointmentDateTime(newDateTime);
         Appointment saved = appointmentRepository.save(appointment);
-        // Notify the doctor/patient of reschedule
-        notificationService.sendAppointmentReschedule(saved.getId());
+        afterCommitTaskDispatcher.submitAfterCommit("appointment reschedule " + saved.getId(),
+                () -> notificationService.sendAppointmentReschedule(saved.getId()));
         return saved;
     }
 
     public void cancelAppointment(Long appointmentId, User currentUser) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
+        Appointment appointment = appointmentRepository.findByIdForUpdate(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
 
         // Validate ownership
@@ -363,8 +373,8 @@ public class AppointmentService {
 
         appointment.changeStatus(Appointment.Status.CANCELLED_BY_PATIENT, currentUser.getUsername());
         appointmentRepository.save(appointment);
-        // Notify the doctor/patient of cancellation
-        notificationService.sendAppointmentCancellation(appointment.getId());
+        afterCommitTaskDispatcher.submitAfterCommit("appointment cancellation " + appointment.getId(),
+                () -> notificationService.sendAppointmentCancellation(appointment.getId()));
     }
 
     public void deleteAppointment(Long id) {
@@ -498,17 +508,14 @@ public class AppointmentService {
         return slots;
     }
 
-    private boolean isAppointmentTimeConflict(Long doctorId, LocalDateTime appointmentDateTime) {
+    private boolean isAppointmentTimeConflict(Long doctorId, LocalDateTime appointmentDateTime,
+            Long excludedAppointmentId) {
         // Check for conflicts within 1 hour before and after the requested time
         LocalDateTime startTime = appointmentDateTime.minusHours(1);
         LocalDateTime endTime = appointmentDateTime.plusHours(1);
 
-        return appointmentRepository.findByDoctorId(doctorId).stream()
-                .anyMatch(existingAppointment -> {
-                    LocalDateTime existingTime = existingAppointment.getAppointmentDateTime();
-                    return existingAppointment.getStatus() == Appointment.Status.BOOKED &&
-                            existingTime.isAfter(startTime) && existingTime.isBefore(endTime);
-                });
+        return appointmentRepository.countConflictingAppointments(doctorId, startTime, endTime,
+                excludedAppointmentId) > 0;
     }
 
     private boolean isSlotUnavailable(List<Appointment> appointments, String timeSlot) {
