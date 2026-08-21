@@ -57,18 +57,31 @@ public class DoctorController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    @io.swagger.v3.oas.annotations.Operation(summary = "Get doctor profile", description = "Retrieves the full profile of the authenticated doctor")
+    @io.swagger.v3.oas.annotations.Operation(summary = "Get doctor profile by ID", description = "Retrieves the full profile of a doctor by doctor ID")
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN')")
+    public ResponseEntity<DoctorDto> getDoctorById(@PathVariable Long id) {
+        return doctorService.getDoctorDtoById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @io.swagger.v3.oas.annotations.Operation(summary = "Get doctor profile", description = "Retrieves the full profile of the doctor by username")
     @GetMapping("/profile/{username}")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN')")
     public ResponseEntity<DoctorDto> getDoctorProfile(@PathVariable String username) {
         Cache cache = cacheManager.getCache("DOCTOR:PROFILE");
         String key = "username_" + username;
 
         DoctorDto doctorDto = null;
         if (cache != null) {
-            Cache.ValueWrapper wrapper = cache.get(key);
-            if (wrapper != null) {
-                doctorDto = (DoctorDto) wrapper.get();
+            try {
+                Cache.ValueWrapper wrapper = cache.get(key);
+                if (wrapper != null) {
+                    doctorDto = (DoctorDto) wrapper.get();
+                }
+            } catch (Exception e) {
+                log.warn("Redis unavailable during doctor profile cache read for {}: {}", username, e.getMessage());
             }
         }
 
@@ -81,8 +94,13 @@ public class DoctorController {
             doctorDto = doctorDtoOpt.get();
 
             if (cache != null) {
-                cache.put(key, doctorDto);
-                log.info("Saved doctor profile username: {} to Redis cache.", username);
+                try {
+                    cache.put(key, doctorDto);
+                    log.info("Saved doctor profile username: {} to Redis cache.", username);
+                } catch (Exception e) {
+                    log.warn("Redis unavailable during doctor profile cache write for {}: {}", username,
+                            e.getMessage());
+                }
             }
         } else {
             log.info("Cache hit for doctor profile username: {} in Redis.", username);
@@ -146,10 +164,18 @@ public class DoctorController {
     }
 
     @GetMapping("/profile/{username}/experiences")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'PATIENT', 'ADMIN')")
     public ResponseEntity<List<ExperienceDto>> getDoctorExperiences(@PathVariable String username) {
         List<ExperienceDto> experiences = doctorService.getDoctorExperiencesByUsername(username).stream()
                 .map(ExperienceDto::new)
                 .collect(Collectors.toList());
+        return ResponseEntity.ok(experiences);
+    }
+
+    @GetMapping("/{id}/experiences")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'PATIENT', 'ADMIN')")
+    public ResponseEntity<List<ExperienceDto>> getDoctorExperiencesById(@PathVariable Long id) {
+        List<ExperienceDto> experiences = doctorService.getDoctorExperiencesDto(id);
         return ResponseEntity.ok(experiences);
     }
 
@@ -203,10 +229,18 @@ public class DoctorController {
     }
 
     @GetMapping("/profile/{username}/educations")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'PATIENT', 'ADMIN')")
     public ResponseEntity<List<EducationDto>> getDoctorEducations(@PathVariable String username) {
         List<EducationDto> educations = doctorService.getDoctorEducationsByUsername(username).stream()
                 .map(EducationDto::new)
                 .collect(Collectors.toList());
+        return ResponseEntity.ok(educations);
+    }
+
+    @GetMapping("/{id}/educations")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'PATIENT', 'ADMIN')")
+    public ResponseEntity<List<EducationDto>> getDoctorEducationsById(@PathVariable Long id) {
+        List<EducationDto> educations = doctorService.getDoctorEducationsDto(id);
         return ResponseEntity.ok(educations);
     }
 
@@ -263,10 +297,18 @@ public class DoctorController {
     }
 
     @GetMapping("/profile/{username}/certificates")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'PATIENT', 'ADMIN')")
     public ResponseEntity<List<CertificateDto>> getDoctorCertificates(@PathVariable String username) {
         List<CertificateDto> certificates = doctorService.getDoctorCertificatesByUsername(username).stream()
                 .map(CertificateDto::new)
                 .collect(Collectors.toList());
+        return ResponseEntity.ok(certificates);
+    }
+
+    @GetMapping("/{id}/certificates")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'PATIENT', 'ADMIN')")
+    public ResponseEntity<List<CertificateDto>> getDoctorCertificatesById(@PathVariable Long id) {
+        List<CertificateDto> certificates = doctorService.getDoctorCertificatesDto(id);
         return ResponseEntity.ok(certificates);
     }
 

@@ -85,23 +85,26 @@ public class CacheConfig implements CachingConfigurer {
                 return new SimpleCacheErrorHandler() {
                         @Override
                         public void handleCacheGetError(RuntimeException exception, Cache cache, Object key) {
-                                log.error("Cache get error: {}", exception.getMessage());
+                                log.warn("Redis Cache GET error for key [{}]: {}. Falling back to DB.", key,
+                                                exception.getMessage());
                         }
 
                         @Override
                         public void handleCachePutError(RuntimeException exception, Cache cache, Object key,
                                         @Nullable Object value) {
-                                log.error("Cache put error: {}", exception.getMessage());
+                                log.warn("Redis Cache PUT error for key [{}]: {}. Bypassing cache write.", key,
+                                                exception.getMessage());
                         }
 
                         @Override
                         public void handleCacheEvictError(RuntimeException exception, Cache cache, Object key) {
-                                log.error("Cache evict error: {}", exception.getMessage());
+                                log.warn("Redis Cache EVICT error for key [{}]: {}. Bypassing cache evict.", key,
+                                                exception.getMessage());
                         }
 
                         @Override
                         public void handleCacheClearError(RuntimeException exception, Cache cache) {
-                                log.error("Cache clear error: {}", exception.getMessage());
+                                log.warn("Redis Cache CLEAR error: {}. Bypassing cache clear.", exception.getMessage());
                         }
                 };
         }

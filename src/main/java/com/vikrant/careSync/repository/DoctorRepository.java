@@ -12,10 +12,10 @@ import java.util.Optional;
 
 public interface DoctorRepository extends JpaRepository<Doctor, Long> {
 
-    @Query("SELECT d FROM Doctor d WHERE d.user.username = :username")
+    @Query("SELECT d FROM Doctor d WHERE LOWER(d.user.username) = LOWER(:username)")
     Optional<Doctor> findByUsername(@Param("username") String username);
 
-    @Query("SELECT CASE WHEN COUNT(d) > 0 THEN true ELSE false END FROM Doctor d WHERE d.user.username = :username")
+    @Query("SELECT CASE WHEN COUNT(d) > 0 THEN true ELSE false END FROM Doctor d WHERE LOWER(d.user.username) = LOWER(:username)")
     boolean existsByUsername(@Param("username") String username);
 
     @Query("SELECT d FROM Doctor d WHERE d.user.email = :email")

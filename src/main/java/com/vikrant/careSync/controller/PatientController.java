@@ -101,9 +101,13 @@ public class PatientController {
 
             Map<String, Object> completeData = null;
             if (cache != null) {
-                Cache.ValueWrapper wrapper = cache.get(key);
-                if (wrapper != null) {
-                    completeData = (Map<String, Object>) wrapper.get();
+                try {
+                    Cache.ValueWrapper wrapper = cache.get(key);
+                    if (wrapper != null) {
+                        completeData = (Map<String, Object>) wrapper.get();
+                    }
+                } catch (Exception e) {
+                    log.warn("Redis unavailable during patient data cache read for {}: {}", patientId, e.getMessage());
                 }
             }
 
@@ -130,8 +134,13 @@ public class PatientController {
                 completeData.put("documents", documents);
 
                 if (cache != null) {
-                    cache.put(key, completeData);
-                    log.info("Saved complete patient data for id: {} to Redis cache.", patientId);
+                    try {
+                        cache.put(key, completeData);
+                        log.info("Saved complete patient data for id: {} to Redis cache.", patientId);
+                    } catch (Exception e) {
+                        log.warn("Redis unavailable during patient data cache write for {}: {}", patientId,
+                                e.getMessage());
+                    }
                 }
             } else {
                 log.info("Cache hit for complete patient data for id: {} in Redis.", patientId);
