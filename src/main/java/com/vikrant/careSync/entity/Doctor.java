@@ -87,6 +87,38 @@ public class Doctor {
     @JsonManagedReference
     private List<Document> documents;
 
+    @Column(name = "is_active")
+    @Builder.Default
+    private Boolean isActive = true;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role")
+    @Builder.Default
+    private User.Role role = User.Role.DOCTOR;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+        if (isActive == null) {
+            isActive = true;
+        }
+        if (role == null) {
+            role = User.Role.DOCTOR;
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+
     // Helper delegate methods for User attributes
     public String getUsername() {
         return user != null ? user.getUsername() : null;
@@ -116,19 +148,25 @@ public class Doctor {
     }
 
     public User.Role getRole() {
-        return user != null ? user.getRole() : User.Role.DOCTOR;
+        if (user != null && user.getRole() != null)
+            return user.getRole();
+        return role != null ? role : User.Role.DOCTOR;
     }
 
     public void setRole(User.Role role) {
+        this.role = role;
         if (user != null)
             user.setRole(role);
     }
 
     public Boolean getIsActive() {
-        return user != null ? user.getIsActive() : true;
+        if (user != null && user.getIsActive() != null)
+            return user.getIsActive();
+        return isActive != null ? isActive : true;
     }
 
     public void setIsActive(Boolean isActive) {
+        this.isActive = isActive;
         if (user != null)
             user.setIsActive(isActive);
     }
@@ -143,14 +181,19 @@ public class Doctor {
     }
 
     public LocalDateTime getCreatedAt() {
-        return user != null ? user.getCreatedAt() : null;
+        if (user != null && user.getCreatedAt() != null)
+            return user.getCreatedAt();
+        return createdAt;
     }
 
     public LocalDateTime getUpdatedAt() {
-        return user != null ? user.getUpdatedAt() : null;
+        if (user != null && user.getUpdatedAt() != null)
+            return user.getUpdatedAt();
+        return updatedAt;
     }
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
         if (user != null)
             user.setUpdatedAt(updatedAt);
     }

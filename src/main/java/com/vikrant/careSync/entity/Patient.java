@@ -55,9 +55,6 @@ public class Patient {
     @Column(name = "blood_group", length = 10)
     private String bloodGroup;
 
-    @Column(name = "is_active")
-    private Boolean isActive;
-
     @OneToMany(mappedBy = "patient", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JsonManagedReference
     private List<Appointment> appointments;
@@ -98,11 +95,46 @@ public class Patient {
             user.setEmail(email);
     }
 
+    @Column(name = "is_active")
+    @Builder.Default
+    private Boolean isActive = true;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role")
+    @Builder.Default
+    private User.Role role = User.Role.PATIENT;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+        if (isActive == null) {
+            isActive = true;
+        }
+        if (role == null) {
+            role = User.Role.PATIENT;
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+
     public User.Role getRole() {
-        return user != null ? user.getRole() : User.Role.PATIENT;
+        if (user != null && user.getRole() != null)
+            return user.getRole();
+        return role != null ? role : User.Role.PATIENT;
     }
 
     public void setRole(User.Role role) {
+        this.role = role;
         if (user != null)
             user.setRole(role);
     }
@@ -129,14 +161,19 @@ public class Patient {
     }
 
     public LocalDateTime getCreatedAt() {
-        return user != null ? user.getCreatedAt() : null;
+        if (user != null && user.getCreatedAt() != null)
+            return user.getCreatedAt();
+        return createdAt;
     }
 
     public LocalDateTime getUpdatedAt() {
-        return user != null ? user.getUpdatedAt() : null;
+        if (user != null && user.getUpdatedAt() != null)
+            return user.getUpdatedAt();
+        return updatedAt;
     }
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
         if (user != null)
             user.setUpdatedAt(updatedAt);
     }
