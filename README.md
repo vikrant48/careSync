@@ -77,10 +77,9 @@ Handles the complex lifecycle of a medical appointment:
 
 ---
 
-## 📚 Java Concurrency Learning Lab
+## 📚 Architecture & Concurrency Documentation
 
-This project includes a hands-on Java 21 concurrency and multithreading guide with runnable examples and Mermaid flowcharts:
-
+- [System Architecture & Technical Deep-Dive](docs/architecture_overview.md)
 - [Java Concurrency and Multithreading Learning Lab](docs/java-concurrency-learning-lab.md)
 - Runnable examples: `src/test/java/com/vikrant/careSync/concurrency/ConcurrencyLearningTest.java`
 
