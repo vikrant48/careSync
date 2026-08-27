@@ -10,7 +10,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 
-public interface DoctorRepository extends JpaRepository<Doctor, Long> {
+public interface DoctorRepository extends JpaRepository<Doctor, Long>, DoctorRepositoryCustom {
 
     @Query("SELECT d FROM Doctor d WHERE LOWER(d.user.username) = LOWER(:username)")
     Optional<Doctor> findByUsername(@Param("username") String username);

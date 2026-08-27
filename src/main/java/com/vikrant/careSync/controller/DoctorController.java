@@ -12,6 +12,7 @@ import com.vikrant.careSync.dto.DoctorDto;
 import com.vikrant.careSync.dto.ExperienceDto;
 import com.vikrant.careSync.dto.EducationDto;
 import com.vikrant.careSync.dto.CertificateDto;
+import com.vikrant.careSync.dto.SearchRequestDto;
 import com.vikrant.careSync.service.DoctorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +42,30 @@ public class DoctorController {
     @GetMapping
     public ResponseEntity<List<DoctorDto>> getAllDoctors() {
         return ResponseEntity.ok(doctorService.getAllDoctorsDto());
+    }
+
+    @io.swagger.v3.oas.annotations.Operation(summary = "Dynamic Doctor Search", description = "Searches doctors dynamically using optional multi-criteria filters (query, specialization, location, sorting)")
+    @GetMapping("/search")
+    public ResponseEntity<List<DoctorDto>> searchDoctors(
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false) String specialization,
+            @RequestParam(required = false) String location,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false) String sortDirection) {
+
+        SearchRequestDto searchDto = SearchRequestDto.builder()
+                .query(query)
+                .specialization(specialization)
+                .location(location)
+                .page(page)
+                .size(size)
+                .sortBy(sortBy)
+                .sortDirection(sortDirection)
+                .build();
+
+        return ResponseEntity.ok(doctorService.searchDoctors(searchDto));
     }
 
     @GetMapping("/for-patients")

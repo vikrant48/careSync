@@ -1,6 +1,7 @@
 package com.vikrant.careSync.security;
 
 import com.vikrant.careSync.constants.AppConstants;
+import com.vikrant.careSync.security.filter.JwtAuthenticationFilter;
 import com.vikrant.careSync.security.filter.SecurityFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;

@@ -349,9 +349,17 @@ public class DoctorService {
     }
 
     public List<Doctor> getDoctorsBySpecialization(String specialization) {
-        return doctorRepository.findAll().stream()
-                .filter(doctor -> specialization.equalsIgnoreCase(doctor.getSpecialization()))
-                .toList();
+        SearchRequestDto searchDto = SearchRequestDto.builder()
+                .specialization(specialization)
+                .build();
+        return doctorRepository.searchDoctorsDynamic(searchDto);
+    }
+
+    public List<DoctorDto> searchDoctors(SearchRequestDto searchDto) {
+        List<Doctor> doctors = doctorRepository.searchDoctorsDynamic(searchDto);
+        return doctors.stream()
+                .map(this::convertToDtoWithStats)
+                .collect(Collectors.toList());
     }
 
     public Doctor getDoctorProfile(String username) {
