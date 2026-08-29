@@ -12,20 +12,21 @@ import java.util.Optional;
 
 public interface DoctorRepository extends JpaRepository<Doctor, Long>, DoctorRepositoryCustom {
 
-    @Query("SELECT d FROM Doctor d WHERE LOWER(d.user.username) = LOWER(:username)")
+    @Query("SELECT d FROM Doctor d LEFT JOIN FETCH d.user WHERE LOWER(d.user.username) = LOWER(:username)")
     Optional<Doctor> findByUsername(@Param("username") String username);
 
     @Query("SELECT CASE WHEN COUNT(d) > 0 THEN true ELSE false END FROM Doctor d WHERE LOWER(d.user.username) = LOWER(:username)")
     boolean existsByUsername(@Param("username") String username);
 
-    @Query("SELECT d FROM Doctor d WHERE d.user.email = :email")
+    @Query("SELECT d FROM Doctor d LEFT JOIN FETCH d.user WHERE d.user.email = :email")
     Optional<Doctor> findByEmail(@Param("email") String email);
 
     @Query("SELECT CASE WHEN COUNT(d) > 0 THEN true ELSE false END FROM Doctor d WHERE d.user.email = :email")
     boolean existsByEmail(@Param("email") String email);
 
     @Override
-    Optional<Doctor> findById(Long id);
+    @Query("SELECT d FROM Doctor d LEFT JOIN FETCH d.user WHERE d.id = :id")
+    Optional<Doctor> findById(@Param("id") Long id);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT d FROM Doctor d WHERE d.id = :id")

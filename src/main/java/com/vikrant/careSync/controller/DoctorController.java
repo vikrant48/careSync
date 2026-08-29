@@ -38,27 +38,15 @@ public class DoctorController {
     private final DoctorService doctorService;
     private final CacheManager cacheManager;
 
-    @io.swagger.v3.oas.annotations.Operation(summary = "Get all doctors", description = "Retrieves a list of all registered doctors")
+    @io.swagger.v3.oas.annotations.Operation(summary = "Get all doctors", description = "Retrieves a paginated list of all registered doctors")
     @GetMapping
-    public ResponseEntity<List<DoctorDto>> getAllDoctors() {
-        return ResponseEntity.ok(doctorService.getAllDoctorsDto());
-    }
-
-    @io.swagger.v3.oas.annotations.Operation(summary = "Dynamic Doctor Search", description = "Searches doctors dynamically using optional multi-criteria filters (query, specialization, location, sorting)")
-    @GetMapping("/search")
-    public ResponseEntity<List<DoctorDto>> searchDoctors(
-            @RequestParam(required = false) String query,
-            @RequestParam(required = false) String specialization,
-            @RequestParam(required = false) String location,
-            @RequestParam(required = false) Integer page,
-            @RequestParam(required = false) Integer size,
+    public ResponseEntity<List<DoctorDto>> getAllDoctors(
+            @RequestParam(defaultValue = "0") Integer page,
+            @RequestParam(defaultValue = "50") Integer size,
             @RequestParam(required = false) String sortBy,
             @RequestParam(required = false) String sortDirection) {
 
         SearchRequestDto searchDto = SearchRequestDto.builder()
-                .query(query)
-                .specialization(specialization)
-                .location(location)
                 .page(page)
                 .size(size)
                 .sortBy(sortBy)
@@ -68,10 +56,67 @@ public class DoctorController {
         return ResponseEntity.ok(doctorService.searchDoctors(searchDto));
     }
 
+    @io.swagger.v3.oas.annotations.Operation(summary = "Dynamic Doctor Search", description = "Searches doctors dynamically using optional multi-criteria filters (query, specialization, location, sorting)")
+    @GetMapping("/search")
+    public ResponseEntity<List<DoctorDto>> searchDoctors(
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false) String specialization,
+            @RequestParam(required = false) String location,
+            @RequestParam(required = false) String gender,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false, defaultValue = "50") Integer size,
+            @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false) String sortDirection) {
+
+        SearchRequestDto searchDto = SearchRequestDto.builder()
+                .query(query)
+                .specialization(specialization)
+                .location(location)
+                .gender(gender)
+                .page(page)
+                .size(size)
+                .sortBy(sortBy)
+                .sortDirection(sortDirection)
+                .build();
+
+        return ResponseEntity.ok(doctorService.searchDoctors(searchDto));
+    }
+
+    @io.swagger.v3.oas.annotations.Operation(summary = "Count Dynamic Doctor Search Results", description = "Calculates total doctor count matching dynamic search filters")
+    @GetMapping("/search/count")
+    public ResponseEntity<Long> countDoctors(
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false) String specialization,
+            @RequestParam(required = false) String location,
+            @RequestParam(required = false) String gender) {
+
+        SearchRequestDto searchDto = SearchRequestDto.builder()
+                .query(query)
+                .specialization(specialization)
+                .location(location)
+                .gender(gender)
+                .build();
+
+        return ResponseEntity.ok(doctorService.countDoctors(searchDto));
+    }
+
+    @io.swagger.v3.oas.annotations.Operation(summary = "Get all doctors for patients", description = "Retrieves a paginated list of active doctors for patients")
     @GetMapping("/for-patients")
     @PreAuthorize("hasAnyRole('PATIENT', 'ADMIN')")
-    public ResponseEntity<List<DoctorDto>> getAllDoctorsForPatients() {
-        return ResponseEntity.ok(doctorService.getAllDoctorsDto());
+    public ResponseEntity<List<DoctorDto>> getAllDoctorsForPatients(
+            @RequestParam(defaultValue = "0") Integer page,
+            @RequestParam(defaultValue = "50") Integer size,
+            @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false) String sortDirection) {
+
+        SearchRequestDto searchDto = SearchRequestDto.builder()
+                .page(page)
+                .size(size)
+                .sortBy(sortBy)
+                .sortDirection(sortDirection)
+                .build();
+
+        return ResponseEntity.ok(doctorService.searchDoctors(searchDto));
     }
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Get public profile", description = "Retrieves a doctor's public profile by username (no auth required)")

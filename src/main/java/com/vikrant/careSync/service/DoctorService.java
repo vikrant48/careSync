@@ -9,6 +9,7 @@ import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.ExperienceRepository;
 import com.vikrant.careSync.repository.EducationRepository;
 import com.vikrant.careSync.repository.CertificateRepository;
+import com.vikrant.careSync.repository.FeedbackRepository;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
@@ -17,8 +18,7 @@ import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -29,24 +29,60 @@ public class DoctorService {
     private final ExperienceRepository experienceRepository;
     private final EducationRepository educationRepository;
     private final CertificateRepository certificateRepository;
+    private final FeedbackRepository feedbackRepository;
     private final FeedbackService feedbackService;
 
     @Cacheable(value = "DOCTOR:PROFILE", key = "'all'")
     public List<DoctorDto> getAllDoctorsDto() {
-        return doctorRepository.findAll().stream()
-                .map(this::convertToDtoWithStats)
-                .collect(Collectors.toList());
+        List<Doctor> doctors = doctorRepository.findAll();
+        return convertDoctorsToDtosWithStats(doctors);
+    }
+
+    public List<DoctorDto> convertDoctorsToDtosWithStats(List<Doctor> doctors) {
+        if (doctors == null || doctors.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Long> doctorIds = doctors.stream().map(Doctor::getId).toList();
+
+        // 1 Batch Query for Average Ratings and Review Counts
+        List<Object[]> ratingAggregates = feedbackRepository.findDoctorRatingAggregatesIn(doctorIds);
+        Map<Long, Double> avgRatingMap = new HashMap<>();
+        Map<Long, Long> reviewCountMap = new HashMap<>();
+        if (ratingAggregates != null) {
+            for (Object[] row : ratingAggregates) {
+                Long docId = (Long) row[0];
+                Double avgRating = (Double) row[1];
+                Long count = (Long) row[2];
+                avgRatingMap.put(docId, avgRating != null ? avgRating : 0.0);
+                reviewCountMap.put(docId, count != null ? count : 0L);
+            }
+        }
+
+        // 1 Batch Query for doctors with experiences
+        Set<Long> docsWithExp = new HashSet<>(experienceRepository.findDoctorIdsWithExperienceIn(doctorIds));
+
+        // 1 Batch Query for doctors with education
+        Set<Long> docsWithEdu = new HashSet<>(educationRepository.findDoctorIdsWithEducationIn(doctorIds));
+
+        return doctors.stream().map(doctor -> {
+            DoctorDto dto = new DoctorDto(doctor);
+            dto.setAverageRating(avgRatingMap.getOrDefault(doctor.getId(), 0.0));
+            dto.setReviewCount(reviewCountMap.getOrDefault(doctor.getId(), 0L));
+            dto.setCompletionPercentage(calculateCompletionPercentageFast(doctor, docsWithExp.contains(doctor.getId()),
+                    docsWithEdu.contains(doctor.getId())));
+            return dto;
+        }).collect(Collectors.toList());
     }
 
     private DoctorDto convertToDtoWithStats(Doctor doctor) {
-        DoctorDto dto = new DoctorDto(doctor);
-        dto.setAverageRating(feedbackService.getAverageRatingByDoctor(doctor.getId()));
-        dto.setReviewCount(feedbackService.getTotalFeedbacksCount(doctor.getId()));
-        dto.setCompletionPercentage(calculateCompletionPercentage(doctor));
-        return dto;
+        if (doctor == null)
+            return null;
+        List<DoctorDto> list = convertDoctorsToDtosWithStats(Collections.singletonList(doctor));
+        return list.isEmpty() ? null : list.get(0);
     }
 
-    private int calculateCompletionPercentage(Doctor doctor) {
+    private int calculateCompletionPercentageFast(Doctor doctor, boolean hasExperience, boolean hasEducation) {
         int percentage = 0;
 
         // Basic Info (20%)
@@ -76,16 +112,23 @@ public class DoctorService {
         }
 
         // Experience (20%)
-        if (!experienceRepository.findByDoctorId(doctor.getId()).isEmpty()) {
+        if (hasExperience) {
             percentage += 20;
         }
 
         // Education (20%)
-        if (!educationRepository.findByDoctorId(doctor.getId()).isEmpty()) {
+        if (hasEducation) {
             percentage += 20;
         }
 
         return percentage;
+    }
+
+    private int calculateCompletionPercentage(Doctor doctor) {
+        return calculateCompletionPercentageFast(
+                doctor,
+                !experienceRepository.findByDoctorId(doctor.getId()).isEmpty(),
+                !educationRepository.findByDoctorId(doctor.getId()).isEmpty());
     }
 
     public List<Doctor> getAllDoctors() {
@@ -357,9 +400,11 @@ public class DoctorService {
 
     public List<DoctorDto> searchDoctors(SearchRequestDto searchDto) {
         List<Doctor> doctors = doctorRepository.searchDoctorsDynamic(searchDto);
-        return doctors.stream()
-                .map(this::convertToDtoWithStats)
-                .collect(Collectors.toList());
+        return convertDoctorsToDtosWithStats(doctors);
+    }
+
+    public long countDoctors(SearchRequestDto searchDto) {
+        return doctorRepository.countDoctorsDynamic(searchDto);
     }
 
     public Doctor getDoctorProfile(String username) {

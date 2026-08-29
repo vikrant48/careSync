@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface DoctorRepositoryCustom {
     List<Doctor> searchDoctorsDynamic(SearchRequestDto searchDto);
+
+    long countDoctorsDynamic(SearchRequestDto searchDto);
 }

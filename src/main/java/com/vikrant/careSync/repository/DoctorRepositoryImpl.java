@@ -23,6 +23,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryCustom {
         CriteriaBuilder cb = entityManager.getCriteriaBuilder();
         CriteriaQuery<Doctor> query = cb.createQuery(Doctor.class);
         Root<Doctor> doctor = query.from(Doctor.class);
+        doctor.fetch("user", JoinType.LEFT);
 
         List<Predicate> predicates = new ArrayList<>();
 
@@ -47,6 +48,13 @@ public class DoctorRepositoryImpl implements DoctorRepositoryCustom {
             if (searchDto.getLocation() != null && !searchDto.getLocation().trim().isEmpty()) {
                 String locationPattern = "%" + searchDto.getLocation().trim().toLowerCase() + "%";
                 predicates.add(cb.like(cb.lower(doctor.get("address")), locationPattern));
+            }
+
+            // Gender Filter
+            if (searchDto.getGender() != null && !searchDto.getGender().trim().isEmpty()) {
+                predicates.add(cb.equal(
+                        cb.lower(doctor.get("gender")),
+                        searchDto.getGender().trim().toLowerCase()));
             }
 
             // Active status filter (only return active doctors if flag exists)
@@ -87,5 +95,51 @@ public class DoctorRepositoryImpl implements DoctorRepositoryCustom {
         }
 
         return typedQuery.getResultList();
+    }
+
+    @Override
+    public long countDoctorsDynamic(SearchRequestDto searchDto) {
+        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+        CriteriaQuery<Long> query = cb.createQuery(Long.class);
+        Root<Doctor> doctor = query.from(Doctor.class);
+
+        query.select(cb.count(doctor));
+
+        List<Predicate> predicates = new ArrayList<>();
+
+        if (searchDto != null) {
+            if (searchDto.getQuery() != null && !searchDto.getQuery().trim().isEmpty()) {
+                String pattern = "%" + searchDto.getQuery().trim().toLowerCase() + "%";
+                Predicate firstNameMatch = cb.like(cb.lower(doctor.get("firstName")), pattern);
+                Predicate lastNameMatch = cb.like(cb.lower(doctor.get("lastName")), pattern);
+                Predicate emailMatch = cb.like(cb.lower(doctor.get("email")), pattern);
+                predicates.add(cb.or(firstNameMatch, lastNameMatch, emailMatch));
+            }
+
+            if (searchDto.getSpecialization() != null && !searchDto.getSpecialization().trim().isEmpty()) {
+                predicates.add(cb.equal(
+                        cb.lower(doctor.get("specialization")),
+                        searchDto.getSpecialization().trim().toLowerCase()));
+            }
+
+            if (searchDto.getLocation() != null && !searchDto.getLocation().trim().isEmpty()) {
+                String locationPattern = "%" + searchDto.getLocation().trim().toLowerCase() + "%";
+                predicates.add(cb.like(cb.lower(doctor.get("address")), locationPattern));
+            }
+
+            if (searchDto.getGender() != null && !searchDto.getGender().trim().isEmpty()) {
+                predicates.add(cb.equal(
+                        cb.lower(doctor.get("gender")),
+                        searchDto.getGender().trim().toLowerCase()));
+            }
+
+            predicates.add(cb.isTrue(doctor.get("isActive")));
+        } else {
+            predicates.add(cb.isTrue(doctor.get("isActive")));
+        }
+
+        query.where(predicates.toArray(new Predicate[0]));
+
+        return entityManager.createQuery(query).getSingleResult();
     }
 }
