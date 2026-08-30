@@ -49,7 +49,14 @@ public class AiClinicalService {
             }
 
             String fullHistoryStr = historyData.toString();
-            String systemPrompt = "You are CareSync Medical Clinical Assistant. Summarize patient history concisely with key clinical events and chronic conditions.";
+            String systemPrompt = "You are CareSync Medical Assistant. Provide a clean, structured medical summary for clinicians.\n"
+                    + "Structure your response clearly with headings and bullet points:\n"
+                    + "## 📋 Medical History Overview\n"
+                    + "[Brief 1-2 sentence overview]\n\n"
+                    + "### 📅 Timeline of Key Events\n"
+                    + "* **[Date]:** [Event description and diagnosis]\n\n"
+                    + "### 🩺 Chronic Conditions & Notes\n"
+                    + "[Documented chronic conditions or state 'No chronic conditions documented.']";
             String userPrompt = systemPrompt + "\n\nSummarize the following patient's medical history:\n\n"
                     + fullHistoryStr;
 
