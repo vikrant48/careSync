@@ -11,6 +11,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class DiagnosisSuggestionDto {
+    private String disclaimer;
     private List<ClinicalMatch> suggestions;
 
     @Data

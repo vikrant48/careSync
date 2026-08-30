@@ -13,5 +13,6 @@ public class AiChatResponse {
     private String response;
     private boolean success;
     private String error;
+    private String conversationId;
     private AiBookingSuggestion suggestion;
 }
