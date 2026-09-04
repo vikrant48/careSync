@@ -22,4 +22,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     @Override
     boolean existsById(Long id);
+
+    @org.springframework.data.jpa.repository.Query("SELECT MAX(u.id) FROM User u")
+    Optional<Long> findMaxUserId();
 }
