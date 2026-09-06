@@ -12,10 +12,10 @@ import java.time.LocalDateTime;
 public class CreateAppointmentRequest {
     @NotNull(message = "Doctor ID is required")
     public Long doctorId;
-    
+
     @NotNull(message = "Appointment date and time is required")
     @Future(message = "Appointment date and time must be in the future")
     public LocalDateTime appointmentDateTime;
-    
+
     public String reason;
 }

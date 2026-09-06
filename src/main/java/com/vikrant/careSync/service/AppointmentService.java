@@ -7,12 +7,20 @@ import com.vikrant.careSync.entity.User;
 import com.vikrant.careSync.repository.AppointmentRepository;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.PatientRepository;
+import com.vikrant.careSync.repository.ChatRepository;
+import com.vikrant.careSync.dto.BookAppointmentWithPaymentRequest;
+import com.vikrant.careSync.dto.PaymentRequestDto;
+import com.vikrant.careSync.dto.PaymentResponseDto;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.vikrant.careSync.dto.AppointmentResponse;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -22,6 +30,7 @@ import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 @Transactional
+@Slf4j
 public class AppointmentService {
 
     private final AppointmentRepository appointmentRepository;
@@ -30,7 +39,9 @@ public class AppointmentService {
     private final NotificationService notificationService;
     private final AfterCommitTaskDispatcher afterCommitTaskDispatcher;
     private final DoctorLeaveService doctorLeaveService;
-    private final com.vikrant.careSync.repository.ChatRepository chatRepository;
+    private final ChatRepository chatRepository;
+    private final CacheManager cacheManager;
+    private final PaymentService paymentService;
 
     // Only patients can book appointments - status automatically set to BOOKED
     @Caching(evict = {
@@ -82,6 +93,36 @@ public class AppointmentService {
         afterCommitTaskDispatcher.submitAfterCommit("new appointment notification " + saved.getId(),
                 () -> notificationService.sendDoctorNewAppointmentNotification(saved.getId()));
         return saved;
+    }
+
+    @Transactional
+    public AppointmentResponse bookAppointmentWithPayment(Long patientId, BookAppointmentWithPaymentRequest request) {
+        log.info("Booking appointment with atomic payment for patient ID: {}, doctor ID: {}", patientId,
+                request.getDoctorId());
+
+        Appointment appointment = bookAppointment(
+                request.getDoctorId(),
+                patientId,
+                request.getAppointmentDateTime(),
+                request.getReason());
+
+        PaymentRequestDto paymentRequest = new PaymentRequestDto();
+        paymentRequest.setAmount(request.getAmount());
+        paymentRequest.setPaymentMethod(request.getPaymentMethod());
+        paymentRequest.setPaymentType(com.vikrant.careSync.entity.Payment.PaymentType.APPOINTMENT);
+        paymentRequest.setPatientId(patientId);
+        paymentRequest.setAppointmentId(appointment.getId());
+        paymentRequest.setUpiId(request.getUpiId());
+        paymentRequest.setCardDetails(request.getCardDetails());
+
+        PaymentResponseDto paymentResponse = paymentService.initiatePayment(paymentRequest);
+
+        log.info("Successfully booked appointment ID {} and processed payment record atomically", appointment.getId());
+        AppointmentResponse response = new AppointmentResponse(appointment);
+        if (paymentResponse != null && paymentResponse.getTransactionId() != null) {
+            response.setTransactionId(paymentResponse.getTransactionId());
+        }
+        return response;
     }
 
     // Emergency appointment booking - books at current time
@@ -531,5 +572,186 @@ public class AppointmentService {
                                     appointment.getStatus() == Appointment.Status.SCHEDULED ||
                                     appointment.getStatus() == Appointment.Status.IN_PROGRESS);
                 });
+    }
+
+    public List<AppointmentResponse> getDoctorAppointmentsPaginated(Long doctorId, int page, int size,
+            String statusFilter, String range, String searchTerm) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(Math.max(1, size), 100);
+        String safeStatus = (statusFilter != null && !statusFilter.trim().isEmpty()) ? statusFilter.trim() : "ALL";
+        String safeRange = (range != null && !range.trim().isEmpty()) ? range.trim() : "UPCOMING";
+        String safeSearch = (searchTerm != null) ? searchTerm.trim().toLowerCase() : "";
+
+        Cache cache = null;
+        try {
+            cache = cacheManager.getCache("DOCTOR:APPOINTMENTS_PAGINATED");
+        } catch (Exception e) {
+            log.warn("Redis cache manager error: {}", e.getMessage());
+        }
+
+        String targetKey = "doc_" + doctorId + "_page_" + safePage + "_size_" + safeSize + "_status_" + safeStatus
+                + "_range_" + safeRange + "_q_" + safeSearch;
+
+        if (cache != null) {
+            try {
+                Cache.ValueWrapper wrapper = cache.get(targetKey);
+                if (wrapper != null && wrapper.get() instanceof List<?> rawList) {
+                    @SuppressWarnings("unchecked")
+                    List<AppointmentResponse> cachedDtos = (List<AppointmentResponse>) rawList;
+                    prefetchDoctorAppointmentWindowPages(doctorId, safePage, safeSize, safeStatus, safeRange,
+                            safeSearch, cache);
+                    return cachedDtos;
+                }
+            } catch (Exception e) {
+                log.warn("Redis error reading key [{}]: {}. Falling back to DB.", targetKey, e.getMessage());
+            }
+        }
+
+        List<AppointmentResponse> pageDtos = fetchDoctorAppointmentsFromDb(doctorId, safePage, safeSize,
+                safeStatus, safeRange, safeSearch);
+
+        if (cache != null) {
+            try {
+                cache.put(targetKey, pageDtos);
+            } catch (Exception e) {
+                log.warn("Redis error writing key [{}]: {}", targetKey, e.getMessage());
+            }
+        }
+
+        prefetchDoctorAppointmentWindowPages(doctorId, safePage, safeSize, safeStatus, safeRange, safeSearch, cache);
+        return pageDtos;
+    }
+
+    public long countDoctorAppointments(Long doctorId, String statusFilter, String range, String searchTerm) {
+        String safeStatus = (statusFilter != null && !statusFilter.trim().isEmpty()) ? statusFilter.trim() : "ALL";
+        String safeRange = (range != null && !range.trim().isEmpty()) ? range.trim() : "UPCOMING";
+        String safeSearch = (searchTerm != null) ? searchTerm.trim().toLowerCase() : "";
+
+        Cache cache = null;
+        try {
+            cache = cacheManager.getCache("DOCTOR:APPOINTMENTS_PAGINATED");
+            if (cache != null) {
+                String countKey = "doc_" + doctorId + "_count_status_" + safeStatus + "_range_" + safeRange + "_q_"
+                        + safeSearch;
+                Cache.ValueWrapper wrapper = cache.get(countKey);
+                if (wrapper != null && wrapper.get() instanceof Long count) {
+                    return count;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Redis error reading doctor appointment count: {}", e.getMessage());
+        }
+
+        List<Appointment> allDocAppts = appointmentRepository.findByDoctorIdWithPatientAndDoctorDetails(doctorId);
+        long count = filterAppointmentsByCriteria(allDocAppts, safeStatus, safeRange, safeSearch).size();
+
+        if (cache != null) {
+            try {
+                String countKey = "doc_" + doctorId + "_count_status_" + safeStatus + "_range_" + safeRange + "_q_"
+                        + safeSearch;
+                cache.put(countKey, count);
+            } catch (Exception e) {
+                log.warn("Redis error writing doctor appointment count: {}", e.getMessage());
+            }
+        }
+
+        return count;
+    }
+
+    private List<AppointmentResponse> fetchDoctorAppointmentsFromDb(Long doctorId, int page, int size,
+            String statusFilter, String range, String searchTerm) {
+        List<Appointment> allDocAppts = appointmentRepository.findByDoctorIdWithPatientAndDoctorDetails(doctorId);
+        List<Appointment> filtered = filterAppointmentsByCriteria(allDocAppts, statusFilter, range, searchTerm);
+
+        LocalDateTime now = LocalDateTime.now();
+        List<Appointment> sorted = filtered.stream().sorted((a1, a2) -> {
+            boolean a1Future = a1.getAppointmentDateTime() != null && a1.getAppointmentDateTime().isAfter(now);
+            boolean a2Future = a2.getAppointmentDateTime() != null && a2.getAppointmentDateTime().isAfter(now);
+            if (a1Future && a2Future)
+                return a1.getAppointmentDateTime().compareTo(a2.getAppointmentDateTime());
+            if (!a1Future && !a2Future)
+                return a2.getAppointmentDateTime().compareTo(a1.getAppointmentDateTime());
+            return a1Future ? -1 : 1;
+        }).toList();
+
+        int fromIndex = page * size;
+        if (fromIndex >= sorted.size()) {
+            return java.util.Collections.emptyList();
+        }
+        int toIndex = Math.min(fromIndex + size, sorted.size());
+
+        return sorted.subList(fromIndex, toIndex).stream()
+                .map(AppointmentResponse::new)
+                .toList();
+    }
+
+    private List<Appointment> filterAppointmentsByCriteria(List<Appointment> items, String statusFilter, String range,
+            String searchTerm) {
+        LocalDateTime now = LocalDateTime.now();
+        return items.stream().filter(a -> {
+            // Status filter
+            if (!"ALL".equalsIgnoreCase(statusFilter)) {
+                if ("PENDING".equalsIgnoreCase(statusFilter)) {
+                    if (a.getStatus() != Appointment.Status.BOOKED && a.getStatus() != Appointment.Status.SCHEDULED) {
+                        return false;
+                    }
+                } else {
+                    if (a.getStatus() == null || !a.getStatus().name().equalsIgnoreCase(statusFilter)) {
+                        return false;
+                    }
+                }
+            }
+            // Range filter
+            if ("TODAY".equalsIgnoreCase(range)) {
+                if (a.getAppointmentDateTime() == null
+                        || !a.getAppointmentDateTime().toLocalDate().equals(now.toLocalDate())) {
+                    return false;
+                }
+            } else if ("UPCOMING".equalsIgnoreCase(range)) {
+                if (a.getAppointmentDateTime() == null || a.getAppointmentDateTime().isBefore(now)) {
+                    return false;
+                }
+            } else if ("PAST".equalsIgnoreCase(range)) {
+                if (a.getAppointmentDateTime() == null || !a.getAppointmentDateTime().isBefore(now)) {
+                    return false;
+                }
+            }
+            // Search term filter
+            if (searchTerm != null && !searchTerm.isEmpty()) {
+                String patientName = (a.getPatient() != null && a.getPatient().getName() != null)
+                        ? a.getPatient().getName().toLowerCase()
+                        : "";
+                String patientIdStr = (a.getPatient() != null) ? String.valueOf(a.getPatient().getId()) : "";
+                if (!patientName.contains(searchTerm) && !patientIdStr.contains(searchTerm)) {
+                    return false;
+                }
+            }
+            return true;
+        }).toList();
+    }
+
+    private void prefetchDoctorAppointmentWindowPages(Long doctorId, int currentPage, int pageSize, String statusFilter,
+            String range, String searchTerm, Cache cache) {
+        if (cache == null)
+            return;
+        int[] windowPages = (currentPage == 0) ? new int[] { 1 } : new int[] { currentPage - 1, currentPage + 1 };
+        for (int p : windowPages) {
+            if (p < 0)
+                continue;
+            String key = "doc_" + doctorId + "_page_" + p + "_size_" + pageSize + "_status_" + statusFilter + "_range_"
+                    + range + "_q_" + searchTerm;
+            try {
+                Cache.ValueWrapper wrapper = cache.get(key);
+                if (wrapper == null) {
+                    List<AppointmentResponse> pageDtos = fetchDoctorAppointmentsFromDb(doctorId, p, pageSize,
+                            statusFilter, range, searchTerm);
+                    if (!pageDtos.isEmpty()) {
+                        cache.put(key, pageDtos);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed to prefetch doctor appointment page [{}]: {}", key, e.getMessage());
+            }
+        }
     }
 }

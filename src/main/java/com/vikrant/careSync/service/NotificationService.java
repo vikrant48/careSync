@@ -19,9 +19,12 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+import org.springframework.transaction.annotation.Transactional;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
+@Transactional(readOnly = true)
 public class NotificationService {
 
     // Use repository directly to avoid circular dependency with AppointmentService
@@ -32,7 +35,7 @@ public class NotificationService {
     private final SimpMessagingTemplate messagingTemplate;
 
     public void sendDoctorNewAppointmentNotification(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
+        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
 
         String doctorMessage = generateDoctorNewAppointmentMessage(appointment);
@@ -42,7 +45,7 @@ public class NotificationService {
     }
 
     public void sendAppointmentScheduled(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
+        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
         String patientMessage = generateAppointmentScheduledMessage(appointment);
         String doctorMessage = generateDoctorAppointmentScheduledMessage(appointment);
@@ -51,7 +54,7 @@ public class NotificationService {
     }
 
     public void sendAppointmentStarted(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
+        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
         String patientMessage = generateAppointmentStartedMessage(appointment);
         String doctorMessage = generateDoctorAppointmentStartedMessage(appointment);
@@ -60,7 +63,7 @@ public class NotificationService {
     }
 
     public void sendAppointmentCompleted(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
+        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
         String patientMessage = generateAppointmentCompletedMessage(appointment);
         String doctorMessage = generateDoctorAppointmentCompletedMessage(appointment);
@@ -69,7 +72,7 @@ public class NotificationService {
     }
 
     public void sendAppointmentReminder(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
+        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
 
         if (appointment.getStatus() == Appointment.Status.BOOKED) {
@@ -82,7 +85,7 @@ public class NotificationService {
 
     public void sendAppointmentReminderWithDetails(Long appointmentId, String reminderType,
             Integer hoursBeforeAppointment) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
+        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
 
         if (appointment.getStatus() == Appointment.Status.BOOKED
@@ -106,7 +109,7 @@ public class NotificationService {
     }
 
     public void sendAppointmentConfirmation(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
+        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
 
         String patientMessage = generateAppointmentConfirmationMessage(appointment);
@@ -116,7 +119,7 @@ public class NotificationService {
     }
 
     public void sendAppointmentCancellation(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
+        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
 
         String patientMessage = generateAppointmentCancellationMessage(appointment);
@@ -126,7 +129,7 @@ public class NotificationService {
     }
 
     public void sendAppointmentReschedule(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
+        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
 
         String patientMessage = generateAppointmentRescheduleMessage(appointment);
@@ -168,7 +171,7 @@ public class NotificationService {
     }
 
     public void sendFeedbackReminder(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
+        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
 
         if (appointment.getStatus() == Appointment.Status.COMPLETED && appointment.getFeedback() == null) {

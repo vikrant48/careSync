@@ -8,9 +8,14 @@ import com.vikrant.careSync.service.interfaces.IPatientService;
 import com.vikrant.careSync.dto.PatientDto;
 import com.vikrant.careSync.dto.MedicalHistoryDto;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -20,13 +25,131 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PatientService implements IPatientService {
 
     private final PatientRepository patientRepository;
     private final MedicalHistoryRepository medicalHistoryRepository;
+    private final CacheManager cacheManager;
 
+    @Override
     public List<Patient> getAllPatients() {
         return patientRepository.findAll();
+    }
+
+    @Override
+    public long getPatientCount() {
+        try {
+            Cache cache = cacheManager.getCache("PATIENT:PAGINATED_LIST");
+            if (cache != null) {
+                Cache.ValueWrapper wrapper = cache.get("total_patient_count");
+                if (wrapper != null && wrapper.get() instanceof Long count) {
+                    return count;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Redis unavailable for patient count fetch: {}. Falling back to DB.", e.getMessage());
+        }
+
+        long count = patientRepository.count();
+
+        try {
+            Cache cache = cacheManager.getCache("PATIENT:PAGINATED_LIST");
+            if (cache != null) {
+                cache.put("total_patient_count", count);
+            }
+        } catch (Exception e) {
+            log.warn("Redis unavailable for patient count write: {}", e.getMessage());
+        }
+
+        return count;
+    }
+
+    @Override
+    public List<PatientDto> getPatientsPaginated(int page, int size) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(Math.max(1, size), 100);
+
+        Cache cache = null;
+        try {
+            cache = cacheManager.getCache("PATIENT:PAGINATED_LIST");
+        } catch (Exception e) {
+            log.warn("Redis cache manager error: {}", e.getMessage());
+        }
+
+        String targetKey = "page_" + safePage + "_size_" + safeSize;
+
+        // 1. Try reading requested page from Redis
+        if (cache != null) {
+            try {
+                Cache.ValueWrapper wrapper = cache.get(targetKey);
+                if (wrapper != null && wrapper.get() instanceof List<?> rawList) {
+                    @SuppressWarnings("unchecked")
+                    List<PatientDto> cachedDtos = (List<PatientDto>) rawList;
+                    log.info("Redis HIT for paginated patients key [{}]", targetKey);
+
+                    // Asynchronously/in background prefetch adjacent window pages
+                    prefetchWindowPages(safePage, safeSize, cache);
+                    return cachedDtos;
+                }
+            } catch (Exception e) {
+                log.warn("Redis error reading key [{}]: {}. Falling back to DB.", targetKey, e.getMessage());
+            }
+        }
+
+        log.info("Redis MISS for paginated patients key [{}]. Fetching from DB...", targetKey);
+        List<PatientDto> dtos = fetchPageFromDb(safePage, safeSize);
+
+        // Save target page to Redis
+        if (cache != null) {
+            try {
+                cache.put(targetKey, dtos);
+            } catch (Exception e) {
+                log.warn("Redis error writing key [{}]: {}", targetKey, e.getMessage());
+            }
+        }
+
+        // Prefetch adjacent window pages (Page 1 / Page P+1 and P-1)
+        prefetchWindowPages(safePage, safeSize, cache);
+
+        return dtos;
+    }
+
+    private List<PatientDto> fetchPageFromDb(int page, int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        return patientRepository.findAll(pageable).stream()
+                .map(this::convertToDtoWithStats)
+                .toList();
+    }
+
+    private void prefetchWindowPages(int currentPage, int pageSize, Cache cache) {
+        if (cache == null)
+            return;
+
+        // Determine window pages: Initial load (page 0) prefetches page 1 (100 total
+        // items).
+        // Navigation to page P prefetches page P+1 and page P-1 (sliding window).
+        int[] windowPages = (currentPage == 0)
+                ? new int[] { 1 }
+                : new int[] { currentPage - 1, currentPage + 1 };
+
+        for (int p : windowPages) {
+            if (p < 0)
+                continue;
+            String key = "page_" + p + "_size_" + pageSize;
+            try {
+                Cache.ValueWrapper wrapper = cache.get(key);
+                if (wrapper == null) {
+                    List<PatientDto> pageDtos = fetchPageFromDb(p, pageSize);
+                    if (!pageDtos.isEmpty()) {
+                        cache.put(key, pageDtos);
+                        log.info("Prefetched and cached adjacent page [{}] into Redis.", key);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed to prefetch window page [{}]: {}", key, e.getMessage());
+            }
+        }
     }
 
     @Cacheable(value = "PATIENT:PROFILE", key = "'id_' + #id")

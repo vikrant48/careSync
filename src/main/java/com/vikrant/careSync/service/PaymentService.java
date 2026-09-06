@@ -120,10 +120,11 @@ public class PaymentService {
 
         // Validate booking if provided
         Booking booking = null;
-        if (request.getBookingId() != null) {
-            booking = bookingRepository.findById(request.getBookingId())
-                    .orElseThrow(() -> new RuntimeException("Booking not found with ID: " + request.getBookingId()));
-            if (hasActivePaymentForBooking(booking.getId())) {
+        Long reqBookingId = request.getBookingId();
+        if (reqBookingId != null) {
+            booking = bookingRepository.findById(reqBookingId)
+                    .orElseThrow(() -> new RuntimeException("Booking not found with ID: " + reqBookingId));
+            if (hasActivePaymentForBooking(reqBookingId)) {
                 throw new RuntimeException("An active payment already exists for this booking");
             }
         }
@@ -174,10 +175,11 @@ public class PaymentService {
 
         // Validate booking if provided
         Booking booking = null;
-        if (request.getBookingId() != null) {
-            booking = bookingRepository.findById(request.getBookingId())
-                    .orElseThrow(() -> new RuntimeException("Booking not found with ID: " + request.getBookingId()));
-            if (hasActivePaymentForBooking(booking.getId())) {
+        Long genericBookingId = request.getBookingId();
+        if (genericBookingId != null) {
+            booking = bookingRepository.findById(genericBookingId)
+                    .orElseThrow(() -> new RuntimeException("Booking not found with ID: " + genericBookingId));
+            if (hasActivePaymentForBooking(genericBookingId)) {
                 throw new RuntimeException("An active payment already exists for this booking");
             }
         }
@@ -360,14 +362,12 @@ public class PaymentService {
      */
     @Transactional(readOnly = true)
     public PaymentResponseDto getPaymentByBookingId(Long bookingId) {
-        // Find payment by booking_id field
-        List<Payment> payments = paymentRepository.findByBookingId(bookingId);
-        if (payments.isEmpty()) {
-            throw new RuntimeException("Payment not found for booking ID: " + bookingId);
+        List<Payment> payments = paymentRepository.findByBookingIdOrAppointmentId(bookingId);
+        if (!payments.isEmpty()) {
+            return new PaymentResponseDto(payments.get(0));
         }
 
-        // Return the first payment (there should only be one per booking)
-        return new PaymentResponseDto(payments.get(0));
+        throw new RuntimeException("Payment not found for booking ID: " + bookingId);
     }
 
     /**
@@ -387,20 +387,11 @@ public class PaymentService {
      */
     @Transactional(readOnly = true)
     public Page<PaymentResponseDto> getAllPayments(Pageable pageable) {
+        if (pageable == null) {
+            throw new IllegalArgumentException("Pageable cannot be null");
+        }
         Page<Payment> payments = paymentRepository.findAll(pageable);
         return payments.map(PaymentResponseDto::new);
-    }
-
-    /**
-     * Update payment with booking ID (deprecated - booking_id is now auto-set to
-     * payment id)
-     */
-    @Transactional
-    public void updatePaymentWithBookingId(String transactionId, Long bookingId) {
-        // This method is now deprecated since booking_id is automatically set to
-        // payment id
-        // But keeping it for backward compatibility
-        log.info("Payment linking is now automatic. Transaction ID: {}, Booking ID: {}", transactionId, bookingId);
     }
 
     /**
@@ -444,11 +435,17 @@ public class PaymentService {
         }
         payment.setDescription(description);
 
-        // Set booking_id to the booking's ID if booking exists, otherwise null
+        // Set booking_id to the booking's ID if booking exists, or request's bookingId
         if (booking != null) {
             payment.setBookingId(booking.getId());
+        } else if (request.getBookingId() != null) {
+            payment.setBookingId(request.getBookingId());
         } else {
             payment.setBookingId(null);
+        }
+
+        if (request.getAppointmentId() != null) {
+            payment.setAppointmentId(request.getAppointmentId());
         }
 
         // Save payment with the correct booking_id

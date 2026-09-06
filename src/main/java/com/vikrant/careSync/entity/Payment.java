@@ -16,106 +16,109 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Payment {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    
+
     @Column(name = "transaction_id", unique = true, nullable = false)
     private String transactionId;
-    
+
     @Column(name = "payment_gateway_transaction_id")
     private String paymentGatewayTransactionId;
-    
+
     @Column(name = "amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal amount;
-    
+
     @Column(name = "currency", nullable = false)
     private String currency = "INR";
-    
+
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_method", nullable = false)
     private PaymentMethod paymentMethod;
-    
+
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_status", nullable = false)
     private PaymentStatus paymentStatus;
-    
+
     @Column(name = "description")
     private String description;
-    
+
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_type", nullable = false)
     private PaymentType paymentType;
-    
+
     // UPI specific fields
     @Column(name = "upi_id")
     private String upiId;
-    
+
     @Column(name = "upi_transaction_ref")
     private String upiTransactionRef;
-    
+
     // Card specific fields
     @Column(name = "card_last_four")
     private String cardLastFour;
-    
+
     @Column(name = "card_type")
     private String cardType;
-    
+
     @Column(name = "card_network")
     private String cardNetwork;
-    
-    // Booking ID - same as payment ID for simplified linking
-    // This is NOT a foreign key, just a reference field
+
+    // Booking reference (Lab test booking ID)
     @Column(name = "booking_id", nullable = true)
     private Long bookingId;
-    
+
+    // Appointment reference (Doctor appointment ID)
+    @Column(name = "appointment_id", nullable = true)
+    private Long appointmentId;
+
     // Patient reference
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "patient_id", nullable = false)
     private Patient patient;
-    
+
     // Payment gateway response
     @Column(name = "gateway_response", columnDefinition = "TEXT")
     private String gatewayResponse;
-    
+
     @Column(name = "failure_reason")
     private String failureReason;
-    
+
     @Column(name = "refund_amount", precision = 10, scale = 2)
     private BigDecimal refundAmount;
-    
+
     @Column(name = "refund_status")
     @Enumerated(EnumType.STRING)
     private RefundStatus refundStatus;
-    
+
     @Column(name = "refund_transaction_id")
     private String refundTransactionId;
-    
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
-    
+
     @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
-    
+
     @Column(name = "payment_completed_at")
     private LocalDateTime paymentCompletedAt;
-    
+
     // Enums
     public enum PaymentMethod {
         UPI, CARD, QR_CODE, NET_BANKING, WALLET
     }
-    
+
     public enum PaymentStatus {
         PENDING, PROCESSING, SUCCESS, FAILED, CANCELLED, REFUNDED, PARTIAL_REFUND
     }
-    
+
     public enum RefundStatus {
         NOT_REFUNDED, REFUND_PENDING, REFUND_PROCESSING, REFUNDED, REFUND_FAILED
     }
-    
+
     public enum PaymentType {
         LAB_TEST("Lab Test Payment"),
         APPOINTMENT("Doctor Appointment Payment"),
@@ -124,63 +127,53 @@ public class Payment {
         HEALTH_CHECKUP("Health Checkup Payment"),
         SUBSCRIPTION("Subscription Payment"),
         OTHER("Other Payment");
-        
+
         private final String displayName;
-        
+
         PaymentType(String displayName) {
             this.displayName = displayName;
         }
-        
+
         public String getDisplayName() {
             return displayName;
         }
-        
+
         public String generateDescription(String additionalInfo) {
             switch (this) {
                 case LAB_TEST:
-                    return additionalInfo != null ? 
-                        "Payment for lab test: " + additionalInfo : 
-                        "Payment for lab test";
+                    return additionalInfo != null ? "Payment for lab test: " + additionalInfo : "Payment for lab test";
                 case APPOINTMENT:
-                    return additionalInfo != null ? 
-                        "Payment for doctor appointment with " + additionalInfo : 
-                        "Payment for doctor appointment";
+                    return additionalInfo != null ? "Payment for doctor appointment with " + additionalInfo
+                            : "Payment for doctor appointment";
                 case CONSULTATION:
-                    return additionalInfo != null ? 
-                        "Payment for consultation with " + additionalInfo : 
-                        "Payment for consultation";
+                    return additionalInfo != null ? "Payment for consultation with " + additionalInfo
+                            : "Payment for consultation";
                 case MEDICINE:
-                    return additionalInfo != null ? 
-                        "Payment for medicine: " + additionalInfo : 
-                        "Payment for medicine";
+                    return additionalInfo != null ? "Payment for medicine: " + additionalInfo : "Payment for medicine";
                 case HEALTH_CHECKUP:
-                    return additionalInfo != null ? 
-                        "Payment for health checkup: " + additionalInfo : 
-                        "Payment for health checkup";
+                    return additionalInfo != null ? "Payment for health checkup: " + additionalInfo
+                            : "Payment for health checkup";
                 case SUBSCRIPTION:
-                    return additionalInfo != null ? 
-                        "Payment for subscription: " + additionalInfo : 
-                        "Payment for subscription";
+                    return additionalInfo != null ? "Payment for subscription: " + additionalInfo
+                            : "Payment for subscription";
                 default:
-                    return additionalInfo != null ? 
-                        "Payment for: " + additionalInfo : 
-                        "Payment";
+                    return additionalInfo != null ? "Payment for: " + additionalInfo : "Payment";
             }
         }
     }
-    
+
     // Helper methods
     public boolean isSuccessful() {
         return PaymentStatus.SUCCESS.equals(this.paymentStatus);
     }
-    
+
     public boolean isPending() {
-        return PaymentStatus.PENDING.equals(this.paymentStatus) || 
-               PaymentStatus.PROCESSING.equals(this.paymentStatus);
+        return PaymentStatus.PENDING.equals(this.paymentStatus) ||
+                PaymentStatus.PROCESSING.equals(this.paymentStatus);
     }
-    
+
     public boolean isFailed() {
-        return PaymentStatus.FAILED.equals(this.paymentStatus) || 
-               PaymentStatus.CANCELLED.equals(this.paymentStatus);
+        return PaymentStatus.FAILED.equals(this.paymentStatus) ||
+                PaymentStatus.CANCELLED.equals(this.paymentStatus);
     }
 }

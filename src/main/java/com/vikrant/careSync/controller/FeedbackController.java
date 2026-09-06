@@ -1,9 +1,8 @@
 package com.vikrant.careSync.controller;
 
 import com.vikrant.careSync.entity.Feedback;
-import com.vikrant.careSync.entity.User;
 import com.vikrant.careSync.dto.CreateFeedbackRequest;
-import com.vikrant.careSync.dto.PatientAppointmentResponse;
+import com.vikrant.careSync.dto.AppointmentResponse;
 import com.vikrant.careSync.dto.FeedbackDto;
 import com.vikrant.careSync.service.interfaces.IFeedbackService;
 import com.vikrant.careSync.repository.PatientRepository;
@@ -75,7 +74,7 @@ public class FeedbackController {
     public ResponseEntity<?> getPendingFeedbackForCurrentPatient() {
         try {
             com.vikrant.careSync.entity.Patient current = getCurrentPatient();
-            List<PatientAppointmentResponse> pending = feedbackService
+            List<AppointmentResponse> pending = feedbackService
                     .getPendingFeedbackAppointmentsForPatient(current.getId());
             return ResponseEntity.ok(pending);
         } catch (Exception e) {

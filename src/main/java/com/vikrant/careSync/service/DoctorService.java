@@ -12,6 +12,9 @@ import com.vikrant.careSync.repository.CertificateRepository;
 import com.vikrant.careSync.repository.FeedbackRepository;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
@@ -23,6 +26,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class DoctorService {
 
     private final DoctorRepository doctorRepository;
@@ -31,6 +35,7 @@ public class DoctorService {
     private final CertificateRepository certificateRepository;
     private final FeedbackRepository feedbackRepository;
     private final FeedbackService feedbackService;
+    private final CacheManager cacheManager;
 
     @Cacheable(value = "DOCTOR:PROFILE", key = "'all'")
     public List<DoctorDto> getAllDoctorsDto() {
@@ -399,8 +404,95 @@ public class DoctorService {
     }
 
     public List<DoctorDto> searchDoctors(SearchRequestDto searchDto) {
-        List<Doctor> doctors = doctorRepository.searchDoctorsDynamic(searchDto);
+        int page = searchDto != null && searchDto.getPage() != null ? Math.max(0, searchDto.getPage()) : 0;
+        int size = searchDto != null && searchDto.getSize() != null ? Math.min(Math.max(1, searchDto.getSize()), 100)
+                : 50;
+
+        String queryKey = (searchDto != null ? Objects.toString(searchDto.getQuery(), "") : "") + "_" +
+                (searchDto != null ? Objects.toString(searchDto.getSpecialization(), "") : "") + "_" +
+                (searchDto != null ? Objects.toString(searchDto.getLocation(), "") : "");
+
+        Cache cache = null;
+        try {
+            cache = cacheManager.getCache("DOCTOR:PAGINATED_LIST");
+        } catch (Exception e) {
+            log.warn("Redis CacheManager error for doctors: {}", e.getMessage());
+        }
+
+        String cacheKey = "query_" + queryKey + "_page_" + page + "_size_" + size;
+
+        if (cache != null) {
+            try {
+                Cache.ValueWrapper wrapper = cache.get(cacheKey);
+                if (wrapper != null && wrapper.get() instanceof List<?> rawList) {
+                    @SuppressWarnings("unchecked")
+                    List<DoctorDto> cachedList = (List<DoctorDto>) rawList;
+                    log.info("Redis HIT for paginated doctors key [{}]", cacheKey);
+                    prefetchDoctorWindowPages(searchDto, page, size, cache, queryKey);
+                    return cachedList;
+                }
+            } catch (Exception e) {
+                log.warn("Redis error reading doctor cache key [{}]: {}. Falling back to DB.", cacheKey,
+                        e.getMessage());
+            }
+        }
+
+        log.info("Redis MISS for paginated doctors key [{}]. Fetching from DB...", cacheKey);
+        List<DoctorDto> dtos = fetchDoctorPageFromDb(searchDto, page, size);
+
+        if (cache != null) {
+            try {
+                cache.put(cacheKey, dtos);
+            } catch (Exception e) {
+                log.warn("Redis error writing doctor cache key [{}]: {}", cacheKey, e.getMessage());
+            }
+        }
+
+        prefetchDoctorWindowPages(searchDto, page, size, cache, queryKey);
+        return dtos;
+    }
+
+    private List<DoctorDto> fetchDoctorPageFromDb(SearchRequestDto baseSearchDto, int page, int size) {
+        SearchRequestDto pageReq = SearchRequestDto.builder()
+                .query(baseSearchDto != null ? baseSearchDto.getQuery() : null)
+                .specialization(baseSearchDto != null ? baseSearchDto.getSpecialization() : null)
+                .location(baseSearchDto != null ? baseSearchDto.getLocation() : null)
+                .gender(baseSearchDto != null ? baseSearchDto.getGender() : null)
+                .page(page)
+                .size(size)
+                .sortBy(baseSearchDto != null ? baseSearchDto.getSortBy() : null)
+                .sortDirection(baseSearchDto != null ? baseSearchDto.getSortDirection() : null)
+                .build();
+        List<Doctor> doctors = doctorRepository.searchDoctorsDynamic(pageReq);
         return convertDoctorsToDtosWithStats(doctors);
+    }
+
+    private void prefetchDoctorWindowPages(SearchRequestDto searchDto, int currentPage, int pageSize, Cache cache,
+            String queryKey) {
+        if (cache == null)
+            return;
+
+        int[] windowPages = (currentPage == 0)
+                ? new int[] { 1 }
+                : new int[] { currentPage - 1, currentPage + 1 };
+
+        for (int p : windowPages) {
+            if (p < 0)
+                continue;
+            String key = "query_" + queryKey + "_page_" + p + "_size_" + pageSize;
+            try {
+                Cache.ValueWrapper wrapper = cache.get(key);
+                if (wrapper == null) {
+                    List<DoctorDto> pageDtos = fetchDoctorPageFromDb(searchDto, p, pageSize);
+                    if (!pageDtos.isEmpty()) {
+                        cache.put(key, pageDtos);
+                        log.info("Prefetched and cached doctor window page [{}] into Redis.", key);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed to prefetch doctor window page [{}]: {}", key, e.getMessage());
+            }
+        }
     }
 
     public long countDoctors(SearchRequestDto searchDto) {

@@ -83,4 +83,15 @@ public class MasterController {
         response.put("message", message);
         return ResponseEntity.ok(response);
     }
+
+    @DeleteMapping("/{type}")
+    public ResponseEntity<Map<String, String>> deleteMasterData(
+            @PathVariable("type") String type,
+            @RequestParam("value") String value,
+            @RequestParam(required = false) Long orgId) {
+        String message = masterDataService.deleteMasterData(type, value, orgId);
+        Map<String, String> response = new HashMap<>();
+        response.put("message", message);
+        return ResponseEntity.ok(response);
+    }
 }

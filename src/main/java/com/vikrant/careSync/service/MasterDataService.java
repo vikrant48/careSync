@@ -132,4 +132,56 @@ public class MasterDataService {
         }
         return "Added '" + val + "' to " + masterType;
     }
+
+    public String deleteMasterData(String masterType, String value, Long orgId) {
+        Long targetOrgId = orgId != null ? orgId : DEFAULT_ORG_ID;
+        String val = value != null ? value.trim() : "";
+
+        if (val.isEmpty()) {
+            throw new IllegalArgumentException("Value cannot be empty for master data deletion");
+        }
+
+        switch (masterType.toLowerCase()) {
+            case "genders":
+            case "gender":
+                genderRepo.deleteByOrgIdAndValue(targetOrgId, val);
+                break;
+            case "specializations":
+            case "specialization":
+                specRepo.deleteByOrgIdAndValue(targetOrgId, val);
+                break;
+            case "statuses":
+            case "status":
+                statusRepo.deleteByOrgIdAndValue(targetOrgId, val);
+                break;
+            case "bloodgroups":
+            case "blood-groups":
+            case "bloodgroup":
+                bloodRepo.deleteByOrgIdAndValue(targetOrgId, val);
+                break;
+            case "languages":
+            case "language":
+                languageRepo.deleteByOrgIdAndValue(targetOrgId, val);
+                break;
+            case "degrees":
+            case "degree":
+                degreeRepo.deleteByOrgIdAndValue(targetOrgId, val);
+                break;
+            case "institutions":
+            case "institution":
+                institutionRepo.deleteByOrgIdAndValue(targetOrgId, val);
+                break;
+            case "hospitals":
+            case "hospital":
+                hospitalRepo.deleteByOrgIdAndValue(targetOrgId, val);
+                break;
+            case "positions":
+            case "position":
+                positionRepo.deleteByOrgIdAndValue(targetOrgId, val);
+                break;
+            default:
+                throw new IllegalArgumentException("Unknown master data type: " + masterType);
+        }
+        return "Deleted '" + val + "' from " + masterType;
+    }
 }

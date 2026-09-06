@@ -19,68 +19,77 @@ import java.util.Optional;
 @Repository
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
-    // Find by transaction ID
-    Optional<Payment> findByTransactionId(String transactionId);
+        // Find by transaction ID
+        Optional<Payment> findByTransactionId(String transactionId);
 
-    // Find by payment gateway transaction ID
-    Optional<Payment> findByPaymentGatewayTransactionId(String gatewayTransactionId);
+        // Find by payment gateway transaction ID
+        Optional<Payment> findByPaymentGatewayTransactionId(String gatewayTransactionId);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT p FROM Payment p WHERE p.paymentGatewayTransactionId = :gatewayTransactionId")
-    Optional<Payment> findByPaymentGatewayTransactionIdForUpdate(@Param("gatewayTransactionId") String gatewayTransactionId);
+        @Lock(LockModeType.PESSIMISTIC_WRITE)
+        @Query("SELECT p FROM Payment p WHERE p.paymentGatewayTransactionId = :gatewayTransactionId")
+        Optional<Payment> findByPaymentGatewayTransactionIdForUpdate(
+                        @Param("gatewayTransactionId") String gatewayTransactionId);
 
-    // Find payments by patient
-    List<Payment> findByPatientOrderByCreatedAtDesc(Patient patient);
+        // Find payments by patient
+        List<Payment> findByPatientOrderByCreatedAtDesc(Patient patient);
 
-    // Find payments by patient with pagination
-    Page<Payment> findByPatientOrderByCreatedAtDesc(Patient patient, Pageable pageable);
+        // Find payments by patient with pagination
+        Page<Payment> findByPatientOrderByCreatedAtDesc(Patient patient, Pageable pageable);
 
-    // Find payments by status
-    List<Payment> findByPaymentStatus(Payment.PaymentStatus status);
+        // Find payments by status
+        List<Payment> findByPaymentStatus(Payment.PaymentStatus status);
 
-    // Find payments by method
-    List<Payment> findByPaymentMethod(Payment.PaymentMethod method);
+        // Find payments by method
+        List<Payment> findByPaymentMethod(Payment.PaymentMethod method);
 
-    // Find payments by booking ID
-    @Query("SELECT p FROM Payment p WHERE p.bookingId = :bookingId")
-    List<Payment> findByBookingId(@Param("bookingId") Long bookingId);
+        // Find payments by booking ID
+        @Query("SELECT p FROM Payment p WHERE p.bookingId = :bookingId")
+        List<Payment> findByBookingId(@Param("bookingId") Long bookingId);
 
-    @Query("SELECT COUNT(p) FROM Payment p WHERE p.bookingId = :bookingId AND p.paymentStatus IN ('PENDING', 'PROCESSING', 'SUCCESS')")
-    long countActivePaymentsForBooking(@Param("bookingId") Long bookingId);
+        // Find payments by appointment ID
+        @Query("SELECT p FROM Payment p WHERE p.appointmentId = :appointmentId")
+        List<Payment> findByAppointmentId(@Param("appointmentId") Long appointmentId);
 
-    // Find successful payments by patient
-    @Query("SELECT p FROM Payment p WHERE p.patient = :patient AND p.paymentStatus = :status ORDER BY p.createdAt DESC")
-    List<Payment> findSuccessfulPaymentsByPatient(@Param("patient") Patient patient,
-            @Param("status") Payment.PaymentStatus status);
+        // Find payments by booking ID or appointment ID
+        @Query("SELECT p FROM Payment p WHERE p.bookingId = :id OR p.appointmentId = :id")
+        List<Payment> findByBookingIdOrAppointmentId(@Param("id") Long id);
 
-    // Find payments within date range
-    @Query("SELECT p FROM Payment p WHERE p.createdAt BETWEEN :startDate AND :endDate ORDER BY p.createdAt DESC")
-    List<Payment> findPaymentsBetweenDates(@Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate);
+        @Query("SELECT COUNT(p) FROM Payment p WHERE (p.bookingId = :bookingId OR p.appointmentId = :bookingId) AND p.paymentStatus IN ('PENDING', 'PROCESSING', 'SUCCESS')")
+        long countActivePaymentsForBooking(@Param("bookingId") Long bookingId);
 
-    // Get total revenue by date range
-    @Query("SELECT COALESCE(SUM(p.amount), 0) FROM Payment p WHERE p.paymentStatus = 'SUCCESS' AND p.createdAt BETWEEN :startDate AND :endDate")
-    BigDecimal getTotalRevenueByDateRange(@Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate);
+        // Find successful payments by patient
+        @Query("SELECT p FROM Payment p WHERE p.patient = :patient AND p.paymentStatus = :status ORDER BY p.createdAt DESC")
+        List<Payment> findSuccessfulPaymentsByPatient(@Param("patient") Patient patient,
+                        @Param("status") Payment.PaymentStatus status);
 
-    // Get payment statistics by method
-    @Query("SELECT p.paymentMethod, COUNT(p), SUM(p.amount) FROM Payment p WHERE p.paymentStatus = 'SUCCESS' AND p.createdAt BETWEEN :startDate AND :endDate GROUP BY p.paymentMethod")
-    List<Object[]> getPaymentStatisticsByMethod(@Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate);
+        // Find payments within date range
+        @Query("SELECT p FROM Payment p WHERE p.createdAt BETWEEN :startDate AND :endDate ORDER BY p.createdAt DESC")
+        List<Payment> findPaymentsBetweenDates(@Param("startDate") LocalDateTime startDate,
+                        @Param("endDate") LocalDateTime endDate);
 
-    // Get patient financial stats aggregated by payment type
-    @Query("SELECT p.paymentType, SUM(p.amount) FROM Payment p WHERE p.patient.id = :patientId AND p.paymentStatus = 'SUCCESS' GROUP BY p.paymentType")
-    List<Object[]> getPatientPaymentStats(@Param("patientId") Long patientId);
+        // Get total revenue by date range
+        @Query("SELECT COALESCE(SUM(p.amount), 0) FROM Payment p WHERE p.paymentStatus = 'SUCCESS' AND p.createdAt BETWEEN :startDate AND :endDate")
+        BigDecimal getTotalRevenueByDateRange(@Param("startDate") LocalDateTime startDate,
+                        @Param("endDate") LocalDateTime endDate);
 
-    // Find failed payments for retry
-    @Query("SELECT p FROM Payment p WHERE p.paymentStatus IN ('FAILED', 'CANCELLED') AND p.createdAt >= :since ORDER BY p.createdAt DESC")
-    List<Payment> findFailedPaymentsSince(@Param("since") LocalDateTime since);
+        // Get payment statistics by method
+        @Query("SELECT p.paymentMethod, COUNT(p), SUM(p.amount) FROM Payment p WHERE p.paymentStatus = 'SUCCESS' AND p.createdAt BETWEEN :startDate AND :endDate GROUP BY p.paymentMethod")
+        List<Object[]> getPaymentStatisticsByMethod(@Param("startDate") LocalDateTime startDate,
+                        @Param("endDate") LocalDateTime endDate);
 
-    // Count payments by status for dashboard
-    @Query("SELECT p.paymentStatus, COUNT(p) FROM Payment p GROUP BY p.paymentStatus")
-    List<Object[]> getPaymentCountByStatus();
+        // Get patient financial stats aggregated by payment type
+        @Query("SELECT p.paymentType, SUM(p.amount) FROM Payment p WHERE p.patient.id = :patientId AND p.paymentStatus = 'SUCCESS' GROUP BY p.paymentType")
+        List<Object[]> getPatientPaymentStats(@Param("patientId") Long patientId);
 
-    // Find pending payments older than specified time
-    @Query("SELECT p FROM Payment p WHERE p.paymentStatus IN ('PENDING', 'PROCESSING') AND p.createdAt < :cutoffTime")
-    List<Payment> findStalePayments(@Param("cutoffTime") LocalDateTime cutoffTime);
+        // Find failed payments for retry
+        @Query("SELECT p FROM Payment p WHERE p.paymentStatus IN ('FAILED', 'CANCELLED') AND p.createdAt >= :since ORDER BY p.createdAt DESC")
+        List<Payment> findFailedPaymentsSince(@Param("since") LocalDateTime since);
+
+        // Count payments by status for dashboard
+        @Query("SELECT p.paymentStatus, COUNT(p) FROM Payment p GROUP BY p.paymentStatus")
+        List<Object[]> getPaymentCountByStatus();
+
+        // Find pending payments older than specified time
+        @Query("SELECT p FROM Payment p WHERE p.paymentStatus IN ('PENDING', 'PROCESSING') AND p.createdAt < :cutoffTime")
+        List<Payment> findStalePayments(@Param("cutoffTime") LocalDateTime cutoffTime);
 }

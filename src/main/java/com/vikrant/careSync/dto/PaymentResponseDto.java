@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class PaymentResponseDto {
-    
+
     private Long id;
     private String transactionId;
     private String paymentGatewayTransactionId;
@@ -24,20 +24,21 @@ public class PaymentResponseDto {
     private Long patientId;
     private String patientName;
     private Long bookingId;
+    private Long appointmentId;
     private LocalDateTime createdAt;
     private LocalDateTime paymentCompletedAt;
     private String failureReason;
-    
+
     // Payment method specific details
     private String upiId;
     private String cardLastFour;
     private String cardType;
-    
+
     // For payment initiation response
     private String paymentUrl;
     private String qrCodeData;
     private String razorpayOrderId;
-    
+
     // Constructor for basic payment info
     public PaymentResponseDto(Payment payment) {
         this.id = payment.getId();
@@ -51,6 +52,7 @@ public class PaymentResponseDto {
         this.patientId = payment.getPatient().getId();
         this.patientName = payment.getPatient().getFirstName() + " " + payment.getPatient().getLastName();
         this.bookingId = payment.getBookingId();
+        this.appointmentId = payment.getAppointmentId();
         this.createdAt = payment.getCreatedAt();
         this.paymentCompletedAt = payment.getPaymentCompletedAt();
         this.failureReason = payment.getFailureReason();

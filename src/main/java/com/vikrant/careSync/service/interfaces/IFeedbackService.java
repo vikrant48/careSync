@@ -1,7 +1,7 @@
 package com.vikrant.careSync.service.interfaces;
 
 import com.vikrant.careSync.entity.Feedback;
-import com.vikrant.careSync.dto.PatientAppointmentResponse;
+import com.vikrant.careSync.dto.AppointmentResponse;
 
 import java.util.List;
 import java.util.Map;
@@ -116,7 +116,7 @@ public interface IFeedbackService {
      * @param patientId Patient ID
      * @return List of appointments ready for feedback (patient view DTO)
      */
-    List<PatientAppointmentResponse> getPendingFeedbackAppointmentsForPatient(Long patientId);
+    List<AppointmentResponse> getPendingFeedbackAppointmentsForPatient(Long patientId);
 
     /**
      * Get low rated feedbacks (rating <= 2)

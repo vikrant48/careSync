@@ -2,13 +2,10 @@ package com.vikrant.careSync.controller;
 
 import com.vikrant.careSync.dto.AppointmentResponse;
 import com.vikrant.careSync.dto.CreateAppointmentRequest;
-import com.vikrant.careSync.dto.DoctorAppointmentResponse;
-import com.vikrant.careSync.dto.PatientAppointmentResponse;
 import com.vikrant.careSync.dto.UserDto;
 import com.vikrant.careSync.entity.Appointment;
 import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Patient;
-import com.vikrant.careSync.entity.User;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.PatientRepository;
 import com.vikrant.careSync.service.AppointmentService;
@@ -92,9 +89,27 @@ public class AppointmentController {
 
             log.info("Appointment created with ID: {}", created.getId());
 
-            return ResponseEntity.ok(new PatientAppointmentResponse(created));
+            return ResponseEntity.ok(new AppointmentResponse(created));
         } catch (Exception e) {
             log.error("=== ERROR in appointment creation: {}", e.getMessage(), e);
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
+    @io.swagger.v3.oas.annotations.Operation(summary = "Book appointment with payment", description = "Creates appointment and processes payment atomically")
+    @PostMapping("/patient/book-with-payment")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<?> bookAppointmentWithPayment(
+            @Valid @RequestBody com.vikrant.careSync.dto.BookAppointmentWithPaymentRequest request) {
+        try {
+            log.info("=== Starting atomic appointment creation with payment ===");
+            Patient patient = getCurrentPatient();
+            AppointmentResponse response = appointmentService.bookAppointmentWithPayment(patient.getId(), request);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("=== ERROR in atomic appointment creation with payment: {}", e.getMessage(), e);
             Map<String, String> error = new HashMap<>();
             error.put("error", e.getMessage());
             return ResponseEntity.badRequest().body(error);
@@ -108,8 +123,8 @@ public class AppointmentController {
         try {
             Patient currentUser = getCurrentPatient();
             List<Appointment> appointments = appointmentService.getAppointmentsByPatient(currentUser.getId());
-            List<PatientAppointmentResponse> responses = appointments.stream()
-                    .map(PatientAppointmentResponse::new)
+            List<AppointmentResponse> responses = appointments.stream()
+                    .map(AppointmentResponse::new)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
@@ -125,8 +140,8 @@ public class AppointmentController {
         try {
             Patient currentUser = getCurrentPatient();
             List<Appointment> appointments = appointmentService.getUpcomingAppointmentsByPatient(currentUser.getId());
-            List<PatientAppointmentResponse> responses = appointments.stream()
-                    .map(PatientAppointmentResponse::new)
+            List<AppointmentResponse> responses = appointments.stream()
+                    .map(AppointmentResponse::new)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
@@ -144,8 +159,8 @@ public class AppointmentController {
             Appointment.Status appointmentStatus = Appointment.Status.valueOf(status.toUpperCase());
             List<Appointment> appointments = appointmentService.getAppointmentsByStatusForPatient(currentUser.getId(),
                     appointmentStatus);
-            List<PatientAppointmentResponse> responses = appointments.stream()
-                    .map(PatientAppointmentResponse::new)
+            List<AppointmentResponse> responses = appointments.stream()
+                    .map(AppointmentResponse::new)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
@@ -162,8 +177,8 @@ public class AppointmentController {
             Patient currentUser = getCurrentPatient();
             List<Appointment> appointments = appointmentService.getAppointmentsByStatusForPatient(currentUser.getId(),
                     Appointment.Status.COMPLETED);
-            List<PatientAppointmentResponse> responses = appointments.stream()
-                    .map(PatientAppointmentResponse::new)
+            List<AppointmentResponse> responses = appointments.stream()
+                    .map(AppointmentResponse::new)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
@@ -180,8 +195,8 @@ public class AppointmentController {
             Patient currentUser = getCurrentPatient();
             List<Appointment> appointments = appointmentService.getAppointmentsByStatusForPatient(currentUser.getId(),
                     Appointment.Status.CANCELLED);
-            List<PatientAppointmentResponse> responses = appointments.stream()
-                    .map(PatientAppointmentResponse::new)
+            List<AppointmentResponse> responses = appointments.stream()
+                    .map(AppointmentResponse::new)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
@@ -207,7 +222,7 @@ public class AppointmentController {
 
             // Use the updated service method
             Appointment updated = appointmentService.updateAppointment(id, updatedAppointment, currentUser.getUser());
-            return ResponseEntity.ok(new PatientAppointmentResponse(updated));
+            return ResponseEntity.ok(new AppointmentResponse(updated));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
@@ -256,7 +271,7 @@ public class AppointmentController {
 
             Map<String, Object> successResponse = new HashMap<>();
             successResponse.put("message", "Appointment rescheduled successfully");
-            successResponse.put("appointment", new PatientAppointmentResponse(rescheduled));
+            successResponse.put("appointment", new AppointmentResponse(rescheduled));
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
@@ -273,10 +288,47 @@ public class AppointmentController {
         try {
             Doctor currentUser = getCurrentDoctor();
             List<Appointment> appointments = appointmentService.getAppointmentsByDoctor(currentUser.getId());
-            List<DoctorAppointmentResponse> responses = appointments.stream()
-                    .map(DoctorAppointmentResponse::new)
+            List<AppointmentResponse> responses = appointments.stream()
+                    .map(AppointmentResponse::new)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(responses);
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    @GetMapping("/doctor/my-patients/paginated")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<?> getMyPatientsPaginated(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "ALL") String status,
+            @RequestParam(defaultValue = "UPCOMING") String range,
+            @RequestParam(required = false) String search) {
+        try {
+            Doctor currentUser = getCurrentDoctor();
+            List<AppointmentResponse> responses = appointmentService.getDoctorAppointmentsPaginated(
+                    currentUser.getId(), page, size, status, range, search);
+            return ResponseEntity.ok(responses);
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    @GetMapping("/doctor/my-patients/count")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<?> getMyPatientsCount(
+            @RequestParam(defaultValue = "ALL") String status,
+            @RequestParam(defaultValue = "UPCOMING") String range,
+            @RequestParam(required = false) String search) {
+        try {
+            Doctor currentUser = getCurrentDoctor();
+            long count = appointmentService.countDoctorAppointments(currentUser.getId(), status, range, search);
+            return ResponseEntity.ok(count);
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
@@ -290,8 +342,8 @@ public class AppointmentController {
         try {
             Doctor currentUser = getCurrentDoctor();
             List<Appointment> appointments = appointmentService.getUpcomingAppointmentsByDoctor(currentUser.getId());
-            List<DoctorAppointmentResponse> responses = appointments.stream()
-                    .map(DoctorAppointmentResponse::new)
+            List<AppointmentResponse> responses = appointments.stream()
+                    .map(AppointmentResponse::new)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
@@ -307,8 +359,8 @@ public class AppointmentController {
         try {
             Doctor currentUser = getCurrentDoctor();
             List<Appointment> appointments = appointmentService.getTodayAppointments(currentUser.getId());
-            List<DoctorAppointmentResponse> responses = appointments.stream()
-                    .map(DoctorAppointmentResponse::new)
+            List<AppointmentResponse> responses = appointments.stream()
+                    .map(AppointmentResponse::new)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
@@ -326,8 +378,8 @@ public class AppointmentController {
             Appointment.Status appointmentStatus = Appointment.Status.valueOf(status.toUpperCase());
             List<Appointment> appointments = appointmentService.getAppointmentsByStatus(currentUser.getId(),
                     appointmentStatus);
-            List<DoctorAppointmentResponse> responses = appointments.stream()
-                    .map(DoctorAppointmentResponse::new)
+            List<AppointmentResponse> responses = appointments.stream()
+                    .map(AppointmentResponse::new)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
@@ -343,8 +395,8 @@ public class AppointmentController {
         try {
             Doctor currentUser = getCurrentDoctor();
             List<Appointment> appointments = appointmentService.getCompletedAppointments(currentUser.getId());
-            List<DoctorAppointmentResponse> responses = appointments.stream()
-                    .map(DoctorAppointmentResponse::new)
+            List<AppointmentResponse> responses = appointments.stream()
+                    .map(AppointmentResponse::new)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
@@ -360,8 +412,8 @@ public class AppointmentController {
         try {
             Doctor currentUser = getCurrentDoctor();
             List<Appointment> appointments = appointmentService.getCancelledAppointments(currentUser.getId());
-            List<DoctorAppointmentResponse> responses = appointments.stream()
-                    .map(DoctorAppointmentResponse::new)
+            List<AppointmentResponse> responses = appointments.stream()
+                    .map(AppointmentResponse::new)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
@@ -406,7 +458,7 @@ public class AppointmentController {
             // Use the updated service method
             Appointment updatedAppointment = appointmentService.updateAppointmentStatus(id, appointmentStatus,
                     currentUser.getUser());
-            return ResponseEntity.ok(new DoctorAppointmentResponse(updatedAppointment));
+            return ResponseEntity.ok(new AppointmentResponse(updatedAppointment));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
@@ -422,7 +474,7 @@ public class AppointmentController {
             Doctor currentUser = getCurrentDoctor();
             Appointment updatedAppointment = appointmentService.updateAppointmentStatus(id,
                     Appointment.Status.CONFIRMED, currentUser.getUser());
-            return ResponseEntity.ok(new DoctorAppointmentResponse(updatedAppointment));
+            return ResponseEntity.ok(new AppointmentResponse(updatedAppointment));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
@@ -438,7 +490,7 @@ public class AppointmentController {
             Doctor currentUser = getCurrentDoctor();
             Appointment updatedAppointment = appointmentService.updateAppointmentStatus(id,
                     Appointment.Status.COMPLETED, currentUser.getUser());
-            return ResponseEntity.ok(new DoctorAppointmentResponse(updatedAppointment));
+            return ResponseEntity.ok(new AppointmentResponse(updatedAppointment));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
@@ -454,7 +506,7 @@ public class AppointmentController {
             Doctor currentUser = getCurrentDoctor();
             Appointment updatedAppointment = appointmentService.updateAppointmentStatus(id,
                     Appointment.Status.CANCELLED, currentUser.getUser());
-            return ResponseEntity.ok(new DoctorAppointmentResponse(updatedAppointment));
+            return ResponseEntity.ok(new AppointmentResponse(updatedAppointment));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
@@ -521,7 +573,7 @@ public class AppointmentController {
                     currentUser.getId(),
                     reason != null ? reason : "Emergency appointment");
 
-            return ResponseEntity.ok(new PatientAppointmentResponse(emergencyAppointment));
+            return ResponseEntity.ok(new AppointmentResponse(emergencyAppointment));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());

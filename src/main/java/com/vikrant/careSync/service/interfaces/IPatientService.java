@@ -23,6 +23,22 @@ public interface IPatientService {
     List<Patient> getAllPatients();
 
     /**
+     * Retrieve paginated patient DTOs with windowed Redis caching
+     * 
+     * @param page Zero-based page index
+     * @param size Page size
+     * @return List of patient DTOs
+     */
+    List<PatientDto> getPatientsPaginated(int page, int size);
+
+    /**
+     * Get total count of registered patients
+     * 
+     * @return Total patient count
+     */
+    long getPatientCount();
+
+    /**
      * Get patient by ID
      * 
      * @param id Patient ID

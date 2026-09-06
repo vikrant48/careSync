@@ -14,81 +14,84 @@ import java.util.Optional;
 
 public interface AppointmentRepository extends JpaRepository<Appointment, Long> {
 
-        @Query("SELECT a FROM Appointment a WHERE a.doctor.id = :doctorId")
-        List<Appointment> findByDoctorId(@Param("doctorId") Long doctorId);
+  @Query("SELECT a FROM Appointment a WHERE a.doctor.id = :doctorId")
+  List<Appointment> findByDoctorId(@Param("doctorId") Long doctorId);
 
-        @Query("SELECT a FROM Appointment a WHERE a.patient.id = :patientId")
-        List<Appointment> findByPatientId(@Param("patientId") Long patientId);
+  @Query("SELECT a FROM Appointment a WHERE a.patient.id = :patientId")
+  List<Appointment> findByPatientId(@Param("patientId") Long patientId);
 
-        @Query("SELECT a FROM Appointment a WHERE a.doctor.id = :doctorId AND a.appointmentDateTime BETWEEN :startDate AND :endDate")
-        List<Appointment> findByDoctorIdAndAppointmentDateTimeBetween(
-                        @Param("doctorId") Long doctorId,
-                        @Param("startDate") LocalDateTime startDate,
-                        @Param("endDate") LocalDateTime endDate);
+  @Query("SELECT a FROM Appointment a WHERE a.doctor.id = :doctorId AND a.appointmentDateTime BETWEEN :startDate AND :endDate")
+  List<Appointment> findByDoctorIdAndAppointmentDateTimeBetween(
+      @Param("doctorId") Long doctorId,
+      @Param("startDate") LocalDateTime startDate,
+      @Param("endDate") LocalDateTime endDate);
 
-        @Query("SELECT a FROM Appointment a WHERE a.doctor.id = :doctorId AND a.status = :status")
-        List<Appointment> findByDoctorIdAndStatus(@Param("doctorId") Long doctorId,
-                        @Param("status") Appointment.Status status);
+  @Query("SELECT a FROM Appointment a WHERE a.doctor.id = :doctorId AND a.status = :status")
+  List<Appointment> findByDoctorIdAndStatus(@Param("doctorId") Long doctorId,
+      @Param("status") Appointment.Status status);
 
-        @Query("SELECT a FROM Appointment a WHERE a.patient.id = :patientId AND a.status = :status")
-        List<Appointment> findByPatientIdAndStatus(@Param("patientId") Long patientId,
-                        @Param("status") Appointment.Status status);
+  @Query("SELECT a FROM Appointment a WHERE a.patient.id = :patientId AND a.status = :status")
+  List<Appointment> findByPatientIdAndStatus(@Param("patientId") Long patientId,
+      @Param("status") Appointment.Status status);
 
-        @Query("SELECT a FROM Appointment a WHERE a.patient.id = :patientId AND a.appointmentDateTime BETWEEN :startDate AND :endDate")
-        List<Appointment> findByPatientIdAndAppointmentDateTimeBetween(
-                        @Param("patientId") Long patientId,
-                        @Param("startDate") LocalDateTime startDate,
-                        @Param("endDate") LocalDateTime endDate);
+  @Query("SELECT a FROM Appointment a WHERE a.patient.id = :patientId AND a.appointmentDateTime BETWEEN :startDate AND :endDate")
+  List<Appointment> findByPatientIdAndAppointmentDateTimeBetween(
+      @Param("patientId") Long patientId,
+      @Param("startDate") LocalDateTime startDate,
+      @Param("endDate") LocalDateTime endDate);
 
-        // Enhanced queries with patient and doctor details
-        @Query("SELECT a FROM Appointment a JOIN FETCH a.patient p JOIN FETCH a.doctor d WHERE a.doctor.id = :doctorId")
-        List<Appointment> findByDoctorIdWithPatientAndDoctorDetails(@Param("doctorId") Long doctorId);
+  // Enhanced queries with patient and doctor details
+  @Query("SELECT a FROM Appointment a JOIN FETCH a.patient p JOIN FETCH a.doctor d WHERE a.doctor.id = :doctorId")
+  List<Appointment> findByDoctorIdWithPatientAndDoctorDetails(@Param("doctorId") Long doctorId);
 
-        @Query("SELECT a FROM Appointment a JOIN FETCH a.patient p JOIN FETCH a.doctor d WHERE a.patient.id = :patientId")
-        List<Appointment> findByPatientIdWithPatientAndDoctorDetails(@Param("patientId") Long patientId);
+  @Query("SELECT a FROM Appointment a JOIN FETCH a.patient p JOIN FETCH a.doctor d WHERE a.patient.id = :patientId")
+  List<Appointment> findByPatientIdWithPatientAndDoctorDetails(@Param("patientId") Long patientId);
 
-        @Query("SELECT a FROM Appointment a JOIN FETCH a.patient p JOIN FETCH a.doctor d WHERE a.doctor.id = :doctorId AND a.appointmentDateTime > :now AND a.status IN ('BOOKED','SCHEDULED','CONFIRMED')")
-        List<Appointment> findUpcomingAppointmentsByDoctorWithDetails(@Param("doctorId") Long doctorId,
-                        @Param("now") LocalDateTime now);
+  @Query("SELECT a FROM Appointment a JOIN FETCH a.patient p JOIN FETCH a.doctor d WHERE a.doctor.id = :doctorId AND a.appointmentDateTime > :now AND a.status IN ('BOOKED','SCHEDULED','CONFIRMED')")
+  List<Appointment> findUpcomingAppointmentsByDoctorWithDetails(@Param("doctorId") Long doctorId,
+      @Param("now") LocalDateTime now);
 
-        @Query("SELECT a FROM Appointment a JOIN FETCH a.patient p JOIN FETCH a.doctor d WHERE a.doctor.id = :doctorId AND FUNCTION('DATE', a.appointmentDateTime) = FUNCTION('DATE', :now)")
-        List<Appointment> findTodayAppointmentsByDoctorWithDetails(@Param("doctorId") Long doctorId,
-                        @Param("now") LocalDateTime now);
+  @Query("SELECT a FROM Appointment a JOIN FETCH a.patient p JOIN FETCH a.doctor d WHERE a.doctor.id = :doctorId AND FUNCTION('DATE', a.appointmentDateTime) = FUNCTION('DATE', :now)")
+  List<Appointment> findTodayAppointmentsByDoctorWithDetails(@Param("doctorId") Long doctorId,
+      @Param("now") LocalDateTime now);
 
-        @Query("SELECT a FROM Appointment a JOIN FETCH a.patient p JOIN FETCH a.doctor d WHERE a.patient.id = :patientId AND a.appointmentDateTime > :now AND a.status = 'BOOKED'")
-        List<Appointment> findUpcomingAppointmentsByPatientWithDetails(@Param("patientId") Long patientId,
-                        @Param("now") LocalDateTime now);
+  @Query("SELECT a FROM Appointment a JOIN FETCH a.patient p JOIN FETCH a.doctor d WHERE a.patient.id = :patientId AND a.appointmentDateTime > :now AND a.status = 'BOOKED'")
+  List<Appointment> findUpcomingAppointmentsByPatientWithDetails(@Param("patientId") Long patientId,
+      @Param("now") LocalDateTime now);
 
-        @Override
-        Optional<Appointment> findById(Long id);
+  @Query("SELECT a FROM Appointment a JOIN FETCH a.patient JOIN FETCH a.doctor WHERE a.id = :id")
+  Optional<Appointment> findByIdWithDetails(@Param("id") Long id);
 
-        @Lock(LockModeType.PESSIMISTIC_WRITE)
-        @Query("SELECT a FROM Appointment a JOIN FETCH a.patient JOIN FETCH a.doctor WHERE a.id = :id")
-        Optional<Appointment> findByIdForUpdate(@Param("id") Long id);
+  @Override
+  Optional<Appointment> findById(Long id);
 
-        @Query("""
-                        SELECT COUNT(a)
-                        FROM Appointment a
-                        WHERE a.doctor.id = :doctorId
-                          AND a.isActive = true
-                          AND a.status IN ('BOOKED', 'SCHEDULED', 'CONFIRMED', 'IN_PROGRESS')
-                          AND a.appointmentDateTime > :startTime
-                          AND a.appointmentDateTime < :endTime
-                          AND (:excludedAppointmentId IS NULL OR a.id <> :excludedAppointmentId)
-                        """)
-        long countConflictingAppointments(
-                        @Param("doctorId") Long doctorId,
-                        @Param("startTime") LocalDateTime startTime,
-                        @Param("endTime") LocalDateTime endTime,
-                        @Param("excludedAppointmentId") Long excludedAppointmentId);
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("SELECT a FROM Appointment a JOIN FETCH a.patient JOIN FETCH a.doctor WHERE a.id = :id")
+  Optional<Appointment> findByIdForUpdate(@Param("id") Long id);
 
-        @Override
-        <S extends Appointment> S save(S entity);
+  @Query("""
+      SELECT COUNT(a)
+      FROM Appointment a
+      WHERE a.doctor.id = :doctorId
+        AND a.isActive = true
+        AND a.status IN ('BOOKED', 'SCHEDULED', 'CONFIRMED', 'IN_PROGRESS')
+        AND a.appointmentDateTime > :startTime
+        AND a.appointmentDateTime < :endTime
+        AND (:excludedAppointmentId IS NULL OR a.id <> :excludedAppointmentId)
+      """)
+  long countConflictingAppointments(
+      @Param("doctorId") Long doctorId,
+      @Param("startTime") LocalDateTime startTime,
+      @Param("endTime") LocalDateTime endTime,
+      @Param("excludedAppointmentId") Long excludedAppointmentId);
 
-        @Override
-        void deleteById(Long id);
+  @Override
+  <S extends Appointment> S save(S entity);
 
-        @Modifying
-        @Query("UPDATE Appointment a SET a.isActive = false WHERE a.isActive = true AND a.appointmentDateTime < :threshold AND a.status = 'BOOKED'")
-        int deactivateExpiredAppointments(@Param("threshold") LocalDateTime threshold);
+  @Override
+  void deleteById(Long id);
+
+  @Modifying
+  @Query("UPDATE Appointment a SET a.isActive = false WHERE a.isActive = true AND a.appointmentDateTime < :threshold AND a.status = 'BOOKED'")
+  int deactivateExpiredAppointments(@Param("threshold") LocalDateTime threshold);
 }

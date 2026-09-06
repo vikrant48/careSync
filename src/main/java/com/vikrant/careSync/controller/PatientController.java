@@ -48,14 +48,21 @@ public class PatientController {
     private final UserService userService;
     private final CacheManager cacheManager;
 
-    @io.swagger.v3.oas.annotations.Operation(summary = "Get all patients", description = "Retrieves a list of all registered patients (Doctor/Admin only)")
+    @io.swagger.v3.oas.annotations.Operation(summary = "Get paginated patients", description = "Retrieves a paginated list of registered patients with windowed Redis caching (Doctor/Admin only)")
     @GetMapping
-    @PreAuthorize("hasRole('DOCTOR')")
-    public ResponseEntity<List<PatientDto>> getAllPatients() {
-        List<PatientDto> patients = patientService.getAllPatients().stream()
-                .map(PatientDto::new)
-                .collect(Collectors.toList());
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN')")
+    public ResponseEntity<List<PatientDto>> getAllPatients(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        List<PatientDto> patients = patientService.getPatientsPaginated(page, size);
         return ResponseEntity.ok(patients);
+    }
+
+    @io.swagger.v3.oas.annotations.Operation(summary = "Get total patient count", description = "Retrieves total count of registered patients with Redis caching")
+    @GetMapping("/count")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN')")
+    public ResponseEntity<Long> getPatientCount() {
+        return ResponseEntity.ok(patientService.getPatientCount());
     }
 
     @GetMapping("/{id}")
@@ -104,7 +111,9 @@ public class PatientController {
                 try {
                     Cache.ValueWrapper wrapper = cache.get(key);
                     if (wrapper != null) {
-                        completeData = (Map<String, Object>) wrapper.get();
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> cachedData = (Map<String, Object>) wrapper.get();
+                        completeData = cachedData;
                     }
                 } catch (Exception e) {
                     log.warn("Redis unavailable during patient data cache read for {}: {}", patientId, e.getMessage());

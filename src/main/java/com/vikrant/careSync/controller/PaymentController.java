@@ -104,27 +104,6 @@ public class PaymentController {
         }
     }
 
-    @Operation(summary = "Update payment with booking ID", description = "Links a payment to a booking after booking creation")
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Payment updated successfully"),
-            @ApiResponse(responseCode = "404", description = "Payment or booking not found")
-    })
-    @PutMapping("/link-booking")
-    @PreAuthorize("hasRole('PATIENT') or hasRole('ADMIN') or hasRole('DOCTOR')")
-    public ResponseEntity<String> linkPaymentToBooking(
-            @Parameter(description = "Transaction ID") @RequestParam String transactionId,
-            @Parameter(description = "Booking ID") @RequestParam Long bookingId) {
-
-        try {
-            paymentService.updatePaymentWithBookingId(transactionId, bookingId);
-            return ResponseEntity.ok("Payment linked to booking successfully");
-
-        } catch (RuntimeException e) {
-            log.error("Failed to link payment to booking: {}", e.getMessage());
-            return ResponseEntity.notFound().build();
-        }
-    }
-
     @Operation(summary = "Get payment by booking ID", description = "Retrieves payment details by booking ID")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Payment found"),

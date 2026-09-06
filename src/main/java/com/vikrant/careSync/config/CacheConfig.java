@@ -49,14 +49,17 @@ public class CacheConfig implements CachingConfigurer {
 
                 RedisCacheManager manager = RedisCacheManager.builder(connectionFactory)
                                 .cacheDefaults(config)
-                                // Patient caches (5 min TTL)
+                                // Patient caches
                                 .withCacheConfiguration("PATIENT:PROFILE", config.entryTtl(Duration.ofMinutes(5)))
                                 .withCacheConfiguration("PATIENT:HISTORY", config.entryTtl(Duration.ofMinutes(5)))
                                 .withCacheConfiguration("PATIENT:APPOINTMENTS", config.entryTtl(Duration.ofMinutes(5)))
                                 .withCacheConfiguration("PATIENT:DOCUMENTS", config.entryTtl(Duration.ofMinutes(5)))
                                 .withCacheConfiguration("PATIENT:FINANCIAL", config.entryTtl(Duration.ofMinutes(5)))
                                 .withCacheConfiguration("PATIENT:COMPLETE_DATA", config.entryTtl(Duration.ofMinutes(5)))
-                                // Doctor caches (1 hour TTL)
+                                .withCacheConfiguration("PATIENT:PAGINATED_LIST", config.entryTtl(Duration.ofMinutes(10)))
+                                // Doctor caches
+                                .withCacheConfiguration("DOCTOR:PAGINATED_LIST", config.entryTtl(Duration.ofMinutes(10)))
+                                .withCacheConfiguration("DOCTOR:APPOINTMENTS_PAGINATED", config.entryTtl(Duration.ofMinutes(10)))
                                 .withCacheConfiguration("DOCTOR:PROFILE", config.entryTtl(Duration.ofHours(1)))
                                 .withCacheConfiguration("DOCTOR:EXPERIENCE", config.entryTtl(Duration.ofHours(1)))
                                 .withCacheConfiguration("DOCTOR:EDUCATION", config.entryTtl(Duration.ofHours(1)))

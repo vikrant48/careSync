@@ -2,9 +2,7 @@ package com.vikrant.careSync.service;
 
 import com.vikrant.careSync.entity.Feedback;
 import com.vikrant.careSync.entity.Appointment;
-import com.vikrant.careSync.entity.Doctor;
-import com.vikrant.careSync.entity.Patient;
-import com.vikrant.careSync.dto.PatientAppointmentResponse;
+import com.vikrant.careSync.dto.AppointmentResponse;
 import com.vikrant.careSync.repository.FeedbackRepository;
 import com.vikrant.careSync.repository.AppointmentRepository;
 import com.vikrant.careSync.repository.DoctorRepository;
@@ -17,7 +15,6 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -175,7 +172,7 @@ public class FeedbackService implements IFeedbackService {
     }
 
     @Override
-    public List<PatientAppointmentResponse> getPendingFeedbackAppointmentsForPatient(Long patientId) {
+    public List<AppointmentResponse> getPendingFeedbackAppointmentsForPatient(Long patientId) {
         // Get completed appointments for the patient
         List<Appointment> completed = appointmentRepository.findByPatientIdAndStatus(patientId,
                 Appointment.Status.COMPLETED);
@@ -185,7 +182,7 @@ public class FeedbackService implements IFeedbackService {
                 .toList();
         // Map to patient-facing DTO
         return pending.stream()
-                .map(PatientAppointmentResponse::new)
+                .map(AppointmentResponse::new)
                 .collect(Collectors.toList());
     }
 
