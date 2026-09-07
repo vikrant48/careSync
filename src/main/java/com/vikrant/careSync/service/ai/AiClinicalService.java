@@ -18,8 +18,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AiClinicalService {
 
-    private final GeminiClient geminiClient;
     private final GroqClient groqClient;
+    private final GeminiClient geminiClient;
     private final AppointmentRepository appointmentRepository;
     private final MedicalHistoryRepository medicalHistoryRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -62,23 +62,27 @@ public class AiClinicalService {
 
             String summary = null;
 
-            // 1. Try Gemini first (massive 1M token context window)
-            if (geminiClient != null && geminiClient.isConfigured()) {
+            // 1. Try Groq API FIRST (Primary AI)
+            if (groqClient != null && groqClient.isConfigured()) {
                 try {
-                    log.info("Generating patient history summary using Google Gemini...");
-                    summary = geminiClient.generateContent(userPrompt);
-                } catch (Exception geminiEx) {
-                    log.warn("Gemini summarization failed ({}), falling back to Groq...", geminiEx.getMessage());
+                    log.info("Generating patient history summary using Groq AI (Primary)...");
+                    String promptText = fullHistoryStr.length() > 3000
+                            ? fullHistoryStr.substring(0, 3000) + "\n...[Truncated for AI processing]"
+                            : fullHistoryStr;
+                    summary = groqClient.callGroq(systemPrompt, "Summarize:\n" + promptText, false);
+                } catch (Exception groqEx) {
+                    log.warn("Groq summarization failed ({}), falling back to Gemini AI...", groqEx.getMessage());
                 }
             }
 
-            // 2. Fallback to Groq (capped for safety)
-            if (summary == null || summary.isBlank()) {
-                log.info("Generating patient history summary using Groq...");
-                if (fullHistoryStr.length() > 3000) {
-                    fullHistoryStr = fullHistoryStr.substring(0, 3000) + "\n...[Truncated for AI processing]";
+            // 2. Fallback to Gemini API if Groq fails or is not configured
+            if ((summary == null || summary.isBlank()) && geminiClient != null && geminiClient.isConfigured()) {
+                try {
+                    log.info("Generating patient history summary using Google Gemini AI (Fallback)...");
+                    summary = geminiClient.generateContent(userPrompt);
+                } catch (Exception geminiEx) {
+                    log.error("Gemini fallback summarization also failed: {}", geminiEx.getMessage());
                 }
-                summary = groqClient.callGroq(systemPrompt, "Summarize:\n" + fullHistoryStr, false);
             }
 
             return MedicalSummaryResponse.builder().summary(summary).success(true).build();
@@ -110,21 +114,46 @@ public class AiClinicalService {
 
         String userPrompt = "Analyze symptoms: '" + symptoms + "'. Return strictly JSON differential suggestions.";
 
-        try {
-            String jsonResponse = groqClient.callGroq(systemPrompt, userPrompt, true);
-            String cleanJson = extractJson(jsonResponse);
-            DiagnosisSuggestionDto dto = objectMapper.readValue(cleanJson, DiagnosisSuggestionDto.class);
-            if (dto.getDisclaimer() == null || dto.getDisclaimer().isBlank()) {
-                dto.setDisclaimer(
-                        "Possible conditions only, not a final medical diagnosis. Clinical examination required.");
+        String jsonResponse = null;
+
+        // 1. Try Groq API FIRST (Primary AI)
+        if (groqClient != null && groqClient.isConfigured()) {
+            try {
+                log.info("Generating differential diagnosis suggestion using Groq AI (Primary)...");
+                jsonResponse = groqClient.callGroq(systemPrompt, userPrompt, true);
+            } catch (Exception groqEx) {
+                log.warn("Groq suggestDiagnosis failed ({}), falling back to Gemini AI...", groqEx.getMessage());
             }
-            return dto;
-        } catch (Exception e) {
-            log.error("Error generating diagnosis suggestion via Groq", e);
-            return DiagnosisSuggestionDto.builder()
-                    .disclaimer("Possible conditions only, not a final medical diagnosis.")
-                    .build();
         }
+
+        // 2. Fallback to Gemini API if Groq fails or returns empty
+        if ((jsonResponse == null || jsonResponse.isBlank()) && geminiClient != null && geminiClient.isConfigured()) {
+            try {
+                log.info("Generating differential diagnosis suggestion using Gemini AI (Fallback)...");
+                String geminiPrompt = systemPrompt + "\n\n" + userPrompt;
+                jsonResponse = geminiClient.generateContent(geminiPrompt);
+            } catch (Exception geminiEx) {
+                log.error("Gemini suggestDiagnosis fallback failed: {}", geminiEx.getMessage());
+            }
+        }
+
+        try {
+            if (jsonResponse != null && !jsonResponse.isBlank()) {
+                String cleanJson = extractJson(jsonResponse);
+                DiagnosisSuggestionDto dto = objectMapper.readValue(cleanJson, DiagnosisSuggestionDto.class);
+                if (dto.getDisclaimer() == null || dto.getDisclaimer().isBlank()) {
+                    dto.setDisclaimer(
+                            "Possible conditions only, not a final medical diagnosis. Clinical examination required.");
+                }
+                return dto;
+            }
+        } catch (Exception e) {
+            log.error("Error parsing diagnosis suggestion JSON: {}", e.getMessage());
+        }
+
+        return DiagnosisSuggestionDto.builder()
+                .disclaimer("Possible conditions only, not a final medical diagnosis. Clinical examination required.")
+                .build();
     }
 
     private String extractJson(String text) {
