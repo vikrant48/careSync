@@ -1,5 +1,8 @@
 # CareSync - Healthcare Management Platform Backend
 
+> 🌐 **Live Web Application**: [https://caresync-vikrant.vercel.app/](https://caresync-vikrant.vercel.app/)
+
+![Live App](https://img.shields.io/badge/Live_App-caresync--vikrant.vercel.app-000000?style=for-the-badge&logo=vercel&logoColor=white)
 ![Java](https://img.shields.io/badge/Java-21-orange?style=for-the-badge&logo=java)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-green?style=for-the-badge&logo=spring-boot)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?style=for-the-badge&logo=postgresql)
@@ -66,6 +69,7 @@ graph TD
 
 ## 📖 Documentation & Links
 
+- 🌐 **[Live Web Application](https://caresync-vikrant.vercel.app/)**
 - 📐 **[System Architecture Deep-Dive](docs/architecture_overview.md)**
 - 🧪 **[Java Concurrency Learning Lab](docs/java-concurrency-learning-lab.md)**
 - 🗄️ **[Database ERD Diagram](https://dbdiagram.io/d/6970e7c2bd82f5fce22c9b1d)**
