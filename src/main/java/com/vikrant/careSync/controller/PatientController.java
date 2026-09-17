@@ -1,6 +1,7 @@
 package com.vikrant.careSync.controller;
 
 import com.vikrant.careSync.entity.Patient;
+import com.vikrant.careSync.entity.User;
 import com.vikrant.careSync.entity.MedicalHistory;
 import com.vikrant.careSync.entity.Document;
 
@@ -168,23 +169,24 @@ public class PatientController {
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<PatientDto> updatePatientProfile(@PathVariable Long id,
             @RequestBody UpdatePatientRequest request) {
-        try {
-            Patient updatedPatient = new Patient();
-            updatedPatient.setFirstName(request.getFirstName());
-            updatedPatient.setLastName(request.getLastName());
-            updatedPatient.setDateOfBirth(request.getDateOfBirth());
-            updatedPatient.setContactInfo(request.getContactInfo());
-            updatedPatient.setIllnessDetails(request.getIllnessDetails());
-            updatedPatient.setEmail(request.getEmail());
-            updatedPatient.setIsActive(request.getIsActive());
-            updatedPatient.setGender(request.getGender());
-            updatedPatient.setBloodGroup(request.getBloodGroup());
-
-            Patient patient = patientService.updatePatientProfile(id, updatedPatient);
-            return ResponseEntity.ok(new PatientDto(patient));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
+        log.info("Updating profile for patient id: {}", id);
+        Patient updatedPatient = new Patient();
+        updatedPatient.setFirstName(request.getFirstName());
+        updatedPatient.setLastName(request.getLastName());
+        updatedPatient.setDateOfBirth(request.getDateOfBirth());
+        updatedPatient.setContactInfo(request.getContactInfo());
+        updatedPatient.setIllnessDetails(request.getIllnessDetails());
+        if (request.getEmail() != null && !request.getEmail().trim().isEmpty()) {
+            User u = new User();
+            u.setEmail(request.getEmail());
+            updatedPatient.setUser(u);
         }
+        updatedPatient.setIsActive(request.getIsActive());
+        updatedPatient.setGender(request.getGender());
+        updatedPatient.setBloodGroup(request.getBloodGroup());
+
+        Patient patient = patientService.updatePatientProfile(id, updatedPatient);
+        return ResponseEntity.ok(new PatientDto(patient));
     }
 
     @GetMapping("/illness/{illnessKeyword}")

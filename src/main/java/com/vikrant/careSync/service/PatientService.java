@@ -213,17 +213,45 @@ public class PatientService implements IPatientService {
     })
     public Patient updatePatientProfile(Long patientId, Patient updatedPatient) {
         Patient patient = patientRepository.findById(patientId)
-                .orElseThrow(() -> new RuntimeException("Patient not found"));
+                .orElseThrow(() -> new RuntimeException("Patient not found with id: " + patientId));
 
-        patient.setFirstName(updatedPatient.getFirstName());
-        patient.setLastName(updatedPatient.getLastName());
-        patient.setDateOfBirth(updatedPatient.getDateOfBirth());
-        patient.setContactInfo(updatedPatient.getContactInfo());
-        patient.setIllnessDetails(updatedPatient.getIllnessDetails());
-        patient.setGender(updatedPatient.getGender());
-        patient.setEmail(updatedPatient.getEmail());
-        patient.setBloodGroup(updatedPatient.getBloodGroup());
-        patient.setIsActive(updatedPatient.getIsActive());
+        if (updatedPatient.getFirstName() != null) {
+            patient.setFirstName(updatedPatient.getFirstName());
+        }
+        if (updatedPatient.getLastName() != null) {
+            patient.setLastName(updatedPatient.getLastName());
+        }
+        if (updatedPatient.getDateOfBirth() != null) {
+            patient.setDateOfBirth(updatedPatient.getDateOfBirth());
+        }
+        if (updatedPatient.getContactInfo() != null) {
+            patient.setContactInfo(updatedPatient.getContactInfo());
+        }
+        if (updatedPatient.getIllnessDetails() != null) {
+            patient.setIllnessDetails(updatedPatient.getIllnessDetails());
+        }
+        if (updatedPatient.getGender() != null) {
+            patient.setGender(updatedPatient.getGender());
+        }
+        if (updatedPatient.getBloodGroup() != null) {
+            patient.setBloodGroup(updatedPatient.getBloodGroup());
+        }
+        if (updatedPatient.getIsActive() != null) {
+            patient.setIsActive(updatedPatient.getIsActive());
+        }
+
+        // Email update handling:
+        // Safely extract email from attached user object or patient delegate without
+        // overwriting with null
+        String requestedEmail = (updatedPatient.getUser() != null && updatedPatient.getUser().getEmail() != null)
+                ? updatedPatient.getUser().getEmail()
+                : updatedPatient.getEmail();
+
+        if (requestedEmail != null && !requestedEmail.trim().isEmpty()) {
+            if (patient.getUser() != null) {
+                patient.getUser().setEmail(requestedEmail);
+            }
+        }
 
         return patientRepository.save(patient);
     }

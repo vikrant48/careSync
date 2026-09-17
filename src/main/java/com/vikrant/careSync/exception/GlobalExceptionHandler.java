@@ -46,4 +46,16 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
     }
+
+    /**
+     * Handles generic runtime exceptions across the application.
+     */
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<Map<String, String>> handleRuntimeException(RuntimeException ex) {
+        Map<String, String> error = new HashMap<>();
+        error.put("error", "Request Failed");
+        error.put("message", ex.getMessage() != null ? ex.getMessage() : "An unexpected error occurred.");
+        error.put("code", "BAD_REQUEST");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+    }
 }
