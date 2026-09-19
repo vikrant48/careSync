@@ -6,6 +6,7 @@ import com.vikrant.careSync.dto.UserDto;
 import com.vikrant.careSync.service.AuthenticationService;
 import com.vikrant.careSync.service.UserService;
 import com.vikrant.careSync.service.EmailVerificationService;
+import com.vikrant.careSync.service.GoogleAuthService;
 import com.vikrant.careSync.security.service.RefreshTokenService;
 import com.vikrant.careSync.security.service.SecurityService;
 import com.vikrant.careSync.security.JwtService;
@@ -40,6 +41,23 @@ public class AuthController {
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
     private final EmailVerificationService emailVerificationService;
+    private final GoogleAuthService googleAuthService;
+
+    @io.swagger.v3.oas.annotations.Operation(summary = "Authenticate user with Google", description = "Verifies Google ID token and returns JWT access and refresh tokens")
+    @PostMapping("/google")
+    public ResponseEntity<?> authenticateGoogle(@Valid @RequestBody GoogleLoginRequest request,
+            HttpServletRequest httpRequest) {
+        try {
+            String ipAddress = getClientIPAddress(httpRequest);
+            String userAgent = httpRequest.getHeader("User-Agent");
+            AuthenticationResponse response = googleAuthService.authenticateGoogleUser(request, ipAddress, userAgent);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Register a new user", description = "Creates a new doctor or patient account")
     @PostMapping("/register")
