@@ -15,11 +15,11 @@ import java.util.List;
 import java.util.Map;
 
 @Service
-public class SendGridEmailClient {
+public class ResendEmailClient {
 
-    private static final Logger log = LoggerFactory.getLogger(SendGridEmailClient.class);
+    private static final Logger log = LoggerFactory.getLogger(ResendEmailClient.class);
 
-    @Value("${sendgrid.api.key:}")
+    @Value("${resend.api.key:}")
     private String apiKey;
 
     @Value("${mail.from.name:CareSync}")
@@ -28,7 +28,7 @@ public class SendGridEmailClient {
     private final RestTemplate restTemplate = new RestTemplate();
 
     /**
-     * Sends an HTML email using SendGrid's HTTP API.
+     * Sends an HTML email using Resend's HTTP API (https://api.resend.com/emails).
      *
      * @param fromEmail sender email address
      * @param toEmail   recipient email address
@@ -38,12 +38,12 @@ public class SendGridEmailClient {
      */
     public boolean sendHtml(String fromEmail, String toEmail, String subject, String htmlBody) {
         if (apiKey == null || apiKey.isBlank()) {
-            log.warn("SendGrid API key not configured; skipping HTTP send");
+            log.warn("Resend API key not configured; skipping HTTP send");
             return false;
         }
 
         try {
-            String url = "https://api.sendgrid.com/v3/mail/send";
+            String url = "https://api.resend.com/emails";
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
@@ -51,40 +51,33 @@ public class SendGridEmailClient {
 
             Map<String, Object> payload = new HashMap<>();
 
-            Map<String, Object> to = new HashMap<>();
-            to.put("email", toEmail);
+            // Format from address or fallback to default onboarding address if not
+            // specified
+            String formattedFrom;
+            if (fromEmail != null && !fromEmail.isBlank() && !fromEmail.contains("noreply@caresync.local")) {
+                formattedFrom = defaultFromName + " <" + fromEmail + ">";
+            } else {
+                formattedFrom = defaultFromName + " <onboarding@resend.dev>";
+            }
 
-            Map<String, Object> personalization = new HashMap<>();
-            personalization.put("to", List.of(to));
-
-            payload.put("personalizations", List.of(personalization));
-
-            Map<String, Object> from = new HashMap<>();
-            from.put("email", fromEmail);
-            from.put("name", defaultFromName);
-            payload.put("from", from);
-
+            payload.put("from", formattedFrom);
+            payload.put("to", List.of(toEmail));
             payload.put("subject", subject);
-
-            Map<String, Object> content = new HashMap<>();
-            content.put("type", "text/html");
-            content.put("value", htmlBody);
-
-            payload.put("content", List.of(content));
+            payload.put("html", htmlBody);
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);
             ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
 
             int status = response.getStatusCodeValue();
             if (status >= 200 && status < 300) {
-                log.info("SendGrid accepted email to {} with subject '{}'", toEmail, subject);
+                log.info("Resend accepted email to {} with subject '{}'", toEmail, subject);
                 return true;
             } else {
-                log.error("SendGrid returned status {}: {}", status, response.getBody());
+                log.error("Resend returned status {}: {}", status, response.getBody());
                 return false;
             }
         } catch (Exception e) {
-            log.error("SendGrid HTTP send failed: {}", e.getMessage(), e);
+            log.error("Resend HTTP send failed: {}", e.getMessage(), e);
             return false;
         }
     }

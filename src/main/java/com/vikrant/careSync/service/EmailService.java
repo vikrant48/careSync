@@ -10,7 +10,6 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
-
 @Service
 public class EmailService {
 
@@ -19,7 +18,7 @@ public class EmailService {
     private final JavaMailSender mailSender;
     private final CommunicationRepository communicationRepository;
     private final EmailTemplateService emailTemplateService;
-    private final SendGridEmailClient sendGridEmailClient;
+    private final ResendEmailClient resendEmailClient;
 
     @Value("${spring.mail.username:}")
     private String fromAddress;
@@ -27,14 +26,15 @@ public class EmailService {
     @Value("${mail.from.address:}")
     private String overrideFromAddress;
 
-    @Value("${mail.api.provider:}")
+    @Value("${mail.api.provider:resend}")
     private String mailApiProvider;
 
-    public EmailService(JavaMailSender mailSender, CommunicationRepository communicationRepository, EmailTemplateService emailTemplateService, SendGridEmailClient sendGridEmailClient) {
+    public EmailService(JavaMailSender mailSender, CommunicationRepository communicationRepository,
+            EmailTemplateService emailTemplateService, ResendEmailClient resendEmailClient) {
         this.mailSender = mailSender;
         this.communicationRepository = communicationRepository;
         this.emailTemplateService = emailTemplateService;
-        this.sendGridEmailClient = sendGridEmailClient;
+        this.resendEmailClient = resendEmailClient;
     }
 
     public void sendTemplateEmail(String to, String subject, String templatePath, java.util.Map<String, String> model) {
@@ -50,13 +50,14 @@ public class EmailService {
         boolean sent = false;
         Exception sendError = null;
 
-        // Try HTTP provider first when configured
-        if (mailApiProvider != null && mailApiProvider.equalsIgnoreCase("sendgrid")) {
+        // Try Resend HTTP provider first unless mail.api.provider is explicitly set to
+        // "smtp"
+        if (mailApiProvider == null || !mailApiProvider.equalsIgnoreCase("smtp")) {
             try {
-                sent = sendGridEmailClient.sendHtml(sender, to, subject, html);
+                sent = resendEmailClient.sendHtml(sender, to, subject, html);
             } catch (Exception e) {
                 sendError = e;
-                log.warn("SendGrid send failed, falling back to SMTP: {}", e.getMessage());
+                log.warn("Resend send failed, falling back to SMTP: {}", e.getMessage());
             }
         }
 
@@ -89,8 +90,7 @@ public class EmailService {
                             .status(Communication.Status.SENT)
                             .errorMessage(null)
                             .createdAt(java.time.LocalDateTime.now())
-                            .build()
-            );
+                            .build());
         } else {
             String err = sendError != null ? sendError.getMessage() : "Unknown error";
             log.error("Failed to send template email '{}': {}", templatePath, err);
@@ -103,8 +103,7 @@ public class EmailService {
                             .status(Communication.Status.FAILED)
                             .errorMessage(truncate(err, 1000))
                             .createdAt(java.time.LocalDateTime.now())
-                            .build()
-            );
+                            .build());
         }
     }
 
@@ -116,11 +115,11 @@ public class EmailService {
         sendTemplateEmail(to, subject, "email/password-reset-otp.html", model);
     }
 
-    
-
     private String truncate(String s, int maxLen) {
-        if (s == null) return null;
-        if (s.length() <= maxLen) return s;
+        if (s == null)
+            return null;
+        if (s.length() <= maxLen)
+            return s;
         return s.substring(0, maxLen);
     }
 }
