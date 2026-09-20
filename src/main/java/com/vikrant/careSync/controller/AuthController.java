@@ -1,6 +1,8 @@
 package com.vikrant.careSync.controller;
 
 import com.vikrant.careSync.constants.AppConstants;
+import com.vikrant.careSync.dto.DoctorDto;
+import com.vikrant.careSync.dto.PatientDto;
 import com.vikrant.careSync.security.dto.*;
 import com.vikrant.careSync.dto.UserDto;
 import com.vikrant.careSync.service.AuthenticationService;
@@ -362,11 +364,11 @@ public class AuthController {
         if (AppConstants.Roles.DOCTOR.equals(role)) {
             var doctor = doctorRepository.findByUsername(username)
                     .orElseThrow(() -> new RuntimeException("Doctor not found"));
-            return new com.vikrant.careSync.dto.DoctorDto(doctor);
+            return new DoctorDto(doctor);
         } else if (AppConstants.Roles.PATIENT.equals(role)) {
             var patient = patientRepository.findByUsername(username)
                     .orElseThrow(() -> new RuntimeException("Patient not found"));
-            return new com.vikrant.careSync.dto.PatientDto(patient);
+            return new PatientDto(patient);
         }
         throw new RuntimeException("Invalid role: " + role);
     }

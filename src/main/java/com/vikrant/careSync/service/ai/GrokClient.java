@@ -1,5 +1,7 @@
 package com.vikrant.careSync.service.ai;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +12,14 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -178,26 +188,26 @@ public class GrokClient {
                     requestBody.put("response_format", Map.of("type", "json_object"));
                 }
 
-                String jsonPayload = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(requestBody);
+                String jsonPayload = new ObjectMapper().writeValueAsString(requestBody);
 
-                java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
-                java.net.http.HttpRequest.Builder builder = java.net.http.HttpRequest.newBuilder()
-                        .uri(java.net.URI.create(apiUrl))
+                HttpClient client = HttpClient.newHttpClient();
+                HttpRequest.Builder builder = HttpRequest.newBuilder()
+                        .uri(URI.create(apiUrl))
                         .header("Content-Type", "application/json")
                         .header("Authorization", "Bearer " + apiKey)
-                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(jsonPayload));
+                        .POST(HttpRequest.BodyPublishers.ofString(jsonPayload));
 
                 if (conversationId != null && !conversationId.isBlank()) {
                     builder.header("x-prompt-cache-key", conversationId);
                     builder.header("X-Grok-Prompt-Cache-Key", conversationId);
                 }
 
-                java.net.http.HttpResponse<java.io.InputStream> response = client.send(builder.build(),
-                        java.net.http.HttpResponse.BodyHandlers.ofInputStream());
+                HttpResponse<InputStream> response = client.send(builder.build(),
+                        HttpResponse.BodyHandlers.ofInputStream());
 
-                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                        new java.io.InputStreamReader(response.body(), java.nio.charset.StandardCharsets.UTF_8))) {
+                ObjectMapper mapper = new ObjectMapper();
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
                     String line;
                     while ((line = reader.readLine()) != null) {
                         if (line.startsWith("data: ")) {
@@ -206,10 +216,10 @@ public class GrokClient {
                                 break;
                             }
                             try {
-                                com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(data);
-                                com.fasterxml.jackson.databind.JsonNode choices = node.get("choices");
+                                JsonNode node = mapper.readTree(data);
+                                JsonNode choices = node.get("choices");
                                 if (choices != null && choices.isArray() && choices.size() > 0) {
-                                    com.fasterxml.jackson.databind.JsonNode delta = choices.get(0).get("delta");
+                                    JsonNode delta = choices.get(0).get("delta");
                                     if (delta != null && delta.has("content")) {
                                         String contentChunk = delta.get("content").asText();
                                         if (contentChunk != null && !contentChunk.isEmpty()) {

@@ -1,5 +1,6 @@
 package com.vikrant.careSync.service;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vikrant.careSync.dto.GroqAiStructuredResponse;
 import com.vikrant.careSync.dto.AiBookingSuggestion;
@@ -11,15 +12,20 @@ import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Patient;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.PatientRepository;
+import com.vikrant.careSync.dto.VisionScanResponse;
+import com.vikrant.careSync.dto.ClinicalDictationResponse;
 import com.vikrant.careSync.service.ai.AiBookingService;
 import com.vikrant.careSync.service.ai.AiClinicalService;
 import com.vikrant.careSync.service.ai.AiConversationMemoryService;
+import com.vikrant.careSync.service.ai.GeminiClient;
 import com.vikrant.careSync.service.ai.GroqClient;
 import com.vikrant.careSync.service.ai.GrokClient;
+import com.vikrant.careSync.service.ai.AiAuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.UUID;
 import java.util.Map;
@@ -41,6 +47,7 @@ public class AiService {
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
     private final AiAuditService aiAuditService;
+    private final GeminiClient geminiClient;
 
     public AiChatResponse getResponse(AiChatRequest request) {
         long startTime = System.currentTimeMillis();
@@ -379,7 +386,7 @@ public class AiService {
     }
 
     private AiChatResponse handleEmergencyTriage(String userMsg) {
-        String warningMessage = "⚠️ **URGENT MEDICAL NOTICE**: Your message indicates a potential medical emergency.\n\n"
+        String warningMessage = "**URGENT MEDICAL NOTICE**: Your message indicates a potential medical emergency.\n\n"
                 + "Please call emergency services immediately (911 / 112 / 102) or go to the nearest hospital Emergency Room.\n"
                 + "Do not wait for an online appointment for severe symptoms such as chest pain, severe shortness of breath, stroke symptoms, or severe bleeding.\n\n"
                 + "If you still need an urgent doctor consultation, choose from available Emergency & Cardiology specialists below:";
@@ -399,5 +406,155 @@ public class AiService {
                         .reason("EMERGENCY_TRIAGE")
                         .build())
                 .build();
+    }
+
+    public VisionScanResponse scanMedicalDocument(MultipartFile file) {
+        long startTime = System.currentTimeMillis();
+        boolean success = true;
+        String errorMessage = null;
+        VisionScanResponse scanResponse = null;
+
+        if (file == null || file.isEmpty()) {
+            return VisionScanResponse.builder()
+                    .success(false)
+                    .error("No file uploaded for vision scanning.")
+                    .build();
+        }
+
+        try {
+            byte[] fileBytes = file.getBytes();
+            String contentType = file.getContentType();
+            if (contentType == null || contentType.isBlank()) {
+                contentType = "image/jpeg";
+            }
+
+            String prompt = "You are a specialized medical Vision AI assistant.\n"
+                    + "Analyze this medical document (prescription, lab report, or clinical note) carefully.\n"
+                    + "Extract all details and return STRICTLY valid JSON matching this schema:\n"
+                    + "{\n"
+                    + "  \"documentType\": \"PRESCRIPTION\" | \"LAB_REPORT\" | \"MEDICAL_NOTE\" | \"UNKNOWN\",\n"
+                    + "  \"patientName\": \"Extracted patient name or null\",\n"
+                    + "  \"doctorName\": \"Extracted doctor name or null\",\n"
+                    + "  \"date\": \"YYYY-MM-DD or date string\",\n"
+                    + "  \"medications\": [\n"
+                    + "     { \"name\": \"Medication Name\", \"dosage\": \"e.g. 500mg\", \"frequency\": \"e.g. Twice daily\", \"duration\": \"e.g. 7 days\", \"instructions\": \"e.g. Take after meals\" }\n"
+                    + "  ],\n"
+                    + "  \"labResults\": [\n"
+                    + "     { \"testName\": \"e.g. Hemoglobin\", \"resultValue\": \"e.g. 14.2 g/dL\", \"referenceRange\": \"13.5 - 17.5 g/dL\", \"status\": \"NORMAL\" | \"HIGH\" | \"LOW\" | \"ABNORMAL\" }\n"
+                    + "  ],\n"
+                    + "  \"rawSummary\": \"A clear executive summary of the document\",\n"
+                    + "  \"warnings\": [\"List any medical abnormalities or safety warnings flagged in the document\"]\n"
+                    + "}\n"
+                    + "Rules:\n"
+                    + "1. Do not include markdown code fence formatting (no ```json).\n"
+                    + "2. If a field is missing, use null or an empty list [].\n"
+                    + "3. Format lab result status accurately (HIGH/LOW/NORMAL/ABNORMAL).";
+
+            String visionResult = null;
+            if (geminiClient != null && geminiClient.isConfigured()) {
+                log.info("Analyzing medical document using Gemini 1.5 Flash Vision AI...");
+                visionResult = geminiClient.generateVisionContent(fileBytes, contentType, prompt);
+            } else {
+                log.warn("Gemini Vision AI is not configured. Returning default fallback summary.");
+                visionResult = "{\"documentType\":\"UNKNOWN\",\"rawSummary\":\"Vision AI engine requires Gemini API key configuration.\",\"medications\":[],\"labResults\":[],\"warnings\":[\"AI Vision Key not configured\"]}";
+            }
+
+            if (visionResult != null && !visionResult.isBlank()) {
+                String cleanJson = extractJson(visionResult);
+                ObjectMapper mapper = new ObjectMapper()
+                        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+                scanResponse = mapper.readValue(cleanJson, VisionScanResponse.class);
+                scanResponse.setSuccess(true);
+            }
+        } catch (Exception e) {
+            log.error("Vision AI scan failed: {}", e.getMessage(), e);
+            success = false;
+            errorMessage = e.getMessage();
+            scanResponse = VisionScanResponse.builder()
+                    .success(false)
+                    .error("Failed to scan document: " + e.getMessage())
+                    .build();
+        } finally {
+            long latencyMs = System.currentTimeMillis() - startTime;
+            aiAuditService.logInteraction("VISION_SCAN", "gemini-1.5-flash", latencyMs, success,
+                    null, null, null, "VISION_DOCUMENT_SCAN", errorMessage, file.getOriginalFilename(),
+                    scanResponse != null ? scanResponse.getRawSummary() : null);
+        }
+
+        return scanResponse != null ? scanResponse : VisionScanResponse.builder().success(false).error("Unable to parse document").build();
+    }
+
+    public ClinicalDictationResponse structureClinicalDictation(String transcript) {
+        long startTime = System.currentTimeMillis();
+        boolean success = true;
+        String errorMessage = null;
+        ClinicalDictationResponse dictationResponse = null;
+
+        if (transcript == null || transcript.isBlank()) {
+            return ClinicalDictationResponse.builder()
+                    .success(false)
+                    .error("Dictation transcript cannot be empty.")
+                    .build();
+        }
+
+        try {
+            String prompt = "You are CareSync AI Clinical Dictation Specialist. Analyze the following spoken doctor consultation notes and structure them into JSON.\n\n"
+                    + "Spoken Consultation Notes:\n\"" + transcript + "\"\n\n"
+                    + "Respond strictly with valid JSON conforming to this schema:\n"
+                    + "{\n"
+                    + "  \"patientName\": \"Patient Name if mentioned or null\",\n"
+                    + "  \"chiefComplaint\": \"Primary symptoms & chief complaint\",\n"
+                    + "  \"vitals\": \"Blood pressure, pulse, temperature, SpO2 if mentioned or null\",\n"
+                    + "  \"diagnosis\": \"Clinical diagnosis or diagnostic impression\",\n"
+                    + "  \"prescriptions\": [\n"
+                    + "     { \"name\": \"Medication Name\", \"dosage\": \"500mg\", \"frequency\": \"Twice daily\", \"duration\": \"7 days\", \"instructions\": \"After meals\" }\n"
+                    + "  ],\n"
+                    + "  \"labOrders\": [\"Recommended lab test or imaging\"],\n"
+                    + "  \"followUp\": \"Follow-up timeframe or instructions\",\n"
+                    + "  \"soapNote\": {\n"
+                    + "     \"subjective\": \"Patient history, reported symptoms and history of present illness\",\n"
+                    + "     \"objective\": \"Physical exam findings, vitals, and lab observations\",\n"
+                    + "     \"assessment\": \"Clinical diagnosis and differential assessment\",\n"
+                    + "     \"plan\": \"Treatment plan, prescriptions, patient education, and follow-up\"\n"
+                    + "  }\n"
+                    + "}\n"
+                    + "Rules:\n"
+                    + "1. Return strictly valid JSON. Do not include markdown formatting or explanations.\n"
+                    + "2. If a section was not mentioned in dictation, provide a reasonable clinical inference or null.";
+
+            String aiResult = null;
+            if (grokClient != null && grokClient.isConfigured()) {
+                log.info("Structuring doctor dictation notes using Groq/xAI LLM...");
+                aiResult = grokClient.callGrok("You are CareSync AI Clinical Dictation Specialist.", prompt, true);
+            } else if (geminiClient != null && geminiClient.isConfigured()) {
+                log.info("Structuring doctor dictation notes using Gemini 1.5 Flash LLM...");
+                aiResult = geminiClient.generateVisionContent(null, null, prompt);
+            } else {
+                aiResult = "{\"chiefComplaint\":\"" + transcript + "\",\"diagnosis\":\"Clinical evaluation required\",\"prescriptions\":[],\"labOrders\":[],\"soapNote\":{\"subjective\":\"" + transcript + "\",\"objective\":\"Vitals within range\",\"assessment\":\"Clinical evaluation\",\"plan\":\"Standard follow-up\"}}";
+            }
+
+            if (aiResult != null && !aiResult.isBlank()) {
+                String cleanJson = extractJson(aiResult);
+                ObjectMapper mapper = new ObjectMapper()
+                        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+                dictationResponse = mapper.readValue(cleanJson, ClinicalDictationResponse.class);
+                dictationResponse.setSuccess(true);
+            }
+        } catch (Exception e) {
+            log.error("Clinical dictation structuring failed: {}", e.getMessage(), e);
+            success = false;
+            errorMessage = e.getMessage();
+            dictationResponse = ClinicalDictationResponse.builder()
+                    .success(false)
+                    .error("Failed to structure dictation: " + e.getMessage())
+                    .build();
+        } finally {
+            long latencyMs = System.currentTimeMillis() - startTime;
+            aiAuditService.logInteraction("CLINICAL_DICTATION", "groq-llama-3.3-70b", latencyMs, success,
+                    null, null, null, "CLINICAL_DICTATION", errorMessage, transcript,
+                    dictationResponse != null ? dictationResponse.getDiagnosis() : null);
+        }
+
+        return dictationResponse != null ? dictationResponse : ClinicalDictationResponse.builder().success(false).error("Unable to process dictation").build();
     }
 }

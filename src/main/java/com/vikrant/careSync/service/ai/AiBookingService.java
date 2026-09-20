@@ -4,10 +4,7 @@ import com.vikrant.careSync.dto.AiBookingSuggestion;
 import com.vikrant.careSync.dto.AiChatResponse;
 import com.vikrant.careSync.dto.AppointmentDto;
 import com.vikrant.careSync.dto.SlotAvailabilityResponse;
-import com.vikrant.careSync.entity.Appointment;
-import com.vikrant.careSync.entity.Doctor;
-import com.vikrant.careSync.entity.Patient;
-import com.vikrant.careSync.entity.User;
+import com.vikrant.careSync.entity.*;
 import com.vikrant.careSync.entity.master.SpecializationMaster;
 import com.vikrant.careSync.repository.AppointmentRepository;
 import com.vikrant.careSync.repository.DoctorRepository;
@@ -387,7 +384,7 @@ public class AiBookingService {
 
     public AiBookingSuggestion.DoctorSuggestion mapToDoctorSuggestion(Doctor d) {
         int totalExp = d.getExperiences() != null ? d.getExperiences().stream()
-                .mapToInt(com.vikrant.careSync.entity.Experience::getYearsOfService).sum() : 0;
+                .mapToInt(Experience::getYearsOfService).sum() : 0;
         boolean onLeave = doctorLeaveService.isDoctorOnLeave(d.getId(), LocalDate.now());
         return AiBookingSuggestion.DoctorSuggestion.builder()
                 .id(d.getId()).name(d.getName()).specialization(d.getSpecialization())

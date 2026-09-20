@@ -1,5 +1,7 @@
 package com.vikrant.careSync.service.ai;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -9,12 +11,23 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 @Component
 @Slf4j
@@ -118,10 +131,10 @@ public class GroqClient {
                             return choice.getMessage().getContent();
                         }
                     }
-                } catch (org.springframework.web.client.HttpClientErrorException.NotFound e) {
+                } catch (HttpClientErrorException.NotFound e) {
                     log.warn("Groq model '{}' not found (404). Trying next candidate model...", currentModel);
                     break; // Skip to next candidate model
-                } catch (org.springframework.web.client.HttpClientErrorException e) {
+                } catch (HttpClientErrorException e) {
                     String respBody = e.getResponseBodyAsString();
                     if (respBody.contains("model_not_found") || respBody.contains("model_decommissioned")
                             || respBody.contains("decommissioned")) {
@@ -131,7 +144,7 @@ public class GroqClient {
                     }
                     log.error("Groq API client error: {}", e.getMessage());
                     throw e;
-                } catch (org.springframework.web.client.HttpServerErrorException.ServiceUnavailable e) {
+                } catch (HttpServerErrorException.ServiceUnavailable e) {
                     log.warn("Groq API overloaded (503). Retrying {}/{}...", i + 1, maxRetries);
                     if (i == maxRetries - 1)
                         break;
@@ -157,7 +170,7 @@ public class GroqClient {
     }
 
     public void streamGroq(String systemPrompt, List<Map<String, String>> history, String userMessage,
-            boolean jsonMode, String conversationId, java.util.function.Consumer<String> chunkConsumer) {
+            boolean jsonMode, String conversationId, Consumer<String> chunkConsumer) {
         if (!isConfigured()) {
             throw new IllegalStateException("Groq API key is not configured.");
         }
@@ -185,26 +198,26 @@ public class GroqClient {
                 requestBody.put("response_format", Map.of("type", "json_object"));
             }
 
-            String jsonPayload = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(requestBody);
+            String jsonPayload = new ObjectMapper().writeValueAsString(requestBody);
 
-            java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
-            java.net.http.HttpRequest.Builder builder = java.net.http.HttpRequest.newBuilder()
-                    .uri(java.net.URI.create(apiUrl))
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(apiUrl))
                     .header("Content-Type", "application/json")
                     .header("Authorization", "Bearer " + apiKey)
-                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(jsonPayload));
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonPayload));
 
             if (conversationId != null && !conversationId.isBlank()) {
                 builder.header("x-prompt-cache-key", conversationId);
                 builder.header("X-Groq-Prompt-Cache-Key", conversationId);
             }
 
-            java.net.http.HttpResponse<java.io.InputStream> response = client.send(builder.build(),
-                    java.net.http.HttpResponse.BodyHandlers.ofInputStream());
+            HttpResponse<InputStream> response = client.send(builder.build(),
+                    HttpResponse.BodyHandlers.ofInputStream());
 
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(response.body(), java.nio.charset.StandardCharsets.UTF_8))) {
+            ObjectMapper mapper = new ObjectMapper();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     if (line.startsWith("data: ")) {
@@ -213,10 +226,10 @@ public class GroqClient {
                             break;
                         }
                         try {
-                            com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(data);
-                            com.fasterxml.jackson.databind.JsonNode choices = node.get("choices");
+                            JsonNode node = mapper.readTree(data);
+                            JsonNode choices = node.get("choices");
                             if (choices != null && choices.isArray() && choices.size() > 0) {
-                                com.fasterxml.jackson.databind.JsonNode delta = choices.get(0).get("delta");
+                                JsonNode delta = choices.get(0).get("delta");
                                 if (delta != null && delta.has("content")) {
                                     String contentChunk = delta.get("content").asText();
                                     if (contentChunk != null && !contentChunk.isEmpty()) {

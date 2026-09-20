@@ -4,6 +4,7 @@ import com.vikrant.careSync.entity.Appointment;
 import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Patient;
 import com.vikrant.careSync.entity.Feedback;
+import com.vikrant.careSync.entity.Payment.PaymentType;
 import com.vikrant.careSync.dto.OverallAnalyticsDto;
 import com.vikrant.careSync.dto.PatientFinancialStatsDto;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.DayOfWeek;
@@ -409,9 +411,9 @@ public class AnalyticsService {
                         throw e;
                 }
 
-                java.math.BigDecimal totalAppointmentSpend = java.math.BigDecimal.ZERO;
-                java.math.BigDecimal totalLabTestSpend = java.math.BigDecimal.ZERO;
-                java.math.BigDecimal totalSpend = java.math.BigDecimal.ZERO;
+                BigDecimal totalAppointmentSpend = BigDecimal.ZERO;
+                BigDecimal totalLabTestSpend = BigDecimal.ZERO;
+                BigDecimal totalSpend = BigDecimal.ZERO;
 
                 for (Object[] row : paymentStats) {
                         if (row == null || row.length < 2) {
@@ -427,30 +429,30 @@ public class AnalyticsService {
                                 continue;
                         }
 
-                        com.vikrant.careSync.entity.Payment.PaymentType type = null;
-                        if (typeObj instanceof com.vikrant.careSync.entity.Payment.PaymentType) {
-                                type = (com.vikrant.careSync.entity.Payment.PaymentType) typeObj;
+                        PaymentType type = null;
+                        if (typeObj instanceof PaymentType) {
+                                type = (PaymentType) typeObj;
                         } else {
                                 try {
-                                        type = com.vikrant.careSync.entity.Payment.PaymentType
+                                        type = PaymentType
                                                         .valueOf(typeObj.toString().trim().toUpperCase());
                                 } catch (Exception e) {
                                         log.error("Failed to parse payment type: '{}'. Valid types: {}", typeObj,
                                                         java.util.Arrays.toString(
-                                                                        com.vikrant.careSync.entity.Payment.PaymentType
+                                                                        PaymentType
                                                                                         .values()));
                                         continue;
                                 }
                         }
 
-                        java.math.BigDecimal amount = java.math.BigDecimal.ZERO;
+                        BigDecimal amount = BigDecimal.ZERO;
                         try {
-                                if (amountObj instanceof java.math.BigDecimal) {
-                                        amount = (java.math.BigDecimal) amountObj;
+                                if (amountObj instanceof BigDecimal) {
+                                        amount = (BigDecimal) amountObj;
                                 } else if (amountObj instanceof Number) {
-                                        amount = java.math.BigDecimal.valueOf(((Number) amountObj).doubleValue());
+                                        amount = BigDecimal.valueOf(((Number) amountObj).doubleValue());
                                 } else {
-                                        amount = new java.math.BigDecimal(amountObj.toString().trim());
+                                        amount = new BigDecimal(amountObj.toString().trim());
                                 }
                         } catch (Exception e) {
                                 log.error("Failed to parse amount: {}", amountObj);
@@ -459,9 +461,9 @@ public class AnalyticsService {
 
                         totalSpend = totalSpend.add(amount);
 
-                        if (type == com.vikrant.careSync.entity.Payment.PaymentType.APPOINTMENT) {
+                        if (type == PaymentType.APPOINTMENT) {
                                 totalAppointmentSpend = totalAppointmentSpend.add(amount);
-                        } else if (type == com.vikrant.careSync.entity.Payment.PaymentType.LAB_TEST) {
+                        } else if (type == PaymentType.LAB_TEST) {
                                 totalLabTestSpend = totalLabTestSpend.add(amount);
                         }
                 }

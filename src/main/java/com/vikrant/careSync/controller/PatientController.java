@@ -22,6 +22,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.Cache;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -88,7 +89,7 @@ public class PatientController {
     @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR') or hasRole('ADMIN')")
     public ResponseEntity<PatientDto> getPatientProfile(@PathVariable String username) {
         log.info("Fetching profile for username: {} by authenticated user", username);
-        org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder
+        Authentication auth = SecurityContextHolder
                 .getContext().getAuthentication();
         if (auth != null) {
             log.info("Authenticated user: {}, authorities: {}", auth.getName(), auth.getAuthorities());

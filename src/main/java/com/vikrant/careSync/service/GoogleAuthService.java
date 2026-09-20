@@ -1,6 +1,8 @@
 package com.vikrant.careSync.service;
 
 import com.vikrant.careSync.constants.AppConstants;
+import com.vikrant.careSync.dto.DoctorDto;
+import com.vikrant.careSync.dto.PatientDto;
 import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Patient;
 import com.vikrant.careSync.entity.User;
@@ -176,12 +178,12 @@ public class GoogleAuthService {
         if (AppConstants.Roles.PATIENT.equals(role)) {
             var patient = patientRepository.findByUsername(user.getUsername()).orElse(null);
             if (patient != null) {
-                userData = new com.vikrant.careSync.dto.PatientDto(patient);
+                userData = new PatientDto(patient);
             }
         } else if (AppConstants.Roles.DOCTOR.equals(role)) {
             var doctor = doctorRepository.findByUsername(user.getUsername()).orElse(null);
             if (doctor != null) {
-                userData = new com.vikrant.careSync.dto.DoctorDto(doctor);
+                userData = new DoctorDto(doctor);
             }
         }
 

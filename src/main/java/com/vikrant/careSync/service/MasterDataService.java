@@ -1,5 +1,6 @@
 package com.vikrant.careSync.service;
 
+import com.vikrant.careSync.dto.CreateMasterDataRequest;
 import com.vikrant.careSync.entity.master.*;
 import com.vikrant.careSync.repository.master.*;
 import lombok.RequiredArgsConstructor;
@@ -67,7 +68,7 @@ public class MasterDataService {
                 .stream().map(PositionMaster::getValue).collect(Collectors.toList());
     }
 
-    public String addMasterData(String masterType, com.vikrant.careSync.dto.CreateMasterDataRequest request) {
+    public String addMasterData(String masterType, CreateMasterDataRequest request) {
         Long orgId = request.getOrgId() != null ? request.getOrgId() : DEFAULT_ORG_ID;
         String val = request.getValue().trim();
 

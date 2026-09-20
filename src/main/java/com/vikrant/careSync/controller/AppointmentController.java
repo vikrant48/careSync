@@ -1,8 +1,6 @@
 package com.vikrant.careSync.controller;
 
-import com.vikrant.careSync.dto.AppointmentResponse;
-import com.vikrant.careSync.dto.CreateAppointmentRequest;
-import com.vikrant.careSync.dto.UserDto;
+import com.vikrant.careSync.dto.*;
 import com.vikrant.careSync.entity.Appointment;
 import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Patient;
@@ -18,6 +16,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
+
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,7 +37,7 @@ public class AppointmentController {
     private final PatientRepository patientRepository;
 
     // Get current authenticated user (for patient endpoints)
-    private com.vikrant.careSync.entity.Patient getCurrentPatient() {
+    private Patient getCurrentPatient() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()) {
             String username = authentication.getName();
@@ -48,7 +48,7 @@ public class AppointmentController {
     }
 
     // Get current authenticated user (for doctor endpoints)
-    private com.vikrant.careSync.entity.Doctor getCurrentDoctor() {
+    private Doctor getCurrentDoctor() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()) {
             String username = authentication.getName();
@@ -68,7 +68,7 @@ public class AppointmentController {
             log.info("=== Starting appointment creation ===");
 
             // Check if appointment date is in the past
-            if (request.appointmentDateTime.isBefore(java.time.LocalDateTime.now())) {
+            if (request.appointmentDateTime.isBefore(LocalDateTime.now())) {
                 Map<String, String> error = new HashMap<>();
                 error.put("error", "You can't book an appointment in the past. Please select a future date and time.");
                 return ResponseEntity.badRequest().body(error);
@@ -102,7 +102,7 @@ public class AppointmentController {
     @PostMapping("/patient/book-with-payment")
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<?> bookAppointmentWithPayment(
-            @Valid @RequestBody com.vikrant.careSync.dto.BookAppointmentWithPaymentRequest request) {
+            @Valid @RequestBody BookAppointmentWithPaymentRequest request) {
         try {
             log.info("=== Starting atomic appointment creation with payment ===");
             Patient patient = getCurrentPatient();
@@ -255,10 +255,10 @@ public class AppointmentController {
             Patient currentUser = getCurrentPatient();
 
             // Parse the new date time
-            java.time.LocalDateTime newAppointmentDateTime = java.time.LocalDateTime.parse(newDateTime);
+            LocalDateTime newAppointmentDateTime = LocalDateTime.parse(newDateTime);
 
             // Check if new appointment date is in the past
-            if (newAppointmentDateTime.isBefore(java.time.LocalDateTime.now())) {
+            if (newAppointmentDateTime.isBefore(LocalDateTime.now())) {
                 Map<String, String> error = new HashMap<>();
                 error.put("error",
                         "You can't reschedule an appointment to the past. Please select a future date and time.");
@@ -549,7 +549,7 @@ public class AppointmentController {
     @GetMapping("/available-slots")
     public ResponseEntity<?> getAvailableSlots(@RequestParam Long doctorId, @RequestParam String date) {
         try {
-            com.vikrant.careSync.dto.SlotAvailabilityResponse response = appointmentService.getAvailableSlots(doctorId,
+            SlotAvailabilityResponse response = appointmentService.getAvailableSlots(doctorId,
                     date);
             return ResponseEntity.ok(response);
         } catch (Exception e) {

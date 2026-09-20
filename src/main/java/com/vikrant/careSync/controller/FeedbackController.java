@@ -4,6 +4,7 @@ import com.vikrant.careSync.entity.Feedback;
 import com.vikrant.careSync.dto.CreateFeedbackRequest;
 import com.vikrant.careSync.dto.AppointmentResponse;
 import com.vikrant.careSync.dto.FeedbackDto;
+import com.vikrant.careSync.entity.Patient;
 import com.vikrant.careSync.service.interfaces.IFeedbackService;
 import com.vikrant.careSync.repository.PatientRepository;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +30,7 @@ public class FeedbackController {
     private final PatientRepository patientRepository;
 
     // Helper to get current authenticated patient as a Patient
-    private com.vikrant.careSync.entity.Patient getCurrentPatient() {
+    private Patient getCurrentPatient() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()) {
             String username = authentication.getName();
@@ -73,7 +74,7 @@ public class FeedbackController {
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<?> getPendingFeedbackForCurrentPatient() {
         try {
-            com.vikrant.careSync.entity.Patient current = getCurrentPatient();
+            Patient current = getCurrentPatient();
             List<AppointmentResponse> pending = feedbackService
                     .getPendingFeedbackAppointmentsForPatient(current.getId());
             return ResponseEntity.ok(pending);

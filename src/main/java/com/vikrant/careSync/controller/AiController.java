@@ -5,16 +5,20 @@ import com.vikrant.careSync.dto.AiChatResponse;
 import com.vikrant.careSync.dto.MedicalSummaryResponse;
 import com.vikrant.careSync.dto.DiagnosisRequest;
 import com.vikrant.careSync.dto.DiagnosisSuggestionDto;
+import com.vikrant.careSync.dto.VisionScanResponse;
+import com.vikrant.careSync.dto.ClinicalDictationResponse;
 import com.vikrant.careSync.service.AiService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import org.springframework.http.MediaType;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.concurrent.Executors;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/ai")
@@ -70,5 +74,20 @@ public class AiController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<DiagnosisSuggestionDto> suggestDiagnosis(@RequestBody DiagnosisRequest request) {
         return ResponseEntity.ok(aiService.suggestDiagnosis(request.getSymptoms()));
+    }
+
+    @PostMapping(value = "/scan-document", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('PATIENT', 'DOCTOR', 'ADMIN')")
+    public ResponseEntity<VisionScanResponse> scanDocument(
+            @RequestParam("file") MultipartFile file) {
+        return ResponseEntity.ok(aiService.scanMedicalDocument(file));
+    }
+
+    @PostMapping("/dictate-note")
+    @PreAuthorize("hasAnyRole('DOCTOR')")
+    public ResponseEntity<ClinicalDictationResponse> dictateNote(
+            @RequestBody Map<String, String> body) {
+        String transcript = body != null ? body.get("transcript") : null;
+        return ResponseEntity.ok(aiService.structureClinicalDictation(transcript));
     }
 }

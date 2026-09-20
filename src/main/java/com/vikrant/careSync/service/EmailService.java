@@ -10,6 +10,10 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
+
 @Service
 public class EmailService {
 
@@ -37,7 +41,7 @@ public class EmailService {
         this.resendEmailClient = resendEmailClient;
     }
 
-    public void sendTemplateEmail(String to, String subject, String templatePath, java.util.Map<String, String> model) {
+    public void sendTemplateEmail(String to, String subject, String templatePath, Map<String, String> model) {
         String html = emailTemplateService.render(templatePath, model);
         String sender;
         if (overrideFromAddress != null && !overrideFromAddress.isBlank()) {
@@ -89,7 +93,7 @@ public class EmailService {
                             .body(html)
                             .status(Communication.Status.SENT)
                             .errorMessage(null)
-                            .createdAt(java.time.LocalDateTime.now())
+                            .createdAt(LocalDateTime.now())
                             .build());
         } else {
             String err = sendError != null ? sendError.getMessage() : "Unknown error";
@@ -102,14 +106,14 @@ public class EmailService {
                             .body(html)
                             .status(Communication.Status.FAILED)
                             .errorMessage(truncate(err, 1000))
-                            .createdAt(java.time.LocalDateTime.now())
+                            .createdAt(LocalDateTime.now())
                             .build());
         }
     }
 
     public void sendOtpEmail(String to, String name, String otp) {
         String subject = "Your CareSync Password Reset OTP";
-        java.util.Map<String, String> model = new java.util.HashMap<>();
+        Map<String, String> model = new HashMap<>();
         model.put("name", name);
         model.put("otp", otp);
         sendTemplateEmail(to, subject, "email/password-reset-otp.html", model);

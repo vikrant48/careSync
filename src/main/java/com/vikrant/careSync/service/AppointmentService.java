@@ -11,6 +11,7 @@ import com.vikrant.careSync.repository.ChatRepository;
 import com.vikrant.careSync.dto.BookAppointmentWithPaymentRequest;
 import com.vikrant.careSync.dto.PaymentRequestDto;
 import com.vikrant.careSync.dto.PaymentResponseDto;
+import com.vikrant.careSync.dto.SlotAvailabilityResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.Cache;
@@ -24,6 +25,9 @@ import com.vikrant.careSync.dto.AppointmentResponse;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -472,7 +476,7 @@ public class AppointmentService {
                 .toList();
     }
 
-    public com.vikrant.careSync.dto.SlotAvailabilityResponse getAvailableSlots(Long doctorId, String date) {
+    public SlotAvailabilityResponse getAvailableSlots(Long doctorId, String date) {
         LocalDate requestedLocalDate = LocalDate.parse(date);
 
         // Check if doctor is on leave
@@ -487,7 +491,7 @@ public class AppointmentService {
                 message = "Doctor is on leave until " + endDate.toString();
             }
 
-            return com.vikrant.careSync.dto.SlotAvailabilityResponse.builder()
+            return SlotAvailabilityResponse.builder()
                     .availableSlots(new java.util.ArrayList<>())
                     .isOnLeave(true)
                     .leaveMessage(message)
@@ -503,9 +507,9 @@ public class AppointmentService {
         List<Appointment> existingAppointments = getDoctorAppointmentsByDate(doctorId, dateTime);
 
         // If the date is today, filter out past slots
-        java.time.LocalDate requestedDate = dateTime.toLocalDate();
-        java.time.LocalDate today = java.time.LocalDate.now();
-        java.time.LocalTime now = java.time.LocalTime.now();
+        LocalDate requestedDate = dateTime.toLocalDate();
+        LocalDate today = LocalDate.now();
+        LocalTime now = LocalTime.now();
 
         // Filter out booked/confirmed slots and past slots if today
         List<String> availableSlots = allSlots.stream()
@@ -525,14 +529,14 @@ public class AppointmentService {
                 })
                 .toList();
 
-        return com.vikrant.careSync.dto.SlotAvailabilityResponse.builder()
+        return SlotAvailabilityResponse.builder()
                 .availableSlots(availableSlots)
                 .isOnLeave(false)
                 .build();
     }
 
     private List<String> generateDoctorWorkingSlots() {
-        List<String> slots = new java.util.ArrayList<>();
+        List<String> slots = new ArrayList<>();
 
         // Morning slots: 9:00 AM - 1:00 PM (every 30 minutes)
         for (int hour = 9; hour < 13; hour++) {
@@ -676,7 +680,7 @@ public class AppointmentService {
 
         int fromIndex = page * size;
         if (fromIndex >= sorted.size()) {
-            return java.util.Collections.emptyList();
+            return Collections.emptyList();
         }
         int toIndex = Math.min(fromIndex + size, sorted.size());
 
