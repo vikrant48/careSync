@@ -54,4 +54,5 @@ public class RegisterRequest {
     @Size(max = 10, message = "Blood group must not exceed 10 characters")
     private String bloodGroup;
 
+    private Boolean skipEmailVerification;
 }

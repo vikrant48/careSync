@@ -95,8 +95,8 @@ public class AuthenticationService implements IAuthenticationService {
             throw new RuntimeException("Email already exists");
         }
 
-        // Enforce email verification before allowing registration to proceed
-        if (!emailVerificationService.isVerified(request.getEmail())) {
+        // Enforce email verification unless skipEmailVerification is true
+        if (!Boolean.TRUE.equals(request.getSkipEmailVerification()) && !emailVerificationService.isVerified(request.getEmail())) {
             throw new RuntimeException("Email not verified");
         }
 
