@@ -2,6 +2,7 @@ package com.vikrant.careSync.security;
 
 import com.vikrant.careSync.constants.AppConstants;
 import com.vikrant.careSync.security.filter.JwtAuthenticationFilter;
+import com.vikrant.careSync.security.filter.RateLimitingFilter;
 import com.vikrant.careSync.security.filter.SecurityFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,9 +30,10 @@ public class SecurityConfig {
 
         private final JwtAuthenticationFilter jwtAuthFilter;
         private final SecurityFilter securityFilter;
+        private final RateLimitingFilter rateLimitingFilter;
         private final AuthenticationProvider authenticationProvider;
 
-        @Value("${app.cors.allowed-origins:https://caresync-vikrant.vercel.app,http://localhost:4200}")
+        @Value("${app.cors.allowed-origins}")
         private String corsAllowedOrigins;
 
         @Bean
@@ -86,6 +88,7 @@ public class SecurityConfig {
                                 .sessionManagement(session -> session
                                                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                                 .authenticationProvider(authenticationProvider)
+                                .addFilterBefore(rateLimitingFilter, UsernamePasswordAuthenticationFilter.class)
                                 .addFilterBefore(securityFilter, UsernamePasswordAuthenticationFilter.class)
                                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
