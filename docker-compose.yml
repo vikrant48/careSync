@@ -80,6 +80,10 @@ services:
       # AI / Misc
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      # LiveKit Video Consultation
+      - LIVEKIT_URL=${LIVEKIT_URL:-wss://caresync-870n5c2m.livekit.cloud}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
 
     volumes:
       - app_uploads:/app/uploads
