@@ -183,11 +183,30 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-cache</artifactId>
 		</dependency>
+		<!-- OkHttp 4.x required by LiveKit Server SDK -->
 		<dependency>
-			<groupId>org.apache.commons</groupId>
-			<artifactId>commons-pool2</artifactId>
+			<groupId>com.squareup.okhttp3</groupId>
+			<artifactId>okhttp</artifactId>
+			<version>4.12.0</version>
+		</dependency>
+		<!-- LiveKit Server SDK for Video Consultations -->
+		<dependency>
+			<groupId>io.livekit</groupId>
+			<artifactId>livekit-server</artifactId>
+			<version>0.16.0</version>
 		</dependency>
 	</dependencies>
+
+	<repositories>
+		<repository>
+			<id>central</id>
+			<url>https://repo1.maven.org/maven2</url>
+		</repository>
+		<repository>
+			<id>jitpack.io</id>
+			<url>https://jitpack.io</url>
+		</repository>
+	</repositories>
 
 	<build>
 		<plugins>

@@ -154,11 +154,6 @@ public class AppointmentService {
         // Set appointment time to current time (emergency booking)
         LocalDateTime emergencyTime = LocalDateTime.now();
 
-        // Check if doctor has any conflicting appointment at current time
-        if (isAppointmentTimeConflict(doctorId, emergencyTime, null)) {
-            throw new RuntimeException("Doctor is currently busy. Please try again in a few minutes.");
-        }
-
         // Create emergency appointment with BOOKED status
         Appointment appointment = Appointment.builder()
                 .doctor(doctor)

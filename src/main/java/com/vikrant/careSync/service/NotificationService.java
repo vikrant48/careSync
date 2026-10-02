@@ -24,7 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-@Transactional(readOnly = true)
+@Transactional
 public class NotificationService {
 
     // Use repository directly to avoid circular dependency with AppointmentService
