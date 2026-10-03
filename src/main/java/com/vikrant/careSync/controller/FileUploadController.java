@@ -30,7 +30,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/files")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = "${app.cors.allowed-origins}")
 @io.swagger.v3.oas.annotations.tags.Tag(name = "File Uploads", description = "Endpoints for uploading certificates, profile images, medical documents, and lab reports")
 @io.swagger.v3.oas.annotations.security.SecurityRequirement(name = "bearerAuth")
 public class FileUploadController {

@@ -465,10 +465,7 @@ public class AppointmentService {
     // Get all appointments across all doctors within date range (for system-wide
     // analytics)
     public List<Appointment> getAllAppointmentsByDateRange(LocalDateTime startDate, LocalDateTime endDate) {
-        return appointmentRepository.findAll().stream()
-                .filter(appointment -> appointment.getAppointmentDateTime().isAfter(startDate) &&
-                        appointment.getAppointmentDateTime().isBefore(endDate))
-                .toList();
+        return appointmentRepository.findByAppointmentDateTimeBetweenWithDetails(startDate, endDate);
     }
 
     public SlotAvailabilityResponse getAvailableSlots(Long doctorId, String date) {

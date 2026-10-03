@@ -22,7 +22,7 @@ import java.util.HashMap;
 @RestController
 @RequestMapping("/api/bookings")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = "${app.cors.allowed-origins}")
 public class BookingController {
 
     private final BookingService bookingService;

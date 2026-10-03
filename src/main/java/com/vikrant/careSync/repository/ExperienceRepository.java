@@ -13,6 +13,9 @@ public interface ExperienceRepository extends JpaRepository<Experience, Long> {
     @Query("SELECT e FROM Experience e WHERE e.doctor.id = :doctorId")
     List<Experience> findByDoctorId(@Param("doctorId") Long doctorId);
 
+    @Query("SELECT e FROM Experience e WHERE e.doctor.id IN :doctorIds")
+    List<Experience> findByDoctorIdIn(@Param("doctorIds") List<Long> doctorIds);
+
     @Query("SELECT DISTINCT e.doctor.id FROM Experience e WHERE e.doctor.id IN :doctorIds")
     List<Long> findDoctorIdsWithExperienceIn(@Param("doctorIds") List<Long> doctorIds);
 

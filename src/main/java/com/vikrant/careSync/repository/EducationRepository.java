@@ -13,6 +13,9 @@ public interface EducationRepository extends JpaRepository<Education, Long> {
     @Query("SELECT e FROM Education e WHERE e.doctor.id = :doctorId")
     List<Education> findByDoctorId(@Param("doctorId") Long doctorId);
 
+    @Query("SELECT e FROM Education e WHERE e.doctor.id IN :doctorIds")
+    List<Education> findByDoctorIdIn(@Param("doctorIds") List<Long> doctorIds);
+
     @Query("SELECT DISTINCT e.doctor.id FROM Education e WHERE e.doctor.id IN :doctorIds")
     List<Long> findDoctorIdsWithEducationIn(@Param("doctorIds") List<Long> doctorIds);
 

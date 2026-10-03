@@ -1,16 +1,22 @@
 package com.vikrant.careSync.controller;
 
-import com.vikrant.careSync.security.entity.BlockedIP;
-import com.vikrant.careSync.security.entity.UserSession;
 import com.vikrant.careSync.security.service.SecurityService;
 import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Patient;
+import com.vikrant.careSync.entity.User;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.PatientRepository;
-import com.vikrant.careSync.dto.BlockedIPDto;
-import com.vikrant.careSync.dto.UserSessionDto;
+import com.vikrant.careSync.repository.UserRepository;
+import com.vikrant.careSync.dto.*;
+import com.vikrant.careSync.service.DoctorService;
+import com.vikrant.careSync.security.service.RefreshTokenService;
+
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
+import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -18,11 +24,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
-
-import com.vikrant.careSync.entity.User;
-import com.vikrant.careSync.repository.UserRepository;
-import com.vikrant.careSync.dto.UserSummaryDto;
-import com.vikrant.careSync.dto.DoctorDto;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -34,6 +35,9 @@ public class AdminController {
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
     private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final RefreshTokenService refreshTokenService;
+    private final DoctorService doctorService;
 
     @GetMapping("/users")
     public ResponseEntity<List<UserSummaryDto>> getAllUsersSummary() {
@@ -44,11 +48,19 @@ public class AdminController {
     }
 
     @GetMapping("/doctors")
-    public ResponseEntity<List<DoctorDto>> getAllDoctors() {
-        List<DoctorDto> doctors = doctorRepository.findAll().stream()
-                .map(DoctorDto::new)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(doctors);
+    public ResponseEntity<AdminDoctorPagedResponse> getAdminDoctorList(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "30") int size,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Boolean isVerified) {
+        return ResponseEntity.ok(doctorService.getAdminDoctorList(page, size, search, isVerified));
+    }
+
+    @GetMapping("/doctors/{doctorId}")
+    public ResponseEntity<DoctorDto> getAdminDoctorDetails(@PathVariable Long doctorId) {
+        return doctorService.getDoctorDtoById(doctorId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @PutMapping("/users/{username}/toggle-active")
@@ -83,8 +95,7 @@ public class AdminController {
     }
 
     @PutMapping("/users/{username}/status")
-    public ResponseEntity<Map<String, Object>> setUserActiveStatus(
-            @PathVariable String username,
+    public ResponseEntity<Map<String, Object>> setUserActiveStatus(@PathVariable String username,
             @RequestParam("active") boolean active) {
         Optional<User> userOpt = userRepository.findByUsername(username);
         if (userOpt.isEmpty()) {
@@ -114,8 +125,7 @@ public class AdminController {
     }
 
     @PutMapping("/doctors/{doctorId}/verify")
-    public ResponseEntity<Map<String, Object>> verifyDoctor(
-            @PathVariable Long doctorId,
+    public ResponseEntity<Map<String, Object>> verifyDoctor(@PathVariable Long doctorId,
             @RequestParam(value = "verify", defaultValue = "true") boolean verify) {
         Optional<Doctor> doctorOpt = doctorRepository.findById(doctorId);
         if (doctorOpt.isEmpty()) {
@@ -159,8 +169,7 @@ public class AdminController {
     @GetMapping("/blocked-ips")
     public ResponseEntity<List<BlockedIPDto>> getAllBlockedIPs() {
         try {
-            List<BlockedIPDto> blockedIPs = securityService.getAllBlockedIPs().stream()
-                    .map(BlockedIPDto::new)
+            List<BlockedIPDto> blockedIPs = securityService.getAllBlockedIPs().stream().map(BlockedIPDto::new)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(blockedIPs);
         } catch (Exception e) {
@@ -335,8 +344,7 @@ public class AdminController {
     public ResponseEntity<?> getUserSessions(@PathVariable String username) {
         try {
             List<UserSessionDto> sessions = securityService.getActiveSessions(username).stream()
-                    .map(UserSessionDto::new)
-                    .collect(Collectors.toList());
+                    .map(UserSessionDto::new).collect(Collectors.toList());
             return ResponseEntity.ok(sessions);
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
@@ -385,5 +393,44 @@ public class AdminController {
             errorResponse.put("error", e.getMessage());
             return ResponseEntity.badRequest().body(errorResponse);
         }
+    }
+
+    @PutMapping("/users/{userId}/password")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Object>> changeUserPassword(@PathVariable Long userId,
+            @Valid @RequestBody AdminChangePasswordRequest request) {
+
+        if (!request.getNewPassword().equals(request.getConfirmPassword())) {
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("error", "New password and confirm password do not match");
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+
+        Optional<User> userOpt = userRepository.findById(userId);
+        if (userOpt.isEmpty()) {
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("error", "User not found with ID: " + userId);
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+
+        User user = userOpt.get();
+
+        // Encode and set new password
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+
+        // Invalidate active sessions & refresh tokens for security
+        try {
+            securityService.deactivateAllUserSessions(user.getUsername());
+            refreshTokenService.deleteByUsername(user.getUsername());
+        } catch (Exception e) {
+            // Non-blocking fallback log
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "Password updated successfully for user " + user.getUsername());
+        response.put("username", user.getUsername());
+        response.put("userId", userId);
+        return ResponseEntity.ok(response);
     }
 }

@@ -9,7 +9,10 @@ import java.util.Optional;
 
 public interface PatientRepository extends JpaRepository<Patient, Long> {
 
-    @Query("SELECT p FROM Patient p WHERE LOWER(p.user.username) = LOWER(:username)")
+    @Query("SELECT DISTINCT p FROM Patient p LEFT JOIN FETCH p.user")
+    java.util.List<Patient> findAllWithUser();
+
+    @Query("SELECT p FROM Patient p LEFT JOIN FETCH p.user WHERE LOWER(p.user.username) = LOWER(:username)")
     Optional<Patient> findByUsername(@Param("username") String username);
 
     @Query("SELECT CASE WHEN COUNT(p) > 0 THEN true ELSE false END FROM Patient p WHERE LOWER(p.user.username) = LOWER(:username)")

@@ -9,16 +9,19 @@ import java.util.List;
 import java.util.Optional;
 
 public interface CertificateRepository extends JpaRepository<Certificate, Long> {
-    
+
     @Query("SELECT c FROM Certificate c WHERE c.doctor.id = :doctorId")
     List<Certificate> findByDoctorId(@Param("doctorId") Long doctorId);
-    
+
+    @Query("SELECT c FROM Certificate c WHERE c.doctor.id IN :doctorIds")
+    List<Certificate> findByDoctorIdIn(@Param("doctorIds") List<Long> doctorIds);
+
     @Override
     Optional<Certificate> findById(Long id);
-    
+
     @Override
     <S extends Certificate> S save(S entity);
-    
+
     @Override
     void deleteById(Long id);
 }

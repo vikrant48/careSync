@@ -77,6 +77,7 @@ public class PatientController {
     }
 
     @GetMapping("/username/{username}")
+    @PreAuthorize("hasRole('DOCTOR') or hasRole('ADMIN') or #username == authentication.name")
     public ResponseEntity<PatientDto> getPatientByUsername(@PathVariable String username) {
         Optional<PatientDto> patient = patientService.getPatientByUsername(username)
                 .map(PatientDto::new);

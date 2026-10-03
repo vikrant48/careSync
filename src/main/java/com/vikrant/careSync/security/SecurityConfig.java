@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -43,13 +44,18 @@ public class SecurityConfig {
                                 .cors(cors -> {
                                 })
                                 .authorizeHttpRequests(auth -> auth
-                                                .requestMatchers("/api/auth/check-availability").permitAll()
-                                                .requestMatchers("/api/auth/**").permitAll()
+                                                .requestMatchers("/api/auth/login", "/api/auth/register",
+                                                                "/api/auth/refresh",
+                                                                "/api/auth/logout", "/api/auth/forgot-password",
+                                                                "/api/auth/reset-password",
+                                                                "/api/auth/check-availability")
+                                                .permitAll()
+                                                .requestMatchers("/api/auth/change-password").authenticated()
                                                 .requestMatchers("/ws/**").permitAll()
-                                                .requestMatchers("/api/master/**").permitAll()
+                                                .requestMatchers(HttpMethod.GET, "/api/master/**").permitAll()
+                                                .requestMatchers("/api/master/**").hasRole(AppConstants.Roles.ADMIN)
 
-                                                .requestMatchers("/api/admin/**")
-                                                .hasAnyRole(AppConstants.Roles.DOCTOR, AppConstants.Roles.ADMIN)
+                                                .requestMatchers("/api/admin/**").hasRole(AppConstants.Roles.ADMIN)
                                                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                                                 .requestMatchers("/api/doctors/public/**").permitAll()
                                                 .requestMatchers("/api/patients/public/**").permitAll()

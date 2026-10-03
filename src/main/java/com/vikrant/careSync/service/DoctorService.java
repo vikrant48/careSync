@@ -18,6 +18,9 @@ import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -37,9 +40,19 @@ public class DoctorService {
     private final FeedbackService feedbackService;
     private final CacheManager cacheManager;
 
+    public AdminDoctorPagedResponse getAdminDoctorList(int page, int size, String search, Boolean isVerified) {
+        int pageNumber = Math.max(0, page);
+        int pageSize = Math.min(100, Math.max(1, size));
+        Pageable pageable = PageRequest.of(pageNumber, pageSize);
+        Page<AdminDoctorListItemDto> pagedList = doctorRepository.findAdminDoctorList(search, isVerified, pageable);
+        long totalVerifiedCount = doctorRepository.countByIsVerified(true);
+        long totalPendingCount = doctorRepository.countByIsVerified(false);
+        return AdminDoctorPagedResponse.fromPage(pagedList, totalVerifiedCount, totalPendingCount);
+    }
+
     @Cacheable(value = "DOCTOR:PROFILE", key = "'all'")
     public List<DoctorDto> getAllDoctorsDto() {
-        List<Doctor> doctors = doctorRepository.findAll();
+        List<Doctor> doctors = doctorRepository.findAllWithUser();
         return convertDoctorsToDtosWithStats(doctors);
     }
 
@@ -64,18 +77,42 @@ public class DoctorService {
             }
         }
 
-        // 1 Batch Query for doctors with experiences
-        Set<Long> docsWithExp = new HashSet<>(experienceRepository.findDoctorIdsWithExperienceIn(doctorIds));
+        // 1 Batch Query for Experiences
+        List<Experience> allExperiences = experienceRepository.findByDoctorIdIn(doctorIds);
+        Map<Long, List<ExperienceDto>> expMap = allExperiences.stream()
+                .filter(e -> e.getDoctor() != null)
+                .collect(Collectors.groupingBy(
+                        e -> e.getDoctor().getId(),
+                        Collectors.mapping(ExperienceDto::new, Collectors.toList())));
 
-        // 1 Batch Query for doctors with education
-        Set<Long> docsWithEdu = new HashSet<>(educationRepository.findDoctorIdsWithEducationIn(doctorIds));
+        // 1 Batch Query for Educations
+        List<Education> allEducations = educationRepository.findByDoctorIdIn(doctorIds);
+        Map<Long, List<EducationDto>> eduMap = allEducations.stream()
+                .filter(e -> e.getDoctor() != null)
+                .collect(Collectors.groupingBy(
+                        e -> e.getDoctor().getId(),
+                        Collectors.mapping(EducationDto::new, Collectors.toList())));
+
+        // 1 Batch Query for Certificates
+        List<Certificate> allCertificates = certificateRepository.findByDoctorIdIn(doctorIds);
+        Map<Long, List<CertificateDto>> certMap = allCertificates.stream()
+                .filter(c -> c.getDoctor() != null)
+                .collect(Collectors.groupingBy(
+                        c -> c.getDoctor().getId(),
+                        Collectors.mapping(CertificateDto::new, Collectors.toList())));
 
         return doctors.stream().map(doctor -> {
-            DoctorDto dto = new DoctorDto(doctor);
+            DoctorDto dto = new DoctorDto(doctor, false);
+            List<ExperienceDto> exps = expMap.getOrDefault(doctor.getId(), Collections.emptyList());
+            List<EducationDto> edus = eduMap.getOrDefault(doctor.getId(), Collections.emptyList());
+            List<CertificateDto> certs = certMap.getOrDefault(doctor.getId(), Collections.emptyList());
+
+            dto.setExperiences(exps);
+            dto.setEducations(edus);
+            dto.setCertificates(certs);
             dto.setAverageRating(avgRatingMap.getOrDefault(doctor.getId(), 0.0));
             dto.setReviewCount(reviewCountMap.getOrDefault(doctor.getId(), 0L));
-            dto.setCompletionPercentage(calculateCompletionPercentageFast(doctor, docsWithExp.contains(doctor.getId()),
-                    docsWithEdu.contains(doctor.getId())));
+            dto.setCompletionPercentage(calculateCompletionPercentageFast(doctor, !exps.isEmpty(), !edus.isEmpty()));
             return dto;
         }).collect(Collectors.toList());
     }

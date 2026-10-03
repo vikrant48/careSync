@@ -34,7 +34,7 @@ public class PatientService implements IPatientService {
 
     @Override
     public List<Patient> getAllPatients() {
-        return patientRepository.findAll();
+        return patientRepository.findAllWithUser();
     }
 
     @Override

@@ -15,22 +15,27 @@ import java.util.Optional;
 
 @Repository
 public interface BookingRepository extends JpaRepository<Booking, Long> {
-    
+
+    @Query("SELECT DISTINCT b FROM Booking b LEFT JOIN FETCH b.patient p LEFT JOIN FETCH p.user LEFT JOIN FETCH b.selectedTests ORDER BY b.bookingDate DESC")
+    List<Booking> findAllWithDetails();
+
     List<Booking> findByPatientIdOrderByBookingDateDesc(Long patientId);
-    
+
     List<Booking> findByPatientOrderByBookingDateDesc(Patient patient);
-    
+
     List<Booking> findByStatusOrderByBookingDateDesc(Booking.BookingStatus status);
-    
+
     @Query("SELECT b FROM Booking b WHERE b.patient.id = :patientId AND b.status = :status ORDER BY b.bookingDate DESC")
-    List<Booking> findByPatientIdAndStatus(@Param("patientId") Long patientId, @Param("status") Booking.BookingStatus status);
-    
+    List<Booking> findByPatientIdAndStatus(@Param("patientId") Long patientId,
+            @Param("status") Booking.BookingStatus status);
+
     @Query("SELECT b FROM Booking b WHERE b.bookingDate BETWEEN :startDate AND :endDate ORDER BY b.bookingDate DESC")
-    List<Booking> findByBookingDateBetween(@Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
-    
+    List<Booking> findByBookingDateBetween(@Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
     @Query("SELECT COUNT(b) FROM Booking b WHERE b.patient.id = :patientId")
     Long countByPatientId(@Param("patientId") Long patientId);
-    
+
     @Query("SELECT b FROM Booking b JOIN FETCH b.selectedTests WHERE b.id = :bookingId")
     Booking findByIdWithTests(@Param("bookingId") Long bookingId);
 

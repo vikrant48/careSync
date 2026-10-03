@@ -37,6 +37,10 @@ public class DoctorDto {
     private int completionPercentage;
 
     public DoctorDto(Doctor doctor) {
+        this(doctor, true);
+    }
+
+    public DoctorDto(Doctor doctor, boolean includeAssociations) {
         this.id = doctor.getId();
         this.username = doctor.getUsername();
         this.email = doctor.getEmail();
@@ -57,22 +61,24 @@ public class DoctorDto {
                         .collect(java.util.stream.Collectors.toList())
                 : null;
 
-        if (doctor.getExperiences() != null) {
-            this.experiences = doctor.getExperiences().stream()
-                    .map(ExperienceDto::new)
-                    .collect(Collectors.toList());
-        }
+        if (includeAssociations) {
+            if (doctor.getExperiences() != null) {
+                this.experiences = doctor.getExperiences().stream()
+                        .map(ExperienceDto::new)
+                        .collect(Collectors.toList());
+            }
 
-        if (doctor.getEducations() != null) {
-            this.educations = doctor.getEducations().stream()
-                    .map(EducationDto::new)
-                    .collect(Collectors.toList());
-        }
+            if (doctor.getEducations() != null) {
+                this.educations = doctor.getEducations().stream()
+                        .map(EducationDto::new)
+                        .collect(Collectors.toList());
+            }
 
-        if (doctor.getCertificates() != null) {
-            this.certificates = doctor.getCertificates().stream()
-                    .map(CertificateDto::new)
-                    .collect(Collectors.toList());
+            if (doctor.getCertificates() != null) {
+                this.certificates = doctor.getCertificates().stream()
+                        .map(CertificateDto::new)
+                        .collect(Collectors.toList());
+            }
         }
     }
 }

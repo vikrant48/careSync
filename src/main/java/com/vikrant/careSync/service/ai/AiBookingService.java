@@ -41,7 +41,7 @@ public class AiBookingService {
         Set<String> allSpecs = specializationMasterRepository.findByOrgId(DEFAULT_ORG_ID)
                 .stream().map(SpecializationMaster::getValue).collect(Collectors.toSet());
 
-        doctorRepository.findAll().stream()
+        doctorRepository.findAllWithUser().stream()
                 .map(Doctor::getSpecialization)
                 .filter(s -> s != null && !s.isBlank())
                 .forEach(allSpecs::add);
@@ -66,7 +66,7 @@ public class AiBookingService {
         String spec = parts[0];
         String reason = parts.length > 1 ? parts[1] : "AI Assisted Booking";
 
-        List<Doctor> doctors = doctorRepository.findAll().stream()
+        List<Doctor> doctors = doctorRepository.findAllWithUser().stream()
                 .filter(d -> spec.equalsIgnoreCase(d.getSpecialization())).collect(Collectors.toList());
         List<AiBookingSuggestion.DoctorSuggestion> suggestions = doctors.stream()
                 .map(this::mapToDoctorSuggestion).collect(Collectors.toList());
@@ -278,7 +278,7 @@ public class AiBookingService {
                 .collect(Collectors.toList()) : List.of();
 
         if (!validSpecs.isEmpty()) {
-            List<Doctor> doctors = doctorRepository.findAll().stream()
+            List<Doctor> doctors = doctorRepository.findAllWithUser().stream()
                     .filter(d -> validSpecs.stream()
                             .anyMatch(spec -> spec.equalsIgnoreCase(d.getSpecialization())))
                     .collect(Collectors.toList());

@@ -339,7 +339,7 @@ public class BookingService {
      * Get all bookings (for admin/doctor)
      */
     public List<BookingResponse> getAllBookings() {
-        List<Booking> bookings = bookingRepository.findAll();
+        List<Booking> bookings = bookingRepository.findAllWithDetails();
         return bookings.stream()
                 .map(this::convertToBookingResponse)
                 .collect(Collectors.toList());
