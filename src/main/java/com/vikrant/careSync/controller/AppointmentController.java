@@ -98,6 +98,50 @@ public class AppointmentController {
         }
     }
 
+    @PostMapping("/patient/hold-slot")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<?> holdSlot(@Valid @RequestBody HoldSlotRequest request) {
+        try {
+            Patient currentUser = getCurrentPatient();
+            boolean success = appointmentService.holdSlot(request.doctorId, request.appointmentDateTime,
+                    currentUser.getId());
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", success);
+            if (!success) {
+                response.put("message", "Slot is already locked or unavailable");
+                return ResponseEntity.badRequest().body(response);
+            }
+            response.put("message", "Slot held for 5 minutes");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
+    @PostMapping("/patient/release-slot")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<?> releaseSlot(@Valid @RequestBody HoldSlotRequest request) {
+        try {
+            appointmentService.releaseSlotHold(request.doctorId, request.appointmentDateTime);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Slot lock released");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
+    @lombok.Data
+    public static class HoldSlotRequest {
+        public Long doctorId;
+        public LocalDateTime appointmentDateTime;
+    }
+
     @io.swagger.v3.oas.annotations.Operation(summary = "Book appointment with payment", description = "Creates appointment and processes payment atomically")
     @PostMapping("/patient/book-with-payment")
     @PreAuthorize("hasRole('PATIENT')")
@@ -114,6 +158,119 @@ public class AppointmentController {
             error.put("error", e.getMessage());
             return ResponseEntity.badRequest().body(error);
         }
+    }
+
+    @PostMapping("/patient/{id}/intake")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<?> submitPreVisitIntake(
+            @PathVariable Long id,
+            @Valid @RequestBody com.vikrant.careSync.dto.PreVisitIntakeRequest request) {
+        try {
+            Patient patient = getCurrentPatient();
+            com.vikrant.careSync.dto.PreVisitIntakeResponse response = appointmentService.submitPreVisitIntake(id,
+                    request, patient.getId());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
+    @GetMapping("/{id}/intake-summary")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN', 'PATIENT')")
+    public ResponseEntity<?> getPreVisitIntakeSummary(@PathVariable Long id) {
+        try {
+            com.vikrant.careSync.dto.PreVisitIntakeResponse response = appointmentService.getPreVisitIntakeSummary(id);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
+    @PostMapping("/{id}/generate-soap-draft")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN')")
+    public ResponseEntity<?> generateSoapDraft(
+            @PathVariable Long id,
+            @RequestBody(required = false) GenerateSoapDraftRequest request) {
+        try {
+            String liveTranscript = (request != null) ? request.getLiveTranscript() : "";
+            com.vikrant.careSync.dto.SoapReportDto response = appointmentService.generateAndSaveSoapDraft(id,
+                    liveTranscript);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
+    @GetMapping("/{id}/soap-draft")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN', 'PATIENT')")
+    public ResponseEntity<?> getSoapDraft(@PathVariable Long id) {
+        try {
+            com.vikrant.careSync.dto.SoapReportDto response = appointmentService.getSoapDraft(id);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
+    @PostMapping("/{id}/sign-report")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<?> signReport(
+            @PathVariable Long id,
+            @Valid @RequestBody com.vikrant.careSync.dto.SoapReportDto reportDto) {
+        try {
+            Doctor currentDoctor = getCurrentDoctor();
+            com.vikrant.careSync.dto.SoapReportDto signedReport = appointmentService.signMedicalReport(id, reportDto,
+                    currentDoctor.getId());
+            return ResponseEntity.ok(signedReport);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
+    @GetMapping("/admin/analytics")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> getAppointmentAnalytics(
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate,
+            @RequestParam(required = false) Long doctorId) {
+        try {
+            com.vikrant.careSync.dto.AppointmentAnalyticsResponse response = appointmentService
+                    .getAppointmentAnalytics(startDate, endDate, doctorId);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
+    @GetMapping("/{id}/audit-trail")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DOCTOR')")
+    public ResponseEntity<?> getAppointmentAuditTrail(@PathVariable Long id) {
+        try {
+            List<com.vikrant.careSync.dto.AppointmentStatusLogDto> auditTrail = appointmentService
+                    .getAppointmentAuditTrail(id);
+            return ResponseEntity.ok(auditTrail);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
+    @lombok.Data
+    public static class GenerateSoapDraftRequest {
+        private String liveTranscript;
     }
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Get my appointments", description = "Retrieves a list of all appointments for the authenticated patient")

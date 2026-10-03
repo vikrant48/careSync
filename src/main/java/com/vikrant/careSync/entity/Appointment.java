@@ -64,8 +64,47 @@ public class Appointment {
     @Builder.Default
     private Boolean isActive = true;
 
+    @Column(name = "reminder_24h_sent", columnDefinition = "boolean default false")
+    @Builder.Default
+    private Boolean reminder24hSent = false;
+
+    @Column(name = "reminder_1h_sent", columnDefinition = "boolean default false")
+    @Builder.Default
+    private Boolean reminder1hSent = false;
+
+    @Column(name = "reminder_10m_sent", columnDefinition = "boolean default false")
+    @Builder.Default
+    private Boolean reminder10mSent = false;
+
+    @Column(name = "chief_complaint", length = 500)
+    private String chiefComplaint;
+
+    @Column(name = "pre_visit_symptoms", columnDefinition = "TEXT")
+    private String preVisitSymptoms;
+
+    @Column(name = "pre_visit_summary", columnDefinition = "TEXT")
+    private String preVisitSummary;
+
+    @Column(name = "intake_completed", columnDefinition = "boolean default false")
+    @Builder.Default
+    private Boolean intakeCompleted = false;
+
     public enum Status {
-        BOOKED, SCHEDULED, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED, CANCELLED_BY_PATIENT, CANCELLED_BY_DOCTOR
+        BOOKED,
+        REQUESTED,
+        CONFIRMED,
+        SCHEDULED,
+        INTAKE_COMPLETED,
+        READY_FOR_VISIT,
+        IN_PROGRESS,
+        REPORT_DRAFTED,
+        COMPLETED,
+        CANCELLED,
+        CANCELLED_BY_PATIENT,
+        CANCELLED_BY_DOCTOR,
+        NO_SHOW_PATIENT,
+        NO_SHOW_DOCTOR,
+        AUTO_CLOSED
     }
 
     @PrePersist
@@ -95,9 +134,8 @@ public class Appointment {
         if (Boolean.FALSE.equals(isActive)) {
             return false; // Cannot change status if inactive
         }
-        if (status == Status.CANCELLED || status == Status.CANCELLED_BY_PATIENT
-                || status == Status.CANCELLED_BY_DOCTOR) {
-            return false; // Cannot change cancelled appointments
+        if (isTerminalStatus(status)) {
+            return false; // Terminal statuses cannot transition further
         }
 
         if (status == Status.COMPLETED && newStatus != Status.COMPLETED) {
@@ -105,6 +143,15 @@ public class Appointment {
         }
 
         return true;
+    }
+
+    public static boolean isTerminalStatus(Status status) {
+        return status == Status.CANCELLED
+                || status == Status.CANCELLED_BY_PATIENT
+                || status == Status.CANCELLED_BY_DOCTOR
+                || status == Status.NO_SHOW_PATIENT
+                || status == Status.NO_SHOW_DOCTOR
+                || status == Status.AUTO_CLOSED;
     }
 
     // Helper method to change status with validation
@@ -117,9 +164,8 @@ public class Appointment {
         this.statusChangedAt = LocalDateTime.now();
         this.statusChangedBy = changedBy;
 
-        // Automatically deactivate if cancelled
-        if (newStatus == Status.CANCELLED || newStatus == Status.CANCELLED_BY_PATIENT
-                || newStatus == Status.CANCELLED_BY_DOCTOR) {
+        // Automatically deactivate if in terminal cancelled/no-show status
+        if (isTerminalStatus(newStatus)) {
             this.isActive = false;
         }
     }

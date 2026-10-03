@@ -13,6 +13,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+import com.vikrant.careSync.dto.SoapReportDto;
+
 @Service
 @Slf4j
 @RequiredArgsConstructor
@@ -165,5 +167,149 @@ public class AiClinicalService {
             return text.substring(start, end + 1);
         }
         return text.trim();
+    }
+
+    public String generatePreVisitSummary(String chiefComplaint, String symptoms, String duration, String medications,
+            String allergies) {
+        String systemPrompt = "You are CareSync AI Pre-Visit Triage Assistant. "
+                + "Synthesize the patient's pre-visit intake information into a clear 3-bullet clinical summary for the doctor before consultation.\n"
+                + "Format:\n"
+                + "• **Chief Complaint & Duration:** [Summary]\n"
+                + "• **Reported Symptoms:** [Summary]\n"
+                + "• **Medications & Allergies:** [Summary]\n";
+
+        String userPrompt = String.format(
+                "Chief Complaint: %s\nSymptoms: %s\nDuration: %s\nMedications: %s\nAllergies: %s",
+                chiefComplaint != null ? chiefComplaint : "N/A",
+                symptoms != null ? symptoms : "N/A",
+                duration != null ? duration : "N/A",
+                medications != null ? medications : "N/A",
+                allergies != null ? allergies : "N/A");
+
+        if (groqClient != null && groqClient.isConfigured()) {
+            try {
+                return groqClient.callGroq(systemPrompt, userPrompt, false);
+            } catch (Exception e) {
+                log.warn("Groq pre-visit intake summary failed: {}", e.getMessage());
+            }
+        }
+
+        if (geminiClient != null && geminiClient.isConfigured()) {
+            try {
+                return geminiClient.generateContent(systemPrompt + "\n\n" + userPrompt);
+            } catch (Exception e) {
+                log.warn("Gemini pre-visit intake summary failed: {}", e.getMessage());
+            }
+        }
+
+        return "• **Chief Complaint:** " + chiefComplaint + "\n• **Symptoms:** " + symptoms
+                + "\n• **Medications/Allergies:** " + (medications != null ? medications : "None reported");
+    }
+
+    public SoapReportDto generateSoapDraft(Appointment appointment, String liveTranscript) {
+        String patientName = appointment.getPatient() != null
+                ? appointment.getPatient().getFirstName() + " " + appointment.getPatient().getLastName()
+                : "Patient";
+
+        String doctorName = appointment.getDoctor() != null
+                ? "Dr. " + appointment.getDoctor().getFirstName() + " " + appointment.getDoctor().getLastName()
+                : "Doctor";
+
+        String systemPrompt = "You are CareSync AI Clinical Ambient Scribe. "
+                + "Generate a clinical SOAP note (Subjective, Objective, Assessment, Plan) and recommended prescriptions based on patient intake and consultation transcript.\n"
+                + "Respond STRICTLY in JSON matching this schema:\n"
+                + "{\n"
+                + "  \"subjective\": \"Detailed patient symptoms, history, and chief complaint...\",\n"
+                + "  \"objective\": \"Observed signs, vital signs or reported clinical measurements...\",\n"
+                + "  \"assessment\": \"Clinical assessment and differential diagnosis...\",\n"
+                + "  \"plan\": \"Treatment plan, lab tests, follow-up advice...\",\n"
+                + "  \"symptoms\": \"Summary list of reported symptoms\",\n"
+                + "  \"diagnosis\": \"Primary provisional diagnosis\",\n"
+                + "  \"treatment\": \"Recommended non-pharmacological management\",\n"
+                + "  \"medicine\": \"Prescribed medications (name, strength)\",\n"
+                + "  \"doses\": \"Dosage frequency and duration\",\n"
+                + "  \"notes\": \"Clinical safety notes and warnings\"\n"
+                + "}";
+
+        String userPrompt = String.format(
+                "Patient: %s\nChief Complaint: %s\nPre-Visit Symptoms: %s\nPre-Visit AI Summary: %s\n\nLive Consultation Transcript:\n%s",
+                patientName,
+                appointment.getChiefComplaint() != null ? appointment.getChiefComplaint() : "N/A",
+                appointment.getPreVisitSymptoms() != null ? appointment.getPreVisitSymptoms() : "N/A",
+                appointment.getPreVisitSummary() != null ? appointment.getPreVisitSummary() : "N/A",
+                liveTranscript != null && !liveTranscript.isBlank() ? liveTranscript : "No live transcript provided.");
+
+        String jsonResponse = null;
+
+        if (groqClient != null && groqClient.isConfigured()) {
+            try {
+                log.info("Generating SOAP draft report using Groq AI (Primary Ambient Scribe)...");
+                jsonResponse = groqClient.callGroq(systemPrompt, userPrompt, true);
+            } catch (Exception e) {
+                log.warn("Groq SOAP draft generation failed: {}", e.getMessage());
+            }
+        }
+
+        if ((jsonResponse == null || jsonResponse.isBlank()) && geminiClient != null && geminiClient.isConfigured()) {
+            try {
+                log.info("Generating SOAP draft report using Gemini AI (Fallback)...");
+                jsonResponse = geminiClient.generateContent(systemPrompt + "\n\n" + userPrompt);
+            } catch (Exception e) {
+                log.error("Gemini SOAP draft generation fallback failed: {}", e.getMessage());
+            }
+        }
+
+        SoapReportDto dto = SoapReportDto.builder()
+                .appointmentId(appointment.getId())
+                .patientId(appointment.getPatient() != null ? appointment.getPatient().getId() : null)
+                .patientName(patientName)
+                .doctorId(appointment.getDoctor() != null ? appointment.getDoctor().getId() : null)
+                .doctorName(doctorName)
+                .visitDate(appointment.getAppointmentDateTime() != null
+                        ? appointment.getAppointmentDateTime().toLocalDate()
+                        : java.time.LocalDate.now())
+                .transcript(liveTranscript)
+                .isDraft(true)
+                .isSigned(false)
+                .build();
+
+        if (jsonResponse != null && !jsonResponse.isBlank()) {
+            try {
+                String cleanJson = extractJson(jsonResponse);
+                com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(cleanJson);
+
+                if (node.has("subjective"))
+                    dto.setSubjective(node.get("subjective").asText());
+                if (node.has("objective"))
+                    dto.setObjective(node.get("objective").asText());
+                if (node.has("assessment"))
+                    dto.setAssessment(node.get("assessment").asText());
+                if (node.has("plan"))
+                    dto.setPlan(node.get("plan").asText());
+                if (node.has("symptoms"))
+                    dto.setSymptoms(node.get("symptoms").asText());
+                if (node.has("diagnosis"))
+                    dto.setDiagnosis(node.get("diagnosis").asText());
+                if (node.has("treatment"))
+                    dto.setTreatment(node.get("treatment").asText());
+                if (node.has("medicine"))
+                    dto.setMedicine(node.get("medicine").asText());
+                if (node.has("doses"))
+                    dto.setDoses(node.get("doses").asText());
+                if (node.has("notes"))
+                    dto.setNotes(node.get("notes").asText());
+            } catch (Exception e) {
+                log.error("Failed to parse JSON response for SOAP draft: {}", e.getMessage());
+            }
+        }
+
+        if (dto.getSubjective() == null)
+            dto.setSubjective("Chief Complaint: " + appointment.getChiefComplaint());
+        if (dto.getSymptoms() == null)
+            dto.setSymptoms(appointment.getPreVisitSymptoms());
+        if (dto.getNotes() == null)
+            dto.setNotes("Generated via AI Ambient Scribe. Review required before signing.");
+
+        return dto;
     }
 }

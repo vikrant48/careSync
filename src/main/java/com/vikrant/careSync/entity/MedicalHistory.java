@@ -51,6 +51,36 @@ public class MedicalHistory {
     @Column(columnDefinition = "TEXT")
     private String notes;
 
+    // SOAP Format & AI Scribe Fields
+    @Convert(converter = EncryptionConverter.class)
+    @Column(columnDefinition = "TEXT")
+    private String subjective;
+
+    @Convert(converter = EncryptionConverter.class)
+    @Column(columnDefinition = "TEXT")
+    private String objective;
+
+    @Convert(converter = EncryptionConverter.class)
+    @Column(columnDefinition = "TEXT")
+    private String assessment;
+
+    @Convert(converter = EncryptionConverter.class)
+    @Column(columnDefinition = "TEXT")
+    private String plan;
+
+    @Convert(converter = EncryptionConverter.class)
+    @Column(columnDefinition = "TEXT")
+    private String transcript;
+
+    @Column(name = "is_draft", columnDefinition = "boolean default true")
+    private Boolean isDraft = true;
+
+    @Column(name = "is_signed", columnDefinition = "boolean default false")
+    private Boolean isSigned = false;
+
+    @Column(name = "signed_at")
+    private java.time.LocalDateTime signedAt;
+
     @Column(name = "appointment_id")
     private Long appointmentId;
 

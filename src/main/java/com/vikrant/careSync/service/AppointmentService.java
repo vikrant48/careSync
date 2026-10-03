@@ -31,6 +31,21 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
+import com.vikrant.careSync.entity.AppointmentStatusLog;
+import com.vikrant.careSync.repository.AppointmentStatusLogRepository;
+import com.vikrant.careSync.event.AppointmentBookedEvent;
+import com.vikrant.careSync.event.VisitStartedEvent;
+import com.vikrant.careSync.event.MedicalReportSignedEvent;
+import org.springframework.context.ApplicationEventPublisher;
+
+import com.vikrant.careSync.dto.PreVisitIntakeRequest;
+import com.vikrant.careSync.dto.PreVisitIntakeResponse;
+import com.vikrant.careSync.service.ai.AiClinicalService;
+
+import com.vikrant.careSync.dto.SoapReportDto;
+import com.vikrant.careSync.repository.MedicalHistoryRepository;
+import com.vikrant.careSync.entity.MedicalHistory;
+
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -46,6 +61,11 @@ public class AppointmentService {
     private final ChatRepository chatRepository;
     private final CacheManager cacheManager;
     private final PaymentService paymentService;
+    private final SlotLockService slotLockService;
+    private final AppointmentStatusLogRepository appointmentStatusLogRepository;
+    private final ApplicationEventPublisher eventPublisher;
+    private final AiClinicalService aiClinicalService;
+    private final MedicalHistoryRepository medicalHistoryRepository;
 
     // Only patients can book appointments - status automatically set to BOOKED
     @Caching(evict = {
@@ -74,6 +94,12 @@ public class AppointmentService {
             throw new RuntimeException("Doctor is on leave on this date");
         }
 
+        // Check Redis slot lock
+        if (slotLockService.isSlotLocked(doctorId, appointmentDateTime)) {
+            throw new RuntimeException(
+                    "This time slot is temporarily locked by another user. Please select a different slot or try again in a few minutes.");
+        }
+
         // Check if the appointment time is available
         if (isAppointmentTimeConflict(doctorId, appointmentDateTime, null)) {
             throw new RuntimeException("Appointment time is not available");
@@ -94,6 +120,24 @@ public class AppointmentService {
                 .build();
 
         Appointment saved = appointmentRepository.save(appointment);
+
+        // Record initial status audit log
+        AppointmentStatusLog statusLog = AppointmentStatusLog.builder()
+                .appointmentId(saved.getId())
+                .previousStatus(null)
+                .newStatus(Appointment.Status.BOOKED)
+                .changedBy(patient.getUsername())
+                .reason("Initial Booking: " + (reason != null ? reason : "Standard"))
+                .build();
+        appointmentStatusLogRepository.save(statusLog);
+
+        // Release slot lock upon successful booking
+        slotLockService.releaseSlotLock(doctorId, appointmentDateTime);
+
+        // Publish domain event
+        boolean isEmergency = reason != null && reason.toUpperCase().startsWith("EMERGENCY");
+        eventPublisher.publishEvent(new AppointmentBookedEvent(this, saved.getId(), doctorId, patientId, isEmergency));
+
         afterCommitTaskDispatcher.submitAfterCommit("new appointment notification " + saved.getId(),
                 () -> notificationService.sendDoctorNewAppointmentNotification(saved.getId()));
         return saved;
@@ -316,10 +360,23 @@ public class AppointmentService {
             }
         }
 
+        Appointment.Status previousStatus = appointment.getStatus();
+
         // Change status with validation and audit trail
         appointment.changeStatus(newStatus, currentUser.getUsername());
 
         Appointment saved = appointmentRepository.save(appointment);
+
+        // Record status audit log
+        AppointmentStatusLog statusLog = AppointmentStatusLog.builder()
+                .appointmentId(saved.getId())
+                .previousStatus(previousStatus)
+                .newStatus(newStatus)
+                .changedBy(currentUser.getUsername())
+                .reason("Status update requested by " + currentUser.getRole())
+                .build();
+        appointmentStatusLogRepository.save(statusLog);
+
         if (currentUser.getRole() == User.Role.DOCTOR) {
             if (newStatus == Appointment.Status.CONFIRMED) {
                 afterCommitTaskDispatcher.submitAfterCommit("appointment confirmation " + saved.getId(),
@@ -328,9 +385,13 @@ public class AppointmentService {
                 afterCommitTaskDispatcher.submitAfterCommit("appointment scheduled " + saved.getId(),
                         () -> notificationService.sendAppointmentScheduled(saved.getId()));
             } else if (newStatus == Appointment.Status.IN_PROGRESS) {
+                eventPublisher.publishEvent(new VisitStartedEvent(this, saved.getId(), saved.getDoctor().getId(),
+                        saved.getPatient().getId()));
                 afterCommitTaskDispatcher.submitAfterCommit("appointment started " + saved.getId(),
                         () -> notificationService.sendAppointmentStarted(saved.getId()));
             } else if (newStatus == Appointment.Status.COMPLETED) {
+                eventPublisher.publishEvent(new MedicalReportSignedEvent(this, saved.getId(), null,
+                        saved.getDoctor().getId(), saved.getPatient().getId()));
                 afterCommitTaskDispatcher.submitAfterCommit("appointment completed " + saved.getId(),
                         () -> notificationService.sendAppointmentCompleted(saved.getId()));
                 // Delete chat history
@@ -503,11 +564,16 @@ public class AppointmentService {
         LocalDate today = LocalDate.now();
         LocalTime now = LocalTime.now();
 
-        // Filter out booked/confirmed slots and past slots if today
+        // Filter out booked/confirmed slots, locked slots, and past slots if today
         List<String> availableSlots = allSlots.stream()
                 .filter(slot -> {
                     // Check if slot is already taken
                     if (isSlotUnavailable(existingAppointments, slot)) {
+                        return false;
+                    }
+
+                    LocalDateTime slotDateTime = LocalDateTime.parse(date + "T" + slot + ":00");
+                    if (slotLockService.isSlotLocked(doctorId, slotDateTime)) {
                         return false;
                     }
 
@@ -525,6 +591,17 @@ public class AppointmentService {
                 .availableSlots(availableSlots)
                 .isOnLeave(false)
                 .build();
+    }
+
+    public boolean holdSlot(Long doctorId, LocalDateTime slotTime, Long patientId) {
+        if (isAppointmentTimeConflict(doctorId, slotTime, null)) {
+            return false;
+        }
+        return slotLockService.acquireSlotLock(doctorId, slotTime, patientId);
+    }
+
+    public void releaseSlotHold(Long doctorId, LocalDateTime slotTime) {
+        slotLockService.releaseSlotLock(doctorId, slotTime);
     }
 
     private List<String> generateDoctorWorkingSlots() {
@@ -749,5 +826,361 @@ public class AppointmentService {
                 log.warn("Failed to prefetch doctor appointment page [{}]: {}", key, e.getMessage());
             }
         }
+    }
+
+    public PreVisitIntakeResponse submitPreVisitIntake(Long appointmentId, PreVisitIntakeRequest request,
+            Long patientId) {
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new RuntimeException("Appointment not found"));
+
+        if (!appointment.getPatient().getId().equals(patientId)) {
+            throw new RuntimeException("Unauthorized: Intake can only be submitted by the booked patient");
+        }
+
+        Appointment.Status previousStatus = appointment.getStatus();
+        appointment.setChiefComplaint(request.getChiefComplaint());
+        appointment.setPreVisitSymptoms(request.getSymptoms());
+        appointment.setIntakeCompleted(true);
+
+        // Generate AI pre-visit summary
+        String summary = aiClinicalService.generatePreVisitSummary(
+                request.getChiefComplaint(),
+                request.getSymptoms(),
+                request.getSymptomDuration(),
+                request.getCurrentMedications(),
+                request.getAllergies());
+        appointment.setPreVisitSummary(summary);
+
+        if (appointment.canChangeStatus(Appointment.Status.INTAKE_COMPLETED)) {
+            appointment.changeStatus(Appointment.Status.INTAKE_COMPLETED, "PATIENT_INTAKE");
+        }
+
+        Appointment saved = appointmentRepository.save(appointment);
+
+        // Record status log
+        appointmentStatusLogRepository.save(AppointmentStatusLog.builder()
+                .appointmentId(saved.getId())
+                .previousStatus(previousStatus)
+                .newStatus(saved.getStatus())
+                .changedBy("PATIENT")
+                .reason("Pre-visit digital intake submitted")
+                .build());
+
+        return PreVisitIntakeResponse.builder()
+                .appointmentId(saved.getId())
+                .chiefComplaint(saved.getChiefComplaint())
+                .symptoms(saved.getPreVisitSymptoms())
+                .preVisitSummary(saved.getPreVisitSummary())
+                .intakeCompleted(saved.getIntakeCompleted())
+                .updatedAt(saved.getUpdatedAt())
+                .build();
+    }
+
+    public PreVisitIntakeResponse getPreVisitIntakeSummary(Long appointmentId) {
+        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
+                .orElseThrow(() -> new RuntimeException("Appointment not found"));
+
+        return PreVisitIntakeResponse.builder()
+                .appointmentId(appointment.getId())
+                .chiefComplaint(appointment.getChiefComplaint())
+                .symptoms(appointment.getPreVisitSymptoms())
+                .preVisitSummary(appointment.getPreVisitSummary())
+                .intakeCompleted(appointment.getIntakeCompleted() != null && appointment.getIntakeCompleted())
+                .updatedAt(appointment.getUpdatedAt())
+                .build();
+    }
+
+    public SoapReportDto generateAndSaveSoapDraft(Long appointmentId, String liveTranscript) {
+        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
+                .orElseThrow(() -> new RuntimeException("Appointment not found with ID: " + appointmentId));
+
+        SoapReportDto draftDto = aiClinicalService.generateSoapDraft(appointment, liveTranscript);
+
+        MedicalHistory mh = medicalHistoryRepository.findByAppointmentId(appointmentId)
+                .orElse(new MedicalHistory());
+
+        mh.setAppointmentId(appointmentId);
+        mh.setPatient(appointment.getPatient());
+        mh.setDoctor(appointment.getDoctor());
+        mh.setVisitDate(appointment.getAppointmentDateTime().toLocalDate());
+        mh.setSubjective(draftDto.getSubjective());
+        mh.setObjective(draftDto.getObjective());
+        mh.setAssessment(draftDto.getAssessment());
+        mh.setPlan(draftDto.getPlan());
+        mh.setSymptoms(draftDto.getSymptoms());
+        mh.setDiagnosis(draftDto.getDiagnosis());
+        mh.setTreatment(draftDto.getTreatment());
+        mh.setMedicine(draftDto.getMedicine());
+        mh.setDoses(draftDto.getDoses());
+        mh.setNotes(draftDto.getNotes());
+        mh.setTranscript(liveTranscript);
+        mh.setIsDraft(true);
+        mh.setIsSigned(false);
+
+        MedicalHistory savedMh = medicalHistoryRepository.save(mh);
+        draftDto.setId(savedMh.getId());
+
+        // Update appointment status to REPORT_DRAFTED
+        if (appointment.canChangeStatus(Appointment.Status.REPORT_DRAFTED)) {
+            Appointment.Status previousStatus = appointment.getStatus();
+            appointment.changeStatus(Appointment.Status.REPORT_DRAFTED, "AI_AMBIENT_SCRIBE");
+            appointmentRepository.save(appointment);
+
+            appointmentStatusLogRepository.save(AppointmentStatusLog.builder()
+                    .appointmentId(appointment.getId())
+                    .previousStatus(previousStatus)
+                    .newStatus(Appointment.Status.REPORT_DRAFTED)
+                    .changedBy("AI_SCRIBE")
+                    .reason("Automated Groq AI SOAP draft generated from pre-visit intake and consultation transcript")
+                    .build());
+        }
+
+        return draftDto;
+    }
+
+    public SoapReportDto getSoapDraft(Long appointmentId) {
+        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
+                .orElseThrow(() -> new RuntimeException("Appointment not found with ID: " + appointmentId));
+
+        MedicalHistory mh = medicalHistoryRepository.findByAppointmentId(appointmentId).orElse(null);
+
+        if (mh != null) {
+            return SoapReportDto.builder()
+                    .id(mh.getId())
+                    .appointmentId(appointmentId)
+                    .patientId(mh.getPatient() != null ? mh.getPatient().getId() : null)
+                    .patientName(mh.getPatient() != null
+                            ? mh.getPatient().getFirstName() + " " + mh.getPatient().getLastName()
+                            : "Patient")
+                    .doctorId(mh.getDoctor() != null ? mh.getDoctor().getId() : null)
+                    .doctorName(mh.getDoctor() != null
+                            ? "Dr. " + mh.getDoctor().getFirstName() + " " + mh.getDoctor().getLastName()
+                            : "Doctor")
+                    .visitDate(mh.getVisitDate())
+                    .subjective(mh.getSubjective())
+                    .objective(mh.getObjective())
+                    .assessment(mh.getAssessment())
+                    .plan(mh.getPlan())
+                    .symptoms(mh.getSymptoms())
+                    .diagnosis(mh.getDiagnosis())
+                    .treatment(mh.getTreatment())
+                    .medicine(mh.getMedicine())
+                    .doses(mh.getDoses())
+                    .notes(mh.getNotes())
+                    .transcript(mh.getTranscript())
+                    .isDraft(mh.getIsDraft())
+                    .isSigned(mh.getIsSigned())
+                    .signedAt(mh.getSignedAt())
+                    .build();
+        }
+
+        return aiClinicalService.generateSoapDraft(appointment, "");
+    }
+
+    public SoapReportDto signMedicalReport(Long appointmentId, SoapReportDto reportDto, Long doctorId) {
+        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
+                .orElseThrow(() -> new RuntimeException("Appointment not found with ID: " + appointmentId));
+
+        if (!appointment.getDoctor().getId().equals(doctorId)) {
+            throw new RuntimeException("Unauthorized: Only the assigned doctor can sign off on this report");
+        }
+
+        MedicalHistory mh = medicalHistoryRepository.findByAppointmentId(appointmentId)
+                .orElse(new MedicalHistory());
+
+        mh.setAppointmentId(appointmentId);
+        mh.setPatient(appointment.getPatient());
+        mh.setDoctor(appointment.getDoctor());
+        mh.setVisitDate(appointment.getAppointmentDateTime().toLocalDate());
+        mh.setSubjective(reportDto.getSubjective());
+        mh.setObjective(reportDto.getObjective());
+        mh.setAssessment(reportDto.getAssessment());
+        mh.setPlan(reportDto.getPlan());
+        mh.setSymptoms(reportDto.getSymptoms());
+        mh.setDiagnosis(reportDto.getDiagnosis());
+        mh.setTreatment(reportDto.getTreatment());
+        mh.setMedicine(reportDto.getMedicine());
+        mh.setDoses(reportDto.getDoses());
+        mh.setNotes(reportDto.getNotes());
+        if (reportDto.getTranscript() != null) {
+            mh.setTranscript(reportDto.getTranscript());
+        }
+        mh.setIsDraft(false);
+        mh.setIsSigned(true);
+        mh.setSignedAt(LocalDateTime.now());
+
+        MedicalHistory savedMh = medicalHistoryRepository.save(mh);
+
+        // Transition status to COMPLETED
+        Appointment.Status previousStatus = appointment.getStatus();
+        if (appointment.canChangeStatus(Appointment.Status.COMPLETED)) {
+            appointment.changeStatus(Appointment.Status.COMPLETED, "DOCTOR_E_SIGN");
+            appointmentRepository.save(appointment);
+
+            appointmentStatusLogRepository.save(AppointmentStatusLog.builder()
+                    .appointmentId(appointment.getId())
+                    .previousStatus(previousStatus)
+                    .newStatus(Appointment.Status.COMPLETED)
+                    .changedBy("DOCTOR")
+                    .reason("Doctor reviewed, approved, and electronically signed the medical report")
+                    .build());
+
+            // Fire MedicalReportSignedEvent
+            eventPublisher.publishEvent(new MedicalReportSignedEvent(
+                    this,
+                    appointmentId,
+                    doctorId,
+                    appointment.getPatient().getId(),
+                    savedMh.getId()));
+        }
+
+        return SoapReportDto.builder()
+                .id(savedMh.getId())
+                .appointmentId(appointmentId)
+                .patientId(savedMh.getPatient().getId())
+                .patientName(savedMh.getPatient().getFirstName() + " " + savedMh.getPatient().getLastName())
+                .doctorId(savedMh.getDoctor().getId())
+                .doctorName("Dr. " + savedMh.getDoctor().getFirstName() + " " + savedMh.getDoctor().getLastName())
+                .visitDate(savedMh.getVisitDate())
+                .subjective(savedMh.getSubjective())
+                .objective(savedMh.getObjective())
+                .assessment(savedMh.getAssessment())
+                .plan(savedMh.getPlan())
+                .symptoms(savedMh.getSymptoms())
+                .diagnosis(savedMh.getDiagnosis())
+                .treatment(savedMh.getTreatment())
+                .medicine(savedMh.getMedicine())
+                .doses(savedMh.getDoses())
+                .notes(savedMh.getNotes())
+                .transcript(savedMh.getTranscript())
+                .isDraft(savedMh.getIsDraft())
+                .isSigned(savedMh.getIsSigned())
+                .signedAt(savedMh.getSignedAt())
+                .build();
+    }
+
+    public com.vikrant.careSync.dto.AppointmentAnalyticsResponse getAppointmentAnalytics(
+            java.time.LocalDateTime startDate,
+            java.time.LocalDateTime endDate,
+            Long doctorId) {
+
+        List<Appointment> appointments;
+        if (doctorId != null) {
+            appointments = appointmentRepository.findByDoctorId(doctorId);
+        } else {
+            appointments = appointmentRepository.findAll();
+        }
+
+        if (startDate != null && endDate != null) {
+            appointments = appointments.stream()
+                    .filter(a -> a.getAppointmentDateTime() != null
+                            && !a.getAppointmentDateTime().isBefore(startDate)
+                            && !a.getAppointmentDateTime().isAfter(endDate))
+                    .collect(java.util.stream.Collectors.toList());
+        }
+
+        long total = appointments.size();
+        if (total == 0) {
+            return com.vikrant.careSync.dto.AppointmentAnalyticsResponse.builder()
+                    .totalAppointments(0)
+                    .completedAppointments(0)
+                    .noShowAppointments(0)
+                    .cancelledAppointments(0)
+                    .completionRate(0.0)
+                    .noShowRate(0.0)
+                    .cancellationRate(0.0)
+                    .statusBreakdown(new java.util.HashMap<>())
+                    .funnelConversion(new java.util.HashMap<>())
+                    .build();
+        }
+
+        java.util.Map<String, Long> statusBreakdown = new java.util.HashMap<>();
+        for (Appointment.Status status : Appointment.Status.values()) {
+            statusBreakdown.put(status.name(), 0L);
+        }
+
+        long completed = 0;
+        long noShow = 0;
+        long cancelled = 0;
+        long readyForVisit = 0;
+        long intakeDone = 0;
+        long inProgress = 0;
+
+        for (Appointment appt : appointments) {
+            if (appt.getStatus() != null) {
+                String sName = appt.getStatus().name();
+                statusBreakdown.put(sName, statusBreakdown.getOrDefault(sName, 0L) + 1);
+
+                if (appt.getStatus() == Appointment.Status.COMPLETED)
+                    completed++;
+                if (appt.getStatus() == Appointment.Status.NO_SHOW_PATIENT
+                        || appt.getStatus() == Appointment.Status.NO_SHOW_DOCTOR)
+                    noShow++;
+                if (appt.getStatus() == Appointment.Status.CANCELLED
+                        || appt.getStatus() == Appointment.Status.CANCELLED_BY_PATIENT
+                        || appt.getStatus() == Appointment.Status.CANCELLED_BY_DOCTOR)
+                    cancelled++;
+                if (appt.getStatus() == Appointment.Status.READY_FOR_VISIT)
+                    readyForVisit++;
+                if (appt.getStatus() == Appointment.Status.INTAKE_COMPLETED
+                        || appt.getIntakeCompleted() != null && appt.getIntakeCompleted())
+                    intakeDone++;
+                if (appt.getStatus() == Appointment.Status.IN_PROGRESS
+                        || appt.getStatus() == Appointment.Status.REPORT_DRAFTED
+                        || appt.getStatus() == Appointment.Status.COMPLETED)
+                    inProgress++;
+            }
+        }
+
+        double completionRate = Math.round((completed * 100.0 / total) * 10.0) / 10.0;
+        double noShowRate = Math.round((noShow * 100.0 / total) * 10.0) / 10.0;
+        double cancellationRate = Math.round((cancelled * 100.0 / total) * 10.0) / 10.0;
+
+        java.util.Map<String, Double> funnelConversion = new java.util.LinkedHashMap<>();
+        funnelConversion.put("BOOKED_TO_INTAKE",
+                total > 0
+                        ? Math.round(((intakeDone + inProgress + completed) * 100.0 / total) * 10.0) / 10.0
+                        : 0.0);
+        funnelConversion.put("INTAKE_TO_READY_FOR_VISIT",
+                (intakeDone + inProgress + completed) > 0
+                        ? Math.round(((readyForVisit + inProgress + completed) * 100.0
+                                / (intakeDone + inProgress + completed)) * 10.0) / 10.0
+                        : 0.0);
+        funnelConversion.put("VISIT_TO_CONSULTATION",
+                (readyForVisit + inProgress + completed) > 0
+                        ? Math.round(
+                                ((inProgress + completed) * 100.0 / (readyForVisit + inProgress + completed)) * 10.0)
+                                / 10.0
+                        : 0.0);
+        funnelConversion.put("CONSULTATION_TO_COMPLETED",
+                (inProgress + completed) > 0 ? Math.round((completed * 100.0 / (inProgress + completed)) * 10.0) / 10.0
+                        : 0.0);
+
+        return com.vikrant.careSync.dto.AppointmentAnalyticsResponse.builder()
+                .totalAppointments(total)
+                .completedAppointments(completed)
+                .noShowAppointments(noShow)
+                .cancelledAppointments(cancelled)
+                .completionRate(completionRate)
+                .noShowRate(noShowRate)
+                .cancellationRate(cancellationRate)
+                .statusBreakdown(statusBreakdown)
+                .funnelConversion(funnelConversion)
+                .build();
+    }
+
+    public List<com.vikrant.careSync.dto.AppointmentStatusLogDto> getAppointmentAuditTrail(Long appointmentId) {
+        List<AppointmentStatusLog> logs = appointmentStatusLogRepository
+                .findByAppointmentIdOrderByCreatedAtDesc(appointmentId);
+        return logs.stream().map(log -> com.vikrant.careSync.dto.AppointmentStatusLogDto.builder()
+                .id(log.getId())
+                .appointmentId(log.getAppointmentId())
+                .previousStatus(log.getPreviousStatus())
+                .newStatus(log.getNewStatus())
+                .changedBy(log.getChangedBy())
+                .reason(log.getReason())
+                .createdAt(log.getCreatedAt())
+                .build())
+                .collect(java.util.stream.Collectors.toList());
     }
 }
