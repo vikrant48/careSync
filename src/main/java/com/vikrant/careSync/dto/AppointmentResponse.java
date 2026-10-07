@@ -40,6 +40,8 @@ public class AppointmentResponse {
     private String doctorProfileImageUrl;
     private BigDecimal consultationFees;
     private String transactionId;
+    private Boolean feedbackSubmitted;
+    private Boolean hasSignedRecord;
     private PatientMedicalHistoryDto appointmentMedicalHistory;
     private List<PatientMedicalHistoryDto> medicalHistory;
 
@@ -84,22 +86,38 @@ public class AppointmentResponse {
         this.videoRoomId = appointment.getVideoRoomId();
         this.isActive = appointment.getIsActive();
 
-        // Convert medical history to DTOs safely (handle uninitialized lazy collections)
+        // Convert medical history to DTOs safely (handle uninitialized lazy
+        // collections)
         try {
             if (appointment.getPatient() != null && appointment.getPatient().getMedicalHistories() != null) {
-                this.appointmentMedicalHistory = appointment.getPatient().getMedicalHistories().stream()
+                MedicalHistory apptMh = appointment.getPatient().getMedicalHistories().stream()
                         .filter(mh -> mh.getAppointmentId() != null
                                 && mh.getAppointmentId().equals(appointment.getId()))
                         .findFirst()
-                        .map(PatientMedicalHistoryDto::new)
                         .orElse(null);
+
+                if (apptMh != null) {
+                    this.appointmentMedicalHistory = new PatientMedicalHistoryDto(apptMh);
+                    this.hasSignedRecord = Boolean.TRUE.equals(apptMh.getIsSigned());
+                } else {
+                    this.hasSignedRecord = false;
+                }
 
                 this.medicalHistory = appointment.getPatient().getMedicalHistories().stream()
                         .map(PatientMedicalHistoryDto::new)
                         .collect(Collectors.toList());
+            } else {
+                this.hasSignedRecord = false;
             }
         } catch (Exception e) {
-            // Lazy collection not initialized outside transaction session
+            this.hasSignedRecord = false;
+        }
+
+        // Populate feedbackSubmitted from entity relationship
+        try {
+            this.feedbackSubmitted = (appointment.getFeedback() != null);
+        } catch (Exception e) {
+            this.feedbackSubmitted = false;
         }
     }
 

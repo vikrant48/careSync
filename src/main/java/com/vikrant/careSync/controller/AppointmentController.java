@@ -5,6 +5,7 @@ import com.vikrant.careSync.entity.Appointment;
 import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Patient;
 import com.vikrant.careSync.repository.DoctorRepository;
+import com.vikrant.careSync.repository.FeedbackRepository;
 import com.vikrant.careSync.repository.PatientRepository;
 import com.vikrant.careSync.service.AppointmentService;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +36,15 @@ public class AppointmentController {
     private final AppointmentService appointmentService;
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
+    private final FeedbackRepository feedbackRepository;
+
+    private AppointmentResponse mapToResponse(Appointment a) {
+        AppointmentResponse resp = new AppointmentResponse(a);
+        if (a != null && a.getId() != null) {
+            resp.setFeedbackSubmitted(feedbackRepository.findByAppointmentId(a.getId()).isPresent());
+        }
+        return resp;
+    }
 
     // Get current authenticated user (for patient endpoints)
     private Patient getCurrentPatient() {
@@ -281,7 +291,7 @@ public class AppointmentController {
             Patient currentUser = getCurrentPatient();
             List<Appointment> appointments = appointmentService.getAppointmentsByPatient(currentUser.getId());
             List<AppointmentResponse> responses = appointments.stream()
-                    .map(AppointmentResponse::new)
+                    .map(this::mapToResponse)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
@@ -298,7 +308,7 @@ public class AppointmentController {
             Patient currentUser = getCurrentPatient();
             List<Appointment> appointments = appointmentService.getUpcomingAppointmentsByPatient(currentUser.getId());
             List<AppointmentResponse> responses = appointments.stream()
-                    .map(AppointmentResponse::new)
+                    .map(this::mapToResponse)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
@@ -317,7 +327,7 @@ public class AppointmentController {
             List<Appointment> appointments = appointmentService.getAppointmentsByStatusForPatient(currentUser.getId(),
                     appointmentStatus);
             List<AppointmentResponse> responses = appointments.stream()
-                    .map(AppointmentResponse::new)
+                    .map(this::mapToResponse)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
@@ -335,7 +345,7 @@ public class AppointmentController {
             List<Appointment> appointments = appointmentService.getAppointmentsByStatusForPatient(currentUser.getId(),
                     Appointment.Status.COMPLETED);
             List<AppointmentResponse> responses = appointments.stream()
-                    .map(AppointmentResponse::new)
+                    .map(this::mapToResponse)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
@@ -353,7 +363,7 @@ public class AppointmentController {
             List<Appointment> appointments = appointmentService.getAppointmentsByStatusForPatient(currentUser.getId(),
                     Appointment.Status.CANCELLED);
             List<AppointmentResponse> responses = appointments.stream()
-                    .map(AppointmentResponse::new)
+                    .map(this::mapToResponse)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
@@ -623,6 +633,41 @@ public class AppointmentController {
         }
     }
 
+    @PutMapping("/{id}/status")
+    @PreAuthorize("hasAnyRole('PATIENT', 'DOCTOR', 'ADMIN')")
+    public ResponseEntity<?> updateAppointmentStatusAnyRole(@PathVariable Long id, @RequestParam String status) {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            Appointment.Status appointmentStatus = Appointment.Status.valueOf(status.toUpperCase());
+
+            boolean isDoctor = authentication.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_DOCTOR"));
+            boolean isPatient = authentication.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_PATIENT"));
+
+            com.vikrant.careSync.entity.User userEntity = null;
+            if (isDoctor) {
+                userEntity = getCurrentDoctor().getUser();
+            } else if (isPatient) {
+                userEntity = getCurrentPatient().getUser();
+            }
+
+            if (userEntity == null) {
+                Map<String, String> errorResponse = new HashMap<>();
+                errorResponse.put("error", "Unauthorized user role");
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+
+            Appointment updatedAppointment = appointmentService.updateAppointmentStatus(id, appointmentStatus,
+                    userEntity);
+            return ResponseEntity.ok(new AppointmentResponse(updatedAppointment));
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
     // Doctor can confirm appointment
     @PutMapping("/doctor/{id}/confirm")
     @PreAuthorize("hasRole('DOCTOR')")
@@ -671,19 +716,50 @@ public class AppointmentController {
         }
     }
 
-    // ADMIN ENDPOINTS - Only accessible by admins
-
-    @GetMapping("/admin/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('PATIENT', 'DOCTOR', 'ADMIN')")
     public ResponseEntity<?> getAppointmentById(@PathVariable Long id) {
         try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
             Appointment appointment = appointmentService.getAppointmentById(id);
+
+            boolean isAdmin = authentication.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+            boolean isDoctor = authentication.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_DOCTOR"));
+            boolean isPatient = authentication.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_PATIENT"));
+
+            if (!isAdmin) {
+                if (isDoctor) {
+                    Doctor doctor = getCurrentDoctor();
+                    if (!appointment.getDoctor().getId().equals(doctor.getId())) {
+                        Map<String, String> error = new HashMap<>();
+                        error.put("error", "Access denied: Appointment belongs to another doctor");
+                        return ResponseEntity.status(403).body(error);
+                    }
+                } else if (isPatient) {
+                    Patient patient = getCurrentPatient();
+                    if (!appointment.getPatient().getId().equals(patient.getId())) {
+                        Map<String, String> error = new HashMap<>();
+                        error.put("error", "Access denied: Appointment belongs to another patient");
+                        return ResponseEntity.status(403).body(error);
+                    }
+                }
+            }
+
             return ResponseEntity.ok(new AppointmentResponse(appointment));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
             return ResponseEntity.badRequest().body(errorResponse);
         }
+    }
+
+    @GetMapping("/admin/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> getAppointmentByIdForAdmin(@PathVariable Long id) {
+        return getAppointmentById(id);
     }
 
     @DeleteMapping("/admin/{id}")
@@ -731,6 +807,36 @@ public class AppointmentController {
                     reason != null ? reason : "Emergency appointment");
 
             return ResponseEntity.ok(new AppointmentResponse(emergencyAppointment));
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    @GetMapping("/{id}/completion-preview")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'PATIENT', 'ADMIN')")
+    public ResponseEntity<?> getCompletionPreview(@PathVariable Long id) {
+        try {
+            CompletionPreviewDto preview = appointmentService.getCompletionPreview(id);
+            return ResponseEntity.ok(preview);
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    @PostMapping("/{id}/esign-and-complete")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<?> eSignAndCompleteAppointment(
+            @PathVariable Long id,
+            @Valid @RequestBody ESignCompletionRequest request) {
+        try {
+            Doctor currentDoctor = getCurrentDoctor();
+            ESignCompletionResponse response = appointmentService.eSignAndCompleteAppointment(id, request,
+                    currentDoctor.getId());
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());

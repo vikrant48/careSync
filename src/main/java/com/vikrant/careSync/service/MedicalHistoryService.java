@@ -76,10 +76,41 @@ public class MedicalHistoryService implements IMedicalHistoryService {
         Doctor doctor = doctorRepository.findById(doctorId)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
 
-        medicalHistory.setPatient(patient);
-        medicalHistory.setDoctor(doctor);
-        // Ensure appointmentId is set if provided in the entity (from request)
-        return medicalHistoryRepository.save(medicalHistory);
+        MedicalHistory target = null;
+        if (medicalHistory.getId() != null) {
+            target = medicalHistoryRepository.findById(medicalHistory.getId()).orElse(null);
+        } else if (medicalHistory.getAppointmentId() != null) {
+            List<MedicalHistory> existingList = medicalHistoryRepository
+                    .findAllByAppointmentId(medicalHistory.getAppointmentId());
+            if (!existingList.isEmpty()) {
+                target = existingList.get(0);
+            }
+        }
+
+        if (target == null) {
+            target = medicalHistory;
+        } else {
+            if (medicalHistory.getVisitDate() != null)
+                target.setVisitDate(medicalHistory.getVisitDate());
+            if (medicalHistory.getSymptoms() != null)
+                target.setSymptoms(medicalHistory.getSymptoms());
+            if (medicalHistory.getDiagnosis() != null)
+                target.setDiagnosis(medicalHistory.getDiagnosis());
+            if (medicalHistory.getTreatment() != null)
+                target.setTreatment(medicalHistory.getTreatment());
+            if (medicalHistory.getMedicine() != null)
+                target.setMedicine(medicalHistory.getMedicine());
+            if (medicalHistory.getDoses() != null)
+                target.setDoses(medicalHistory.getDoses());
+            if (medicalHistory.getNotes() != null)
+                target.setNotes(medicalHistory.getNotes());
+            if (medicalHistory.getAppointmentId() != null)
+                target.setAppointmentId(medicalHistory.getAppointmentId());
+        }
+
+        target.setPatient(patient);
+        target.setDoctor(doctor);
+        return medicalHistoryRepository.save(target);
     }
 
     @Override
@@ -90,7 +121,9 @@ public class MedicalHistoryService implements IMedicalHistoryService {
 
     @Override
     public List<MedicalHistory> getMedicalHistoryByPatient(Long patientId) {
-        return medicalHistoryRepository.findByPatientId(patientId);
+        return medicalHistoryRepository.findByPatientId(patientId).stream()
+                .filter(mh -> !Boolean.TRUE.equals(mh.getIsDraft()))
+                .toList();
     }
 
     public List<MedicalHistory> getRecentMedicalHistory(Long patientId, int limit) {
@@ -125,6 +158,18 @@ public class MedicalHistoryService implements IMedicalHistoryService {
     public MedicalHistory updateMedicalHistory(Long id, MedicalHistory updatedHistory) {
         MedicalHistory existingHistory = medicalHistoryRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Medical history not found"));
+
+        if (Boolean.TRUE.equals(existingHistory.getIsSigned()) || Boolean.FALSE.equals(existingHistory.getIsDraft())) {
+            throw new IllegalStateException(
+                    "Medical record is electronically signed and locked. Modifications post-completion are prohibited.");
+        }
+
+        if (existingHistory.getAppointmentId() != null) {
+            Appointment appt = appointmentRepository.findById(existingHistory.getAppointmentId()).orElse(null);
+            if (appt != null && appt.getStatus() == Appointment.Status.COMPLETED) {
+                throw new IllegalStateException("Appointment is completed. Medical record is locked.");
+            }
+        }
 
         // Update fields if provided
         if (updatedHistory.getVisitDate() != null) {
@@ -202,8 +247,7 @@ public class MedicalHistoryService implements IMedicalHistoryService {
 
     @Override
     public List<MedicalHistoryWithDoctorDto> getMedicalHistoryWithDoctorByPatient(Long patientId) {
-        // Get all appointments (not just completed) for the patient to ensure we find
-        // matches
+        // Get all appointments for the patient
         List<Appointment> allAppointments = appointmentRepository.findByPatientId(patientId);
 
         // Get all medical histories for the patient
@@ -231,24 +275,64 @@ public class MedicalHistoryService implements IMedicalHistoryService {
                         .orElse(null);
             }
 
-            if (matchingAppointment != null) {
+            // SECURITY GUARD: Only expose record to patient if appointment status is
+            // COMPLETED
+            if (matchingAppointment != null && matchingAppointment.getStatus() == Appointment.Status.COMPLETED) {
                 MedicalHistoryWithDoctorDto dto = new MedicalHistoryWithDoctorDto(
                         history,
                         matchingAppointment.getDoctor(),
                         matchingAppointment.getId(),
                         matchingAppointment.getAppointmentDateTime().toString());
                 result.add(dto);
-            } else if (history.getDoctor() != null) {
-                // If no matching appointment but doctor exists, still return with basic info
-                MedicalHistoryWithDoctorDto dto = new MedicalHistoryWithDoctorDto(
-                        history,
-                        history.getDoctor(),
-                        history.getAppointmentId(),
-                        history.getVisitDate() != null ? history.getVisitDate().toString() : null);
-                result.add(dto);
             }
         }
 
         return result;
+    }
+
+    @Override
+    public MedicalHistory getMedicalHistoryByAppointmentId(Long appointmentId) {
+        List<MedicalHistory> records = medicalHistoryRepository.findAllByAppointmentId(appointmentId);
+        if (records.isEmpty()) {
+            return null;
+        }
+        if (records.size() == 1) {
+            return records.get(0);
+        }
+        MedicalHistory primary = records.get(0);
+        for (int i = 1; i < records.size(); i++) {
+            MedicalHistory secondary = records.get(i);
+            if (primary.getSubjective() == null || primary.getSubjective().trim().isEmpty()) {
+                primary.setSubjective(secondary.getSubjective());
+            }
+            if (primary.getObjective() == null || primary.getObjective().trim().isEmpty()) {
+                primary.setObjective(secondary.getObjective());
+            }
+            if (primary.getAssessment() == null || primary.getAssessment().trim().isEmpty()) {
+                primary.setAssessment(secondary.getAssessment());
+            }
+            if (primary.getPlan() == null || primary.getPlan().trim().isEmpty()) {
+                primary.setPlan(secondary.getPlan());
+            }
+            if (primary.getDiagnosis() == null || primary.getDiagnosis().trim().isEmpty()) {
+                primary.setDiagnosis(secondary.getDiagnosis());
+            }
+            if (primary.getTreatment() == null || primary.getTreatment().trim().isEmpty()) {
+                primary.setTreatment(secondary.getTreatment());
+            }
+            if (primary.getMedicine() == null || primary.getMedicine().trim().isEmpty()) {
+                primary.setMedicine(secondary.getMedicine());
+            }
+            if (primary.getDoses() == null || primary.getDoses().trim().isEmpty()) {
+                primary.setDoses(secondary.getDoses());
+            }
+            if (primary.getNotes() == null || primary.getNotes().trim().isEmpty()) {
+                primary.setNotes(secondary.getNotes());
+            }
+            if (primary.getSymptoms() == null || primary.getSymptoms().trim().isEmpty()) {
+                primary.setSymptoms(secondary.getSymptoms());
+            }
+        }
+        return medicalHistoryRepository.save(primary);
     }
 }

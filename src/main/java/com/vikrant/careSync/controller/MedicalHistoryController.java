@@ -121,6 +121,21 @@ public class MedicalHistoryController {
         }
     }
 
+    @GetMapping("/appointment/{appointmentId}")
+    public ResponseEntity<?> getMedicalHistoryByAppointment(@PathVariable Long appointmentId) {
+        try {
+            MedicalHistory medicalHistory = medicalHistoryService.getMedicalHistoryByAppointmentId(appointmentId);
+            if (medicalHistory != null) {
+                return ResponseEntity.ok(new MedicalHistoryDto(medicalHistory));
+            }
+            return ResponseEntity.ok(Map.of());
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
     @GetMapping("/patient/{patientId}")
     public ResponseEntity<?> getMedicalHistoryByPatient(@PathVariable Long patientId) {
         try {

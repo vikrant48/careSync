@@ -50,6 +50,10 @@ public class FeedbackController {
                     request.getComment(),
                     request.getAnonymous());
             return ResponseEntity.ok(new FeedbackDto(createdFeedback));
+        } catch (IllegalStateException e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.status(409).body(errorResponse);
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());

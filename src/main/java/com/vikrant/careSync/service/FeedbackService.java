@@ -139,7 +139,7 @@ public class FeedbackService implements IFeedbackService {
 
         // Check if feedback already exists
         if (feedbackRepository.findByAppointmentId(appointmentId).isPresent()) {
-            throw new RuntimeException("Feedback already exists for this appointment");
+            throw new IllegalStateException("Feedback already exists for this appointment");
         }
 
         // Validate rating

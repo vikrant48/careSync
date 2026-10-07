@@ -76,32 +76,53 @@ public class Appointment {
     @Builder.Default
     private Boolean reminder10mSent = false;
 
-    @Column(name = "chief_complaint", length = 500)
-    private String chiefComplaint;
-
-    @Column(name = "pre_visit_symptoms", columnDefinition = "TEXT")
-    private String preVisitSymptoms;
-
-    @Column(name = "pre_visit_summary", columnDefinition = "TEXT")
-    private String preVisitSummary;
-
     @Column(name = "intake_completed", columnDefinition = "boolean default false")
     @Builder.Default
     private Boolean intakeCompleted = false;
+
+    @OneToOne(mappedBy = "appointment", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @JsonIgnore
+    private AppointmentIntake intake;
+
+    @Column(name = "patient_ready", columnDefinition = "boolean default false")
+    @Builder.Default
+    private Boolean patientReady = false;
+
+    @Column(name = "cancellation_reason", length = 500)
+    private String cancellationReason;
+
+    @Column(name = "visit_started_at")
+    private LocalDateTime visitStartedAt;
+
+    @Column(name = "visit_ended_at")
+    private LocalDateTime visitEndedAt;
+
+    @Column(name = "reschedule_count", columnDefinition = "int default 0")
+    @Builder.Default
+    private Integer rescheduleCount = 0;
+
+    @Version
+    private Long version;
 
     public enum Status {
         BOOKED,
         REQUESTED,
         CONFIRMED,
         SCHEDULED,
+        INTAKE,
         INTAKE_COMPLETED,
+        WAITING_ROOM,
         READY_FOR_VISIT,
         IN_PROGRESS,
+        MEDICAL_RECORD,
         REPORT_DRAFTED,
+        READY_TO_COMPLETE,
         COMPLETED,
         CANCELLED,
+        REJECTED,
         CANCELLED_BY_PATIENT,
         CANCELLED_BY_DOCTOR,
+        NO_SHOW,
         NO_SHOW_PATIENT,
         NO_SHOW_DOCTOR,
         AUTO_CLOSED

@@ -42,6 +42,9 @@ import com.vikrant.careSync.dto.PreVisitIntakeRequest;
 import com.vikrant.careSync.dto.PreVisitIntakeResponse;
 import com.vikrant.careSync.service.ai.AiClinicalService;
 
+import com.vikrant.careSync.entity.AppointmentIntake;
+import com.vikrant.careSync.repository.AppointmentIntakeRepository;
+
 import com.vikrant.careSync.dto.SoapReportDto;
 import com.vikrant.careSync.repository.MedicalHistoryRepository;
 import com.vikrant.careSync.entity.MedicalHistory;
@@ -66,6 +69,10 @@ public class AppointmentService {
     private final ApplicationEventPublisher eventPublisher;
     private final AiClinicalService aiClinicalService;
     private final MedicalHistoryRepository medicalHistoryRepository;
+    private final AppointmentIntakeRepository appointmentIntakeRepository;
+    private final RecordReadinessService recordReadinessService;
+    private final com.vikrant.careSync.repository.AppointmentSignatureRepository appointmentSignatureRepository;
+    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     // Only patients can book appointments - status automatically set to BOOKED
     @Caching(evict = {
@@ -337,13 +344,13 @@ public class AppointmentService {
             if (!appointment.getPatient().getId().equals(currentUser.getId())) {
                 throw new RuntimeException("You can only update your own appointments");
             }
-            // Patients can only change status to BOOKED or CANCELLED (reschedule is handled
-            // separately)
+            // Patients can only change status to BOOKED, CONFIRMED, or CANCELLED
             if (newStatus != Appointment.Status.BOOKED &&
+                    newStatus != Appointment.Status.CONFIRMED &&
                     newStatus != Appointment.Status.CANCELLED &&
                     newStatus != Appointment.Status.CANCELLED_BY_PATIENT) {
                 throw new RuntimeException(
-                        "Patients can only change status to BOOKED or CANCELLED. Use reschedule endpoint for rescheduling.");
+                        "Patients can only change status to BOOKED, CONFIRMED, or CANCELLED. Use reschedule endpoint for rescheduling.");
             }
 
             // Map generic CANCELLED to CANCELLED_BY_PATIENT for patients
@@ -838,41 +845,81 @@ public class AppointmentService {
         }
 
         Appointment.Status previousStatus = appointment.getStatus();
-        appointment.setChiefComplaint(request.getChiefComplaint());
-        appointment.setPreVisitSymptoms(request.getSymptoms());
+
+        // Create or update dedicated AppointmentIntake record
+        AppointmentIntake intake = appointmentIntakeRepository.findByAppointmentId(appointmentId)
+                .orElse(AppointmentIntake.builder().appointment(appointment).build());
+
+        intake.setChiefComplaint(request.getChiefComplaint());
+        intake.setSymptoms(request.getSymptoms());
+        // Generate Structured AI Intake Summary & Red Flags
+        com.vikrant.careSync.dto.AiIntakeSummaryDto structuredSummary = aiClinicalService
+                .generateStructuredIntakeSummary(
+                        request.getChiefComplaint(),
+                        request.getSymptoms(),
+                        request.getSymptomDuration(),
+                        request.getSeverity(),
+                        request.getCurrentMedications(),
+                        request.getAllergies());
+
+        intake.setChiefComplaint(request.getChiefComplaint());
+        intake.setSymptoms(request.getSymptoms());
+        intake.setSymptomDuration(request.getSymptomDuration());
+        intake.setSymptomSeverity(request.getSeverity());
+        intake.setCurrentMedications(request.getCurrentMedications());
+        intake.setAllergies(request.getAllergies());
+        intake.setConsentGiven(request.getConsentGiven());
+        intake.setAiSummary(structuredSummary.getSummaryText());
+        intake.setIntakeStatus("SUBMITTED");
+        intake.setIsConfirmedByPatient(false);
+        intake.setHasRedFlags(structuredSummary.isHasEmergencyFlags());
+        intake.setRedFlags(structuredSummary.getEmergencyMessage());
+
+        AppointmentIntake savedIntake = appointmentIntakeRepository.save(intake);
+
+        // Update Appointment status & readiness
         appointment.setIntakeCompleted(true);
+        appointment.setPatientReady(true);
 
-        // Generate AI pre-visit summary
-        String summary = aiClinicalService.generatePreVisitSummary(
-                request.getChiefComplaint(),
-                request.getSymptoms(),
-                request.getSymptomDuration(),
-                request.getCurrentMedications(),
-                request.getAllergies());
-        appointment.setPreVisitSummary(summary);
-
-        if (appointment.canChangeStatus(Appointment.Status.INTAKE_COMPLETED)) {
+        if (appointment.canChangeStatus(Appointment.Status.WAITING_ROOM)) {
+            appointment.changeStatus(Appointment.Status.WAITING_ROOM, "PATIENT_INTAKE");
+        } else if (appointment.canChangeStatus(Appointment.Status.INTAKE_COMPLETED)) {
             appointment.changeStatus(Appointment.Status.INTAKE_COMPLETED, "PATIENT_INTAKE");
         }
 
-        Appointment saved = appointmentRepository.save(appointment);
+        Appointment savedApt = appointmentRepository.save(appointment);
 
         // Record status log
         appointmentStatusLogRepository.save(AppointmentStatusLog.builder()
-                .appointmentId(saved.getId())
+                .appointmentId(savedApt.getId())
                 .previousStatus(previousStatus)
-                .newStatus(saved.getStatus())
+                .newStatus(savedApt.getStatus())
                 .changedBy("PATIENT")
-                .reason("Pre-visit digital intake submitted")
+                .reason("Pre-visit digital intake submitted - Patient moved to Waiting Room")
                 .build());
 
         return PreVisitIntakeResponse.builder()
-                .appointmentId(saved.getId())
-                .chiefComplaint(saved.getChiefComplaint())
-                .symptoms(saved.getPreVisitSymptoms())
-                .preVisitSummary(saved.getPreVisitSummary())
-                .intakeCompleted(saved.getIntakeCompleted())
-                .updatedAt(saved.getUpdatedAt())
+                .appointmentId(savedApt.getId())
+                .chiefComplaint(savedIntake.getChiefComplaint())
+                .symptoms(savedIntake.getSymptoms())
+                .symptomsSummary(savedIntake.getSymptoms())
+                .symptomDuration(savedIntake.getSymptomDuration())
+                .duration(savedIntake.getSymptomDuration())
+                .severity(savedIntake.getSymptomSeverity())
+                .currentMedications(savedIntake.getCurrentMedications())
+                .allergies(savedIntake.getAllergies())
+                .consentGiven(savedIntake.getConsentGiven())
+                .preVisitSummary(savedIntake.getAiSummary())
+                .aiTriageSummary(savedIntake.getAiSummary())
+                .intakeCompleted(savedApt.getIntakeCompleted())
+                .intakeStatus(savedIntake.getIntakeStatus())
+                .isConfirmedByPatient(savedIntake.getIsConfirmedByPatient())
+                .confirmedAt(savedIntake.getConfirmedAt())
+                .confirmedBy(savedIntake.getConfirmedBy())
+                .hasRedFlags(savedIntake.getHasRedFlags())
+                .redFlags(savedIntake.getRedFlags())
+                .editHistory(savedIntake.getEditHistory())
+                .updatedAt(savedIntake.getUpdatedAt())
                 .build();
     }
 
@@ -880,12 +927,44 @@ public class AppointmentService {
         Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
 
+        Optional<AppointmentIntake> intakeOpt = appointmentIntakeRepository.findByAppointmentId(appointmentId);
+
+        if (intakeOpt.isPresent()) {
+            AppointmentIntake intake = intakeOpt.get();
+            return PreVisitIntakeResponse.builder()
+                    .appointmentId(appointment.getId())
+                    .chiefComplaint(intake.getChiefComplaint())
+                    .symptoms(intake.getSymptoms())
+                    .symptomsSummary(intake.getSymptoms())
+                    .symptomDuration(intake.getSymptomDuration())
+                    .duration(intake.getSymptomDuration())
+                    .severity(intake.getSymptomSeverity())
+                    .currentMedications(intake.getCurrentMedications())
+                    .allergies(intake.getAllergies())
+                    .consentGiven(intake.getConsentGiven())
+                    .preVisitSummary(intake.getAiSummary())
+                    .aiTriageSummary(intake.getAiSummary())
+                    .intakeCompleted(appointment.getIntakeCompleted() != null && appointment.getIntakeCompleted())
+                    .intakeStatus(intake.getIntakeStatus())
+                    .isConfirmedByPatient(intake.getIsConfirmedByPatient())
+                    .confirmedAt(intake.getConfirmedAt())
+                    .confirmedBy(intake.getConfirmedBy())
+                    .hasRedFlags(intake.getHasRedFlags())
+                    .redFlags(intake.getRedFlags())
+                    .editHistory(intake.getEditHistory())
+                    .updatedAt(intake.getUpdatedAt())
+                    .build();
+        }
+
         return PreVisitIntakeResponse.builder()
                 .appointmentId(appointment.getId())
-                .chiefComplaint(appointment.getChiefComplaint())
-                .symptoms(appointment.getPreVisitSymptoms())
-                .preVisitSummary(appointment.getPreVisitSummary())
+                .chiefComplaint("None provided")
+                .symptoms("None specified")
+                .preVisitSummary("No pre-visit intake completed yet.")
+                .aiTriageSummary("No pre-visit intake completed yet.")
                 .intakeCompleted(appointment.getIntakeCompleted() != null && appointment.getIntakeCompleted())
+                .intakeStatus("EMPTY")
+                .isConfirmedByPatient(false)
                 .updatedAt(appointment.getUpdatedAt())
                 .build();
     }
@@ -902,7 +981,9 @@ public class AppointmentService {
         mh.setAppointmentId(appointmentId);
         mh.setPatient(appointment.getPatient());
         mh.setDoctor(appointment.getDoctor());
-        mh.setVisitDate(appointment.getAppointmentDateTime().toLocalDate());
+        mh.setVisitDate(appointment.getAppointmentDateTime() != null
+                ? appointment.getAppointmentDateTime().toLocalDate()
+                : LocalDate.now());
         mh.setSubjective(draftDto.getSubjective());
         mh.setObjective(draftDto.getObjective());
         mh.setAssessment(draftDto.getAssessment());
@@ -1182,5 +1263,151 @@ public class AppointmentService {
                 .createdAt(log.getCreatedAt())
                 .build())
                 .collect(java.util.stream.Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public com.vikrant.careSync.dto.CompletionPreviewDto getCompletionPreview(Long appointmentId) {
+        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
+                .orElseThrow(() -> new RuntimeException("Appointment not found with ID: " + appointmentId));
+
+        PreVisitIntakeResponse intake = getPreVisitIntakeSummary(appointmentId);
+        SoapReportDto soap = getSoapDraft(appointmentId);
+        MedicalHistory mh = medicalHistoryRepository.findByAppointmentId(appointmentId).orElse(null);
+
+        com.vikrant.careSync.dto.MedicalHistoryDto mhDto = mh != null
+                ? new com.vikrant.careSync.dto.MedicalHistoryDto(mh)
+                : null;
+
+        com.vikrant.careSync.dto.RecordReadinessDto readiness = recordReadinessService.checkReadiness(appointmentId);
+
+        String patientName = appointment.getPatient() != null
+                ? appointment.getPatient().getFirstName() + " " + appointment.getPatient().getLastName()
+                : "Patient";
+
+        return com.vikrant.careSync.dto.CompletionPreviewDto.builder()
+                .appointmentId(appointmentId)
+                .patientName(patientName)
+                .patientAge(appointment.getPatient() != null && appointment.getPatient().getDateOfBirth() != null
+                        ? java.time.Period.between(appointment.getPatient().getDateOfBirth(), LocalDate.now())
+                                .getYears()
+                        : null)
+                .patientGender(appointment.getPatient() != null ? appointment.getPatient().getGender() : null)
+                .intake(intake)
+                .soapReport(soap)
+                .medicalHistory(mhDto)
+                .isReadyForSign(readiness.isReady())
+                .readinessReasons(readiness.getReasons())
+                .build();
+    }
+
+    public com.vikrant.careSync.dto.ESignCompletionResponse eSignAndCompleteAppointment(Long appointmentId,
+            com.vikrant.careSync.dto.ESignCompletionRequest request, Long doctorId) {
+        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
+                .orElseThrow(() -> new RuntimeException("Appointment not found with ID: " + appointmentId));
+
+        if (!appointment.getDoctor().getId().equals(doctorId)) {
+            throw new RuntimeException("Unauthorized: Only the assigned doctor can sign off and complete this visit");
+        }
+
+        // 1. Password re-entry verification
+        Doctor doctor = appointment.getDoctor();
+        if (request.getPassword() == null
+                || !passwordEncoder.matches(request.getPassword(), doctor.getUser().getPassword())) {
+            throw new IllegalArgumentException("Invalid password. Electronic signature failed.");
+        }
+
+        if (!Boolean.TRUE.equals(request.getDeclarationAccepted())) {
+            throw new IllegalArgumentException("You must accept the legal e-signature declaration.");
+        }
+
+        // 2. Validate readiness
+        com.vikrant.careSync.dto.RecordReadinessDto readiness = recordReadinessService.checkReadiness(appointmentId);
+        if (!readiness.isReady()) {
+            throw new IllegalStateException("Cannot complete visit: " + String.join("; ", readiness.getReasons()));
+        }
+
+        MedicalHistory mh = medicalHistoryRepository.findByAppointmentId(appointmentId)
+                .orElseThrow(() -> new IllegalStateException("Medical History record not found for appointment"));
+
+        // 3. Compute SHA-256 Hash of clinical record
+        String contentHash = computeClinicalRecordHash(mh);
+
+        // 4. Save AppointmentSignature
+        com.vikrant.careSync.entity.AppointmentSignature signature = appointmentSignatureRepository
+                .findByAppointmentId(appointmentId)
+                .orElse(com.vikrant.careSync.entity.AppointmentSignature.builder().appointmentId(appointmentId)
+                        .build());
+
+        signature.setDoctorId(doctorId);
+        signature.setSignedAt(LocalDateTime.now());
+        signature.setSignedByName(request.getDoctorNameTyped());
+        signature.setDoctorRegNumber(
+                doctor.getSpecialization() != null ? doctor.getSpecialization() : "REG-DOCTOR-" + doctorId);
+        signature.setAuthMethod("PASSWORD_REENTRY");
+        signature.setContentHash(contentHash);
+        signature.setSignatureImageUrl(request.getSignatureImageUrl());
+        appointmentSignatureRepository.save(signature);
+
+        // 5. Lock MedicalHistory
+        mh.setIsDraft(false);
+        mh.setIsSigned(true);
+        mh.setSignedAt(LocalDateTime.now());
+        medicalHistoryRepository.save(mh);
+
+        // 6. Transition Appointment status to COMPLETED
+        Appointment.Status previousStatus = appointment.getStatus();
+        appointment.setVisitEndedAt(LocalDateTime.now());
+        appointment.changeStatus(Appointment.Status.COMPLETED, "DOCTOR_E_SIGN");
+        appointmentRepository.save(appointment);
+
+        appointmentStatusLogRepository.save(AppointmentStatusLog.builder()
+                .appointmentId(appointment.getId())
+                .previousStatus(previousStatus)
+                .newStatus(Appointment.Status.COMPLETED)
+                .changedBy(doctor.getUsername())
+                .reason("Visit electronically signed and completed by Dr. " + request.getDoctorNameTyped())
+                .build());
+
+        // 7. Publish Event & Notifications
+        eventPublisher.publishEvent(new MedicalReportSignedEvent(this, appointment.getId(), mh.getId(),
+                doctor.getId(), appointment.getPatient().getId()));
+
+        afterCommitTaskDispatcher.submitAfterCommit("appointment completion " + appointment.getId(),
+                () -> notificationService.sendAppointmentCompleted(appointment.getId()));
+
+        String pdfUrl = "/api/appointments/" + appointmentId + "/download-prescription";
+
+        return com.vikrant.careSync.dto.ESignCompletionResponse.builder()
+                .appointmentId(appointmentId)
+                .status(Appointment.Status.COMPLETED)
+                .signedAt(mh.getSignedAt())
+                .signedByName(request.getDoctorNameTyped())
+                .contentHash(contentHash)
+                .pdfUrl(pdfUrl)
+                .message("Visit successfully electronically signed and completed.")
+                .build();
+    }
+
+    private String computeClinicalRecordHash(MedicalHistory mh) {
+        try {
+            String raw = String.format("APP:%s|DOC:%s|PAT:%s|S:%s|O:%s|A:%s|P:%s|DIAG:%s|TREAT:%s",
+                    mh.getAppointmentId(),
+                    mh.getDoctor() != null ? mh.getDoctor().getId() : "",
+                    mh.getPatient() != null ? mh.getPatient().getId() : "",
+                    mh.getSubjective(), mh.getObjective(), mh.getAssessment(), mh.getPlan(),
+                    mh.getDiagnosis(), mh.getTreatment());
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hashBytes = digest.digest(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : hashBytes) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1)
+                    hexString.append('0');
+                hexString.append(hex);
+            }
+            return hexString.toString();
+        } catch (Exception e) {
+            return "SHA256_HASH_ERROR_" + System.currentTimeMillis();
+        }
     }
 }

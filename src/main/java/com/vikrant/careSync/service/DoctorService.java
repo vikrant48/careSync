@@ -17,7 +17,6 @@ import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -37,7 +36,6 @@ public class DoctorService {
     private final EducationRepository educationRepository;
     private final CertificateRepository certificateRepository;
     private final FeedbackRepository feedbackRepository;
-    private final FeedbackService feedbackService;
     private final CacheManager cacheManager;
 
     public AdminDoctorPagedResponse getAdminDoctorList(int page, int size, String search, Boolean isVerified) {
@@ -164,13 +162,6 @@ public class DoctorService {
         }
 
         return percentage;
-    }
-
-    private int calculateCompletionPercentage(Doctor doctor) {
-        return calculateCompletionPercentageFast(
-                doctor,
-                !experienceRepository.findByDoctorId(doctor.getId()).isEmpty(),
-                !educationRepository.findByDoctorId(doctor.getId()).isEmpty());
     }
 
     public List<Doctor> getAllDoctors() {

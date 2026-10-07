@@ -15,6 +15,8 @@ public interface MedicalHistoryRepository extends JpaRepository<MedicalHistory, 
 
     Optional<MedicalHistory> findByAppointmentId(Long appointmentId);
 
+    List<MedicalHistory> findAllByAppointmentId(Long appointmentId);
+
     @Query("SELECT mh FROM MedicalHistory mh WHERE mh.patient.id = :patientId ORDER BY mh.visitDate DESC")
     List<MedicalHistory> findByPatientIdOrderByVisitDateDesc(@Param("patientId") Long patientId);
 
