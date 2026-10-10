@@ -7,6 +7,8 @@ import com.vikrant.careSync.dto.DiagnosisRequest;
 import com.vikrant.careSync.dto.DiagnosisSuggestionDto;
 import com.vikrant.careSync.dto.VisionScanResponse;
 import com.vikrant.careSync.dto.ClinicalDictationResponse;
+import com.vikrant.careSync.dto.AiIntakeDraftRequest;
+import com.vikrant.careSync.dto.AiIntakeDraftResponse;
 import com.vikrant.careSync.service.AiService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -89,5 +91,12 @@ public class AiController {
             @RequestBody Map<String, String> body) {
         String transcript = body != null ? body.get("transcript") : null;
         return ResponseEntity.ok(aiService.structureClinicalDictation(transcript));
+    }
+
+    @PostMapping("/draft-intake")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<AiIntakeDraftResponse> draftIntake(
+            @Valid @RequestBody AiIntakeDraftRequest request) {
+        return ResponseEntity.ok(aiService.draftIntake(request.getNarrative()));
     }
 }

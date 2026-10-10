@@ -3,6 +3,8 @@ package com.vikrant.careSync.dto;
 import com.vikrant.careSync.entity.Doctor;
 import lombok.*;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.math.*;
@@ -23,8 +25,12 @@ public class DoctorDto {
     private String specialization;
     private String profileImageUrl;
     private String contactInfo;
+    private String alternateContactInfo;
+    private LocalDate dateOfBirth;
     private Boolean isActive;
     private String gender;
+    private String licenseNumber;
+    private String bio;
     private BigDecimal consultationFees;
     private String address;
     private List<String> languages;
@@ -35,6 +41,8 @@ public class DoctorDto {
     private Long reviewCount;
     private Boolean isVerified;
     private int completionPercentage;
+    private LocalDateTime createdAt;
+    private LocalDateTime lastLogin;
 
     public DoctorDto(Doctor doctor) {
         this(doctor, true);
@@ -51,7 +59,13 @@ public class DoctorDto {
         this.specialization = doctor.getSpecialization();
         this.profileImageUrl = doctor.getProfileImageUrl();
         this.contactInfo = doctor.getContactInfo();
+        this.alternateContactInfo = doctor.getAlternateContactInfo();
+        this.dateOfBirth = doctor.getDateOfBirth();
+        this.licenseNumber = doctor.getLicenseNumber();
+        this.bio = doctor.getBio();
         this.isActive = doctor.getIsActive();
+        this.createdAt = doctor.getCreatedAt();
+        this.lastLogin = doctor.getLastLogin();
         this.isVerified = doctor.getIsVerified() != null && doctor.getIsVerified();
         this.gender = doctor.getGender();
         this.consultationFees = doctor.getConsultationFees();

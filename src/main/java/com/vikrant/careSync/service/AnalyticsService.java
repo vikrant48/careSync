@@ -218,24 +218,25 @@ public class AnalyticsService {
 
                 List<Appointment> appointments = appointmentService.getAppointmentsByDoctor(doctorId);
 
-                // Age distribution
-                Map<String, Long> ageGroups = appointments.stream()
-                                .map(appointment -> appointment.getPatient())
-                                .distinct()
+                Map<Long, Patient> uniquePatients = new LinkedHashMap<>();
+                for (Appointment appointment : appointments) {
+                        Patient patient = appointment.getPatient();
+                        if (patient == null || patient.getId() == null) {
+                                continue;
+                        }
+                        uniquePatients.putIfAbsent(patient.getId(), patient);
+                }
+
+                Map<String, Long> ageGroups = uniquePatients.values().stream()
                                 .collect(Collectors.groupingBy(
                                                 patient -> getAgeGroup(patient.getDateOfBirth()),
                                                 Collectors.counting()));
 
-                // Gender distribution (if implemented)
                 Map<String, Long> genderDistribution = new HashMap<>();
-                // This would be implemented when gender field is added to Patient entity
 
                 analysis.put("ageGroups", ageGroups);
                 analysis.put("genderDistribution", genderDistribution);
-                analysis.put("totalUniquePatients", appointments.stream()
-                                .map(appointment -> appointment.getPatient().getId())
-                                .distinct()
-                                .count());
+                analysis.put("totalUniquePatients", (long) uniquePatients.size());
 
                 return analysis;
         }
@@ -249,8 +250,22 @@ public class AnalyticsService {
                                 doctorId, startDate.atStartOfDay(), endDate.atTime(23, 59, 59));
 
                 List<Appointment> cancelledAppointments = appointments.stream()
-                                .filter(appointment -> appointment.getStatus() == Appointment.Status.CANCELLED)
+                                .filter(appointment -> isCancelledStatus(appointment.getStatus()))
                                 .collect(Collectors.toList());
+
+                long patientCancelled = appointments.stream()
+                                .filter(appointment -> appointment.getStatus() == Appointment.Status.CANCELLED_BY_PATIENT)
+                                .count();
+                long doctorCancelled = appointments.stream()
+                                .filter(appointment -> appointment.getStatus() == Appointment.Status.CANCELLED_BY_DOCTOR)
+                                .count();
+                long otherCancelled = appointments.stream()
+                                .filter(appointment -> appointment.getStatus() == Appointment.Status.CANCELLED)
+                                .count();
+                long rescheduled = appointments.stream()
+                                .filter(appointment -> appointment.getRescheduleCount() != null
+                                                && appointment.getRescheduleCount() > 0)
+                                .count();
 
                 // Analyze cancellation timing
                 Map<String, Long> cancellationTiming = cancelledAppointments.stream()
@@ -266,6 +281,10 @@ public class AnalyticsService {
                                                 Collectors.counting()));
 
                 analysis.put("totalCancellations", cancelledAppointments.size());
+                analysis.put("patientCancelled", patientCancelled);
+                analysis.put("doctorCancelled", doctorCancelled);
+                analysis.put("otherCancelled", otherCancelled);
+                analysis.put("rescheduled", rescheduled);
                 analysis.put("cancellationRate",
                                 appointments.size() > 0
                                                 ? (double) cancelledAppointments.size() / appointments.size() * 100
@@ -291,7 +310,16 @@ public class AnalyticsService {
                                 .count();
         }
 
+        private boolean isCancelledStatus(Appointment.Status status) {
+                return status == Appointment.Status.CANCELLED
+                                || status == Appointment.Status.CANCELLED_BY_PATIENT
+                                || status == Appointment.Status.CANCELLED_BY_DOCTOR;
+        }
+
         private String getAgeGroup(LocalDate dateOfBirth) {
+                if (dateOfBirth == null) {
+                        return "Unknown";
+                }
                 long age = java.time.temporal.ChronoUnit.YEARS.between(dateOfBirth, LocalDate.now());
 
                 if (age < 18)

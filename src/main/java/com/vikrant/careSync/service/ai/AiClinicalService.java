@@ -2,6 +2,7 @@ package com.vikrant.careSync.service.ai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vikrant.careSync.dto.DiagnosisSuggestionDto;
+import com.vikrant.careSync.dto.AiIntakeDraftResponse;
 import com.vikrant.careSync.dto.MedicalSummaryResponse;
 import com.vikrant.careSync.dto.SoapReportDto;
 import com.vikrant.careSync.entity.Appointment;
@@ -229,6 +230,138 @@ public class AiClinicalService {
             return text.substring(start, end + 1);
         }
         return text.trim();
+    }
+
+    public AiIntakeDraftResponse draftIntakeFromNarrative(String narrative) {
+        String cleanNarrative = narrative == null ? "" : narrative.trim();
+        if (cleanNarrative.length() < 5) {
+            throw new IllegalArgumentException("Please describe the health concern in at least 5 characters.");
+        }
+
+        String lower = cleanNarrative.toLowerCase();
+        boolean emergency = lower.contains("chest pain") || lower.contains("difficulty breathing")
+                || lower.contains("shortness of breath") || lower.contains("stroke")
+                || lower.contains("loss of consciousness") || lower.contains("unconscious")
+                || lower.contains("severe bleeding");
+        List<String> deterministicFlags = emergency
+                ? List.of("Potential emergency symptoms were reported. Seek urgent medical care if symptoms are severe or worsening.")
+                : List.of();
+
+        String systemPrompt = "You convert a patient's own words into a pre-visit intake DRAFT. "
+                + "Extract only facts explicitly stated by the patient. Do not diagnose, prescribe, or infer missing facts. "
+                + "Use an empty string or empty array when information was not stated. "
+                + "Duration must be one of: Today / Under 24h, 1-3 Days, 4-7 Days, 1-2 Weeks, Chronic (>1 Month), or empty. "
+                + "Severity must be Mild, Moderate, Severe, or empty. "
+                + "Return strict JSON: {\"chiefComplaint\":\"\",\"symptoms\":[],\"duration\":\"\",\"severity\":\"\","
+                + "\"currentMedications\":\"\",\"allergies\":\"\",\"redFlags\":[]}.";
+
+        String raw = null;
+        if (groqClient != null && groqClient.isConfigured()) {
+            try {
+                raw = groqClient.callGroq(systemPrompt, cleanNarrative, true);
+            } catch (Exception e) {
+                log.warn("Groq intake drafting failed: {}", e.getMessage());
+            }
+        }
+        if ((raw == null || raw.isBlank()) && geminiClient != null && geminiClient.isConfigured()) {
+            try {
+                raw = geminiClient.generateContent(systemPrompt + "\n\nPatient narrative:\n" + cleanNarrative);
+            } catch (Exception e) {
+                log.warn("Gemini intake drafting failed: {}", e.getMessage());
+            }
+        }
+
+        AiIntakeDraftResponse.AiIntakeDraftResponseBuilder response = AiIntakeDraftResponse.builder()
+                .chiefComplaint(cleanNarrative)
+                .symptoms(List.of())
+                .duration("")
+                .severity("")
+                .currentMedications("")
+                .allergies("")
+                .redFlags(deterministicFlags)
+                .hasEmergencyFlags(emergency)
+                .emergencyMessage(emergency
+                        ? "Your description may include emergency warning signs. If symptoms are severe or worsening, seek emergency care now."
+                        : null);
+
+        if (raw != null && !raw.isBlank()) {
+            try {
+                com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(extractJson(raw));
+                response.chiefComplaint(textOrEmpty(node, "chiefComplaint"))
+                        .symptoms(stringList(node, "symptoms"))
+                        .duration(allowedDuration(textOrEmpty(node, "duration")))
+                        .severity(allowedSeverity(textOrEmpty(node, "severity")))
+                        .currentMedications(textOrEmpty(node, "currentMedications"))
+                        .allergies(textOrEmpty(node, "allergies"));
+                List<String> modelFlags = stringList(node, "redFlags");
+                if (!modelFlags.isEmpty() && !emergency) {
+                    response.redFlags(modelFlags);
+                }
+            } catch (Exception e) {
+                log.warn("Could not parse intake draft JSON; using patient narrative fallback: {}", e.getMessage());
+            }
+        }
+        return response.build();
+    }
+
+    private String textOrEmpty(com.fasterxml.jackson.databind.JsonNode node, String field) {
+        return node != null && node.hasNonNull(field) ? node.get(field).asText("").trim() : "";
+    }
+
+    private List<String> stringList(com.fasterxml.jackson.databind.JsonNode node, String field) {
+        if (node == null || !node.has(field) || !node.get(field).isArray()) {
+            return List.of();
+        }
+        java.util.ArrayList<String> values = new java.util.ArrayList<>();
+        node.get(field).forEach(item -> {
+            String value = item.asText("").trim();
+            if (!value.isEmpty()) values.add(value);
+        });
+        return values;
+    }
+
+    private String allowedDuration(String value) {
+        return List.of("Today / Under 24h", "1-3 Days", "4-7 Days", "1-2 Weeks", "Chronic (>1 Month)")
+                .contains(value) ? value : "";
+    }
+
+    private String allowedSeverity(String value) {
+        return List.of("Mild", "Moderate", "Severe").contains(value) ? value : "";
+    }
+
+    public String generatePlainLanguageVisitSummary(String doctorName, String subjective, String assessment,
+            String plan, String diagnosis, String medicine) {
+        String recordedFacts = "Doctor: " + (doctorName == null || doctorName.isBlank() ? "Not recorded" : doctorName)
+                + "\nWhat was discussed: " + blankAsNotRecorded(subjective)
+                + "\nAssessment recorded: " + blankAsNotRecorded(assessment)
+                + "\nDiagnosis recorded: " + blankAsNotRecorded(diagnosis)
+                + "\nPlan recorded: " + blankAsNotRecorded(plan)
+                + "\nMedicines recorded: " + blankAsNotRecorded(medicine);
+        String fallback = "Visit summary\n\n" + recordedFacts
+                + "\n\nThis summary uses only information recorded for the visit.";
+        String systemPrompt = "Rewrite the recorded visit facts in plain language for the patient. "
+                + "Use only the supplied facts. Do not add a diagnosis, medicine, dose, or instruction that is not recorded. "
+                + "If a field says Not recorded, say that it was not recorded. Keep it under 160 words.";
+        String generated = null;
+        if (groqClient != null && groqClient.isConfigured()) {
+            try {
+                generated = groqClient.callGroq(systemPrompt, recordedFacts, false);
+            } catch (Exception e) {
+                log.warn("Groq visit summary failed: {}", e.getMessage());
+            }
+        }
+        if ((generated == null || generated.isBlank()) && geminiClient != null && geminiClient.isConfigured()) {
+            try {
+                generated = geminiClient.generateContent(systemPrompt + "\n\n" + recordedFacts);
+            } catch (Exception e) {
+                log.warn("Gemini visit summary failed: {}", e.getMessage());
+            }
+        }
+        return generated == null || generated.isBlank() ? fallback : generated.trim();
+    }
+
+    private String blankAsNotRecorded(String value) {
+        return value == null || value.isBlank() ? "Not recorded" : value.trim();
     }
 
     public com.vikrant.careSync.dto.AiIntakeSummaryDto generateStructuredIntakeSummary(String chiefComplaint,

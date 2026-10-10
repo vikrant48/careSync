@@ -280,6 +280,9 @@ public class ReportingService {
     }
 
     private String getAgeGroup(LocalDate dateOfBirth) {
+        if (dateOfBirth == null) {
+            return "Unknown";
+        }
         long age = java.time.temporal.ChronoUnit.YEARS.between(dateOfBirth, LocalDate.now());
 
         if (age < 18)

@@ -1,5 +1,6 @@
 package com.vikrant.careSync.dto;
 
+import com.vikrant.careSync.entity.Appointment;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Future;
 import lombok.Getter;
@@ -18,4 +19,6 @@ public class CreateAppointmentRequest {
     public LocalDateTime appointmentDateTime;
 
     public String reason;
+
+    public Appointment.BookingSource bookingSource;
 }

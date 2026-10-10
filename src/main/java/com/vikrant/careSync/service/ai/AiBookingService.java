@@ -18,6 +18,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -67,7 +68,10 @@ public class AiBookingService {
         String reason = parts.length > 1 ? parts[1] : "AI Assisted Booking";
 
         List<Doctor> doctors = doctorRepository.findAllWithUser().stream()
-                .filter(d -> spec.equalsIgnoreCase(d.getSpecialization())).collect(Collectors.toList());
+                .filter(Doctor::canAcceptAppointments)
+                .filter(d -> spec.equalsIgnoreCase(d.getSpecialization()))
+                .limit(3)
+                .collect(Collectors.toList());
         List<AiBookingSuggestion.DoctorSuggestion> suggestions = doctors.stream()
                 .map(this::mapToDoctorSuggestion).collect(Collectors.toList());
         return AiChatResponse.builder()
@@ -173,6 +177,7 @@ public class AiBookingService {
             AiBookingSuggestion.AiBookingSuggestionBuilder suggestionBuilder = AiBookingSuggestion.builder()
                     .type(AiBookingSuggestion.SuggestionType.CONFIRM)
                     .doctorId(d.getId()).doctorName(d.getName()).date(date)
+                    .specialization(d.getSpecialization())
                     .slot(slot).consultationFee(d.getConsultationFees()).reason(reason);
 
             if (reason.startsWith("RESCHEDULE:")) {
@@ -279,17 +284,40 @@ public class AiBookingService {
 
         if (!validSpecs.isEmpty()) {
             List<Doctor> doctors = doctorRepository.findAllWithUser().stream()
+                    .filter(Doctor::canAcceptAppointments)
                     .filter(d -> validSpecs.stream()
                             .anyMatch(spec -> spec.equalsIgnoreCase(d.getSpecialization())))
                     .collect(Collectors.toList());
 
             if (!doctors.isEmpty()) {
+                List<AiBookingSuggestion.DoctorSuggestion> availableDoctors = new ArrayList<>();
+                for (Doctor doctor : doctors) {
+                    AiBookingSuggestion.DoctorSuggestion suggestion = mapToDoctorSuggestionWithFirstSlot(doctor);
+                    if (suggestion.getRecommendedSlot() != null) {
+                        availableDoctors.add(suggestion);
+                    }
+                    if (availableDoctors.size() == 3) {
+                        break;
+                    }
+                }
+                if (availableDoctors.isEmpty()) {
+                    return AiChatResponse.builder()
+                            .response(cleanResponse
+                                    + "\n\nNo matching doctor has an open slot in the next 14 days. Please choose another specialization.")
+                            .success(true)
+                            .suggestion(AiBookingSuggestion.builder()
+                                    .type(AiBookingSuggestion.SuggestionType.SPECIALIZATIONS)
+                                    .specializations(validSpecs)
+                                    .reason(initialReason)
+                                    .build())
+                            .build();
+                }
                 return AiChatResponse.builder()
                         .response(cleanResponse)
                         .success(true)
                         .suggestion(AiBookingSuggestion.builder()
                                 .type(AiBookingSuggestion.SuggestionType.DOCTORS)
-                                .doctors(doctors.stream().map(this::mapToDoctorSuggestion).collect(Collectors.toList()))
+                                .doctors(availableDoctors)
                                 .reason(initialReason)
                                 .build())
                         .build();
@@ -382,6 +410,34 @@ public class AiBookingService {
                 .build();
     }
 
+    public AiBookingSuggestion.DoctorSuggestion findNextBookableDoctor(String specialization, Long preferredDoctorId,
+            boolean allowPreferred) {
+        List<Doctor> doctors = doctorRepository.findAllWithUser().stream()
+                .filter(Doctor::canAcceptAppointments)
+                .filter(doctor -> specialization != null && specialization.equalsIgnoreCase(doctor.getSpecialization()))
+                .collect(Collectors.toList());
+        if (allowPreferred && preferredDoctorId != null) {
+            for (Doctor doctor : doctors) {
+                if (doctor.getId().equals(preferredDoctorId)) {
+                    AiBookingSuggestion.DoctorSuggestion preferred = mapToDoctorSuggestionWithFirstSlot(doctor);
+                    if (preferred.getRecommendedSlot() != null) {
+                        return preferred;
+                    }
+                }
+            }
+        }
+        for (Doctor doctor : doctors) {
+            if (preferredDoctorId != null && doctor.getId().equals(preferredDoctorId)) {
+                continue;
+            }
+            AiBookingSuggestion.DoctorSuggestion suggestion = mapToDoctorSuggestionWithFirstSlot(doctor);
+            if (suggestion.getRecommendedSlot() != null) {
+                return suggestion;
+            }
+        }
+        return null;
+    }
+
     public AiBookingSuggestion.DoctorSuggestion mapToDoctorSuggestion(Doctor d) {
         int totalExp = d.getExperiences() != null ? d.getExperiences().stream()
                 .mapToInt(Experience::getYearsOfService).sum() : 0;
@@ -393,5 +449,24 @@ public class AiBookingService {
                 .leaveMessage(onLeave ? "Away" : null)
                 .isVerified(d.getIsVerified() != null && d.getIsVerified())
                 .build();
+    }
+
+    private AiBookingSuggestion.DoctorSuggestion mapToDoctorSuggestionWithFirstSlot(Doctor doctor) {
+        AiBookingSuggestion.DoctorSuggestion suggestion = mapToDoctorSuggestion(doctor);
+        for (int dayOffset = 0; dayOffset < 14; dayOffset++) {
+            LocalDate date = LocalDate.now().plusDays(dayOffset);
+            try {
+                SlotAvailabilityResponse availability = appointmentService.getAvailableSlots(
+                        doctor.getId(), date.toString());
+                if (availability.getAvailableSlots() != null && !availability.getAvailableSlots().isEmpty()) {
+                    suggestion.setRecommendedDate(date.toString());
+                    suggestion.setRecommendedSlot(availability.getAvailableSlots().get(0));
+                    break;
+                }
+            } catch (Exception ignored) {
+                // Try the next date; inactive and leave checks are enforced by the service.
+            }
+        }
+        return suggestion;
     }
 }

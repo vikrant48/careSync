@@ -17,6 +17,15 @@ public class SchemaMigrationRunner implements CommandLineRunner {
     public void run(String... args) throws Exception {
         System.out.println("Running Schema Fix for Appointment Status & Logs Constraints...");
         try {
+            jdbcTemplate.execute(
+                    "ALTER TABLE appointments ADD COLUMN IF NOT EXISTS booking_source VARCHAR(20) NOT NULL DEFAULT 'MANUAL'");
+            jdbcTemplate.execute(
+                    "ALTER TABLE doctors ADD COLUMN IF NOT EXISTS alternate_contact_info VARCHAR(100)");
+            jdbcTemplate.execute(
+                    "ALTER TABLE doctors ADD COLUMN IF NOT EXISTS license_number VARCHAR(100)");
+            jdbcTemplate.execute(
+                    "ALTER TABLE doctors ADD COLUMN IF NOT EXISTS bio VARCHAR(1000)");
+
             // Drop old constraints from appointments and appointment_status_logs
             jdbcTemplate.execute("ALTER TABLE appointments DROP CONSTRAINT IF EXISTS appointments_status_check");
             jdbcTemplate.execute(
@@ -124,7 +133,7 @@ public class SchemaMigrationRunner implements CommandLineRunner {
             jdbcTemplate.execute("ALTER TABLE medical_histories ADD COLUMN IF NOT EXISTS appointment_id BIGINT");
 
             System.out.println(
-                    "Schema Fix Completed: Appointment status constraints, appointment_intakes table, medical_histories schema verified, and legacy columns dropped.");
+                    "Schema Fix Completed: Appointment booking source/status constraints, appointment_intakes table, medical_histories schema verified, and legacy columns dropped.");
         } catch (Exception e) {
             System.err.println("Schema Fix Warning: " + e.getMessage());
         }

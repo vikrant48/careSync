@@ -40,6 +40,11 @@ public class Appointment {
     @Column(length = 500)
     private String reason;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "booking_source", nullable = false, length = 20)
+    @Builder.Default
+    private BookingSource bookingSource = BookingSource.MANUAL;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -128,12 +133,21 @@ public class Appointment {
         AUTO_CLOSED
     }
 
+    public enum BookingSource {
+        MANUAL,
+        AI_ASSISTED,
+        EMERGENCY
+    }
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
         if (status == null) {
             status = Status.BOOKED;
+        }
+        if (bookingSource == null) {
+            bookingSource = BookingSource.MANUAL;
         }
         if (videoRoomId == null) {
             videoRoomId = java.util.UUID.randomUUID().toString();

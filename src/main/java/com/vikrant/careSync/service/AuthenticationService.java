@@ -223,6 +223,12 @@ public class AuthenticationService implements IAuthenticationService {
             throw new RuntimeException("Account is temporarily locked due to too many failed attempts");
         }
 
+        User account = userRepository.findByUsername(request.getUsername()).orElse(null);
+        if (account != null && !Boolean.TRUE.equals(account.getIsActive())) {
+            securityService.recordLoginAttempt(request.getUsername(), ipAddress, false, userAgent);
+            throw new RuntimeException("Your account is inactive. Please contact an administrator.");
+        }
+
         try {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword()));
@@ -242,6 +248,9 @@ public class AuthenticationService implements IAuthenticationService {
             return generateAuthResponse(user.getUsername(), roleStr,
                     "Login successful as " + roleStr + ".", ipAddress, userAgent);
 
+        } catch (org.springframework.security.authentication.DisabledException e) {
+            securityService.recordLoginAttempt(request.getUsername(), ipAddress, false, userAgent);
+            throw new RuntimeException("Your account is inactive. Please contact an administrator.");
         } catch (Exception e) {
             // Record failed login attempt
             securityService.recordLoginAttempt(request.getUsername(), ipAddress, false, userAgent);

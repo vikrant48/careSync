@@ -342,15 +342,21 @@ public class AuthController {
 
     // Helper method to load user details for JWT generation
     private UserDetails loadUserDetails(String username, String userType) {
+        var account = userService.getUserByUsername(username);
+        if (account == null) {
+            throw new RuntimeException("User not found");
+        }
+        if (!Boolean.TRUE.equals(account.getIsActive())) {
+            throw new RuntimeException("Your account is inactive. Please contact an administrator.");
+        }
+
         if (AppConstants.Roles.DOCTOR.equals(userType)) {
-            var doctor = userService.getUserByUsername(username);
             return org.springframework.security.core.userdetails.User.builder()
                     .username(username)
                     .password("") // Password not needed for token generation
                     .authorities(AppConstants.Roles.ROLE_DOCTOR)
                     .build();
         } else if (AppConstants.Roles.PATIENT.equals(userType)) {
-            var patient = userService.getUserByUsername(username);
             return org.springframework.security.core.userdetails.User.builder()
                     .username(username)
                     .password("") // Password not needed for token generation

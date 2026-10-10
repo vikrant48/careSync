@@ -58,7 +58,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 log.debug("Loaded user details for: {}", userDetails.getUsername());
                 log.debug("User authorities: {}", userDetails.getAuthorities());
 
-                if (jwtService.isTokenValid(jwt, userDetails)) {
+                if (userDetails.isEnabled() && jwtService.isTokenValid(jwt, userDetails)) {
                     log.debug("JWT token is valid");
                     UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                             userDetails,
@@ -79,6 +79,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     } catch (Exception e) {
                         log.warn("Error updating session activity: {}", e.getMessage());
                     }
+                } else if (!userDetails.isEnabled()) {
+                    log.warn("Inactive user attempted to use an existing token: {}", username);
                 } else {
                     log.warn("JWT token is invalid");
                 }

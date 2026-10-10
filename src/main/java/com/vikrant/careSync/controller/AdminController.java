@@ -4,14 +4,18 @@ import com.vikrant.careSync.security.service.SecurityService;
 import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Patient;
 import com.vikrant.careSync.entity.User;
+import com.vikrant.careSync.entity.Certificate;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.PatientRepository;
 import com.vikrant.careSync.repository.UserRepository;
+import com.vikrant.careSync.repository.CertificateRepository;
+import com.vikrant.careSync.service.AiService;
 import com.vikrant.careSync.dto.*;
 import com.vikrant.careSync.service.DoctorService;
 import com.vikrant.careSync.security.service.RefreshTokenService;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.security.access.prepost.PreAuthorize;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
@@ -37,6 +41,8 @@ public class AdminController {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenService refreshTokenService;
+    private final CertificateRepository certificateRepository;
+    private final AiService aiService;
     private final DoctorService doctorService;
 
     @GetMapping("/users")
@@ -64,6 +70,9 @@ public class AdminController {
     }
 
     @PutMapping("/users/{username}/toggle-active")
+    @CacheEvict(value = { "doctorListing", "DOCTOR:PROFILE", "DOCTOR:PAGINATED_LIST",
+            "PATIENT:PROFILE", "PATIENT:PAGINATED_LIST", "PATIENT:APPOINTMENTS",
+            "DOCTOR:APPOINTMENTS", "PATIENT:COMPLETE_DATA" }, allEntries = true)
     public ResponseEntity<Map<String, Object>> toggleUserActiveStatus(@PathVariable String username) {
         Optional<User> userOpt = userRepository.findByUsername(username);
         if (userOpt.isEmpty()) {
@@ -86,6 +95,10 @@ public class AdminController {
             patient.setIsActive(newStatus);
             patientRepository.save(patient);
         });
+        if (!newStatus) {
+            securityService.deactivateAllUserSessions(username);
+            refreshTokenService.deleteByUsername(username);
+        }
 
         Map<String, Object> response = new HashMap<>();
         response.put("message", "User " + username + " is now " + (newStatus ? "ACTIVE" : "INACTIVE"));
@@ -95,6 +108,9 @@ public class AdminController {
     }
 
     @PutMapping("/users/{username}/status")
+    @CacheEvict(value = { "doctorListing", "DOCTOR:PROFILE", "DOCTOR:PAGINATED_LIST",
+            "PATIENT:PROFILE", "PATIENT:PAGINATED_LIST", "PATIENT:APPOINTMENTS",
+            "DOCTOR:APPOINTMENTS", "PATIENT:COMPLETE_DATA" }, allEntries = true)
     public ResponseEntity<Map<String, Object>> setUserActiveStatus(@PathVariable String username,
             @RequestParam("active") boolean active) {
         Optional<User> userOpt = userRepository.findByUsername(username);
@@ -116,6 +132,10 @@ public class AdminController {
             patient.setIsActive(active);
             patientRepository.save(patient);
         });
+        if (!active) {
+            securityService.deactivateAllUserSessions(username);
+            refreshTokenService.deleteByUsername(username);
+        }
 
         Map<String, Object> response = new HashMap<>();
         response.put("message", "User " + username + " active status set to " + active);
@@ -144,6 +164,18 @@ public class AdminController {
         response.put("doctorId", doctorId);
         response.put("isVerified", verify);
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/doctors/{doctorId}/certificates/{certificateId}/review")
+    public ResponseEntity<?> reviewCertificate(@PathVariable Long doctorId, @PathVariable Long certificateId) {
+        Doctor doctor = doctorRepository.findById(doctorId)
+                .orElseThrow(() -> new RuntimeException("Doctor not found"));
+        Certificate certificate = certificateRepository.findById(certificateId)
+                .orElseThrow(() -> new RuntimeException("Certificate not found"));
+        if (certificate.getDoctor() == null || !doctorId.equals(certificate.getDoctor().getId())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Certificate does not belong to this doctor"));
+        }
+        return ResponseEntity.ok(aiService.reviewCertificate(doctor, certificate));
     }
 
     @PostMapping("/doctors/{doctorId}/verify")
@@ -221,6 +253,8 @@ public class AdminController {
     }
 
     @PostMapping("/block-doctor/{doctorId}")
+    @CacheEvict(value = { "doctorListing", "DOCTOR:PROFILE", "DOCTOR:PAGINATED_LIST",
+            "PATIENT:APPOINTMENTS", "DOCTOR:APPOINTMENTS" }, allEntries = true)
     public ResponseEntity<Map<String, String>> blockDoctor(@PathVariable Long doctorId,
             @RequestParam(required = false) String reason) {
         try {
@@ -234,6 +268,8 @@ public class AdminController {
             Doctor doctor = doctorOpt.get();
             doctor.setIsActive(false);
             doctorRepository.save(doctor);
+            securityService.deactivateAllUserSessions(doctor.getUsername());
+            refreshTokenService.deleteByUsername(doctor.getUsername());
 
             Map<String, String> response = new HashMap<>();
             response.put("message", "Doctor " + doctor.getUsername() + " has been blocked");
@@ -247,6 +283,8 @@ public class AdminController {
     }
 
     @PostMapping("/block-patient/{patientId}")
+    @CacheEvict(value = { "PATIENT:PROFILE", "PATIENT:PAGINATED_LIST", "PATIENT:APPOINTMENTS",
+            "DOCTOR:APPOINTMENTS", "PATIENT:COMPLETE_DATA" }, allEntries = true)
     public ResponseEntity<Map<String, String>> blockPatient(@PathVariable Long patientId,
             @RequestParam(required = false) String reason) {
         try {
@@ -260,6 +298,8 @@ public class AdminController {
             Patient patient = patientOpt.get();
             patient.setIsActive(false);
             patientRepository.save(patient);
+            securityService.deactivateAllUserSessions(patient.getUsername());
+            refreshTokenService.deleteByUsername(patient.getUsername());
 
             Map<String, String> response = new HashMap<>();
             response.put("message", "Patient " + patient.getUsername() + " has been blocked");
@@ -273,6 +313,8 @@ public class AdminController {
     }
 
     @PostMapping("/unblock-doctor/{doctorId}")
+    @CacheEvict(value = { "doctorListing", "DOCTOR:PROFILE", "DOCTOR:PAGINATED_LIST",
+            "PATIENT:APPOINTMENTS", "DOCTOR:APPOINTMENTS" }, allEntries = true)
     public ResponseEntity<Map<String, String>> unblockDoctor(@PathVariable Long doctorId) {
         try {
             Optional<Doctor> doctorOpt = doctorRepository.findById(doctorId);
@@ -297,6 +339,8 @@ public class AdminController {
     }
 
     @PostMapping("/unblock-patient/{patientId}")
+    @CacheEvict(value = { "PATIENT:PROFILE", "PATIENT:PAGINATED_LIST", "PATIENT:APPOINTMENTS",
+            "DOCTOR:APPOINTMENTS", "PATIENT:COMPLETE_DATA" }, allEntries = true)
     public ResponseEntity<Map<String, String>> unblockPatient(@PathVariable Long patientId) {
         try {
             Optional<Patient> patientOpt = patientRepository.findById(patientId);

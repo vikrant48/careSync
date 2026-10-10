@@ -4,6 +4,7 @@ import com.vikrant.careSync.entity.Patient;
 import lombok.*;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Getter
 @Setter
@@ -26,6 +27,8 @@ public class PatientDto {
     private String bloodGroup;
     private Boolean isActive;
     private int completionPercentage;
+    private LocalDateTime createdAt;
+    private LocalDateTime lastLogin;
 
     public PatientDto(Patient patient) {
         this.id = patient.getId();
@@ -42,5 +45,7 @@ public class PatientDto {
         this.gender = patient.getGender();
         this.bloodGroup = patient.getBloodGroup();
         this.isActive = patient.getIsActive();
+        this.createdAt = patient.getCreatedAt();
+        this.lastLogin = patient.getLastLogin();
     }
 }

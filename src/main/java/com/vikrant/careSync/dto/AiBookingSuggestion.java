@@ -49,5 +49,7 @@ public class AiBookingSuggestion {
         private Boolean isOnLeave;
         private String leaveMessage;
         private Boolean isVerified;
+        private String recommendedDate;
+        private String recommendedSlot;
     }
 }

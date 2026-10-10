@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vikrant.careSync.dto.GroqAiStructuredResponse;
 import com.vikrant.careSync.dto.AiBookingSuggestion;
+import com.vikrant.careSync.dto.AiIntakeDraftResponse;
 import com.vikrant.careSync.dto.AiChatRequest;
 import com.vikrant.careSync.dto.AiChatResponse;
 import com.vikrant.careSync.dto.DiagnosisSuggestionDto;
@@ -13,7 +14,9 @@ import com.vikrant.careSync.entity.Patient;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.PatientRepository;
 import com.vikrant.careSync.dto.VisionScanResponse;
+import com.vikrant.careSync.dto.CertificateReviewDto;
 import com.vikrant.careSync.dto.ClinicalDictationResponse;
+import com.vikrant.careSync.entity.Certificate;
 import com.vikrant.careSync.service.ai.AiBookingService;
 import com.vikrant.careSync.service.ai.AiClinicalService;
 import com.vikrant.careSync.service.ai.AiConversationMemoryService;
@@ -27,6 +30,13 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.UUID;
 import java.util.Map;
 import java.util.List;
@@ -374,6 +384,10 @@ public class AiService {
         }
     }
 
+    public AiIntakeDraftResponse draftIntake(String narrative) {
+        return aiClinicalService.draftIntakeFromNarrative(narrative);
+    }
+
     private boolean isEmergencySymptom(String message) {
         if (message == null)
             return false;
@@ -392,6 +406,7 @@ public class AiService {
                 + "If you still need an urgent doctor consultation, choose from available Emergency & Cardiology specialists below:";
 
         List<Doctor> emergencyDoctors = doctorRepository.findAll().stream()
+                .filter(Doctor::canAcceptAppointments)
                 .filter(d -> "Cardiology".equalsIgnoreCase(d.getSpecialization())
                         || "Emergency Medicine".equalsIgnoreCase(d.getSpecialization()))
                 .collect(Collectors.toList());
@@ -556,5 +571,124 @@ public class AiService {
         }
 
         return dictationResponse != null ? dictationResponse : ClinicalDictationResponse.builder().success(false).error("Unable to process dictation").build();
+    }
+
+    public CertificateReviewDto reviewCertificate(Doctor doctor, Certificate certificate) {
+        List<String> mismatches = new ArrayList<>();
+        if (certificate.getName() == null || certificate.getName().isBlank()) {
+            mismatches.add("Certificate name is missing from the doctor profile.");
+        }
+        if (certificate.getIssuingOrganization() == null || certificate.getIssuingOrganization().isBlank()) {
+            mismatches.add("Issuing organization is missing from the doctor profile.");
+        }
+        if (certificate.getCredentialId() == null || certificate.getCredentialId().isBlank()) {
+            mismatches.add("Credential ID is missing from the doctor profile.");
+        }
+        if (certificate.getExpiryDate() != null && certificate.getExpiryDate().isBefore(LocalDate.now())) {
+            mismatches.add("The recorded expiry date is in the past.");
+        }
+        if (certificate.getIssueDate() != null && certificate.getExpiryDate() != null
+                && certificate.getIssueDate().isAfter(certificate.getExpiryDate())) {
+            mismatches.add("The recorded issue date is after the expiry date.");
+        }
+
+        String holder = "";
+        String organization = "";
+        String credentialId = "";
+        String issueDate = "";
+        String expiryDate = "";
+        byte[] file = downloadCertificate(certificate.getUrl());
+        if (file == null) {
+            mismatches.add("The certificate file could not be read automatically. Review the document manually.");
+        } else if (geminiClient == null || !geminiClient.isConfigured()) {
+            mismatches.add("Automatic certificate reading is unavailable. Review the document manually.");
+        } else {
+            try {
+                String prompt = "Extract only details visibly printed on this medical certificate or license. "
+                        + "Do not infer missing values. Return JSON: {\"holderName\":\"\",\"organization\":\"\","
+                        + "\"credentialId\":\"\",\"issueDate\":\"\",\"expiryDate\":\"\"}.";
+                String raw = geminiClient.generateVisionContent(file, mimeType(certificate.getUrl()), prompt);
+                com.fasterxml.jackson.databind.JsonNode node = new ObjectMapper()
+                        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+                        .readTree(extractJson(raw));
+                holder = node.path("holderName").asText("");
+                organization = node.path("organization").asText("");
+                credentialId = node.path("credentialId").asText("");
+                issueDate = node.path("issueDate").asText("");
+                expiryDate = node.path("expiryDate").asText("");
+                if (!holder.isBlank() && doctor.getName() != null && !doctor.getName().isBlank()
+                        && !namesMatch(doctor.getName(), holder)) {
+                    mismatches.add("Extracted holder name does not match " + doctor.getName() + ".");
+                }
+                if (!organization.isBlank() && certificate.getIssuingOrganization() != null
+                        && !certificate.getIssuingOrganization().isBlank()
+                        && !containsEither(organization, certificate.getIssuingOrganization())) {
+                    mismatches.add("Extracted issuing organization does not match the recorded organization.");
+                }
+                if (!credentialId.isBlank() && certificate.getCredentialId() != null
+                        && !certificate.getCredentialId().isBlank()
+                        && !credentialId.equalsIgnoreCase(certificate.getCredentialId())) {
+                    mismatches.add("Extracted credential ID does not match the recorded credential ID.");
+                }
+            } catch (Exception e) {
+                log.warn("Certificate extraction failed: {}", e.getMessage());
+                mismatches.add("Certificate details could not be extracted. Review the document manually.");
+            }
+        }
+
+        return CertificateReviewDto.builder()
+                .certificateId(certificate.getId())
+                .extractedHolderName(holder)
+                .extractedOrganization(organization)
+                .extractedCredentialId(credentialId)
+                .extractedIssueDate(issueDate)
+                .extractedExpiryDate(expiryDate)
+                .mismatches(mismatches)
+                .adminApprovalRequired(true)
+                .build();
+    }
+
+    private byte[] downloadCertificate(String url) {
+        if (url == null || !(url.startsWith("https://") || url.startsWith("http://"))) {
+            return null;
+        }
+        try {
+            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5))
+                    .followRedirects(HttpClient.Redirect.NORMAL).build();
+            HttpResponse<byte[]> response = client.send(HttpRequest.newBuilder(URI.create(url))
+                    .timeout(Duration.ofSeconds(10)).GET().build(), HttpResponse.BodyHandlers.ofByteArray());
+            if (response.statusCode() >= 400 || response.body() == null || response.body().length == 0
+                    || response.body().length > 8_000_000) {
+                return null;
+            }
+            return response.body();
+        } catch (Exception e) {
+            log.warn("Certificate download failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private String mimeType(String url) {
+        String lower = url == null ? "" : url.toLowerCase();
+        if (lower.contains(".png")) return "image/png";
+        if (lower.contains(".pdf")) return "application/pdf";
+        if (lower.contains(".webp")) return "image/webp";
+        return "image/jpeg";
+    }
+
+    private boolean namesMatch(String doctorName, String extractedName) {
+        String extracted = extractedName.toLowerCase().replace("dr.", "");
+        for (String part : doctorName.toLowerCase().replace("dr.", "").split("\\s+")) {
+            if (part.length() > 2 && extracted.contains(part)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean containsEither(String left, String right) {
+        String a = left.toLowerCase();
+        String b = right.toLowerCase();
+        return a.contains(b) || b.contains(a);
     }
 }

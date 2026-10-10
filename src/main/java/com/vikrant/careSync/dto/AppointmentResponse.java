@@ -38,6 +38,8 @@ public class AppointmentResponse {
     private String doctorEmail;
     private String doctorContactInfo;
     private String doctorProfileImageUrl;
+    private Boolean doctorActive;
+    private Boolean patientActive;
     private BigDecimal consultationFees;
     private String transactionId;
     private Boolean feedbackSubmitted;
@@ -53,6 +55,7 @@ public class AppointmentResponse {
             this.doctorEmail = appointment.getDoctor().getEmail();
             this.doctorContactInfo = appointment.getDoctor().getContactInfo();
             this.doctorProfileImageUrl = appointment.getDoctor().getProfileImageUrl();
+            this.doctorActive = appointment.getDoctor().getIsActive();
             this.consultationFees = appointment.getDoctor().getConsultationFees();
         }
         if (appointment.getPatient() != null) {
@@ -62,6 +65,7 @@ public class AppointmentResponse {
             this.patientContactInfo = appointment.getPatient().getContactInfo();
             this.patientIllnessDetails = appointment.getPatient().getIllnessDetails();
             this.patientProfileImageUrl = appointment.getPatient().getProfileImageUrl();
+            this.patientActive = appointment.getPatient().getIsActive();
         }
         if (appointment.getAppointmentDateTime() != null) {
             this.appointmentDate = appointment.getAppointmentDateTime().toLocalDate().toString();

@@ -1,5 +1,6 @@
 package com.vikrant.careSync.dto;
 
+import com.vikrant.careSync.entity.Appointment;
 import com.vikrant.careSync.entity.Payment;
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotNull;
@@ -21,6 +22,8 @@ public class BookAppointmentWithPaymentRequest {
     private LocalDateTime appointmentDateTime;
 
     private String reason;
+
+    private Appointment.BookingSource bookingSource;
 
     @NotNull(message = "Amount is required")
     private BigDecimal amount;

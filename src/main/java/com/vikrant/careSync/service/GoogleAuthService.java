@@ -87,6 +87,9 @@ public class GoogleAuthService {
         if (user == null) {
             user = registerGoogleUser(email, name, givenName, familyName, picture, request.getRole());
         }
+        if (!Boolean.TRUE.equals(user.getIsActive())) {
+            throw new RuntimeException("Your account is inactive. Please contact an administrator.");
+        }
 
         String roleStr = user.getRole() != null ? user.getRole().name() : AppConstants.Roles.PATIENT;
 
@@ -129,7 +132,6 @@ public class GoogleAuthService {
             doctor.setFirstName(firstName);
             doctor.setLastName(familyName);
             doctor.setProfileImageUrl(picture);
-            doctor.setSpecialization("General Practice");
             doctor.setIsActive(true);
             doctorRepository.save(doctor);
         } else {

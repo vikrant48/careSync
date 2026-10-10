@@ -211,17 +211,25 @@ public class DoctorService {
         if (request.getSpecialization() != null)
             doctor.setSpecialization(request.getSpecialization());
         if (request.getContactInfo() != null)
-            doctor.setContactInfo(request.getContactInfo());
+            doctor.setContactInfo(blankToNull(request.getContactInfo()));
+        if (request.getAlternateContactInfo() != null)
+            doctor.setAlternateContactInfo(blankToNull(request.getAlternateContactInfo()));
         if (request.getEmail() != null)
             doctor.setEmail(request.getEmail());
         if (request.getIsActive() != null)
             doctor.setIsActive(request.getIsActive());
         if (request.getGender() != null)
-            doctor.setGender(request.getGender());
+            doctor.setGender(blankToNull(request.getGender()));
+        if (request.getDateOfBirth() != null)
+            doctor.setDateOfBirth(request.getDateOfBirth());
         if (request.getConsultationFees() != null)
             doctor.setConsultationFees(java.math.BigDecimal.valueOf(request.getConsultationFees()));
         if (request.getAddress() != null)
-            doctor.setAddress(request.getAddress());
+            doctor.setAddress(blankToNull(request.getAddress()));
+        if (request.getLicenseNumber() != null)
+            doctor.setLicenseNumber(blankToNull(request.getLicenseNumber()));
+        if (request.getBio() != null)
+            doctor.setBio(blankToNull(request.getBio()));
         if (request.getLanguages() != null)
             doctor.setLanguages(String.join(",", request.getLanguages()));
 
@@ -530,5 +538,13 @@ public class DoctorService {
     public Doctor getDoctorProfile(String username) {
         return doctorRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
+    }
+
+    private String blankToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

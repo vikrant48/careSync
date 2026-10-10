@@ -8,6 +8,7 @@ import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.FeedbackRepository;
 import com.vikrant.careSync.repository.PatientRepository;
 import com.vikrant.careSync.service.AppointmentService;
+import com.vikrant.careSync.service.AppointmentFollowThroughService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -34,6 +35,7 @@ import java.util.stream.Collectors;
 public class AppointmentController {
 
     private final AppointmentService appointmentService;
+    private final AppointmentFollowThroughService appointmentFollowThroughService;
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
     private final FeedbackRepository feedbackRepository;
@@ -95,7 +97,8 @@ public class AppointmentController {
                     request.doctorId,
                     currentUser.getId(),
                     request.appointmentDateTime,
-                    request.reason);
+                    request.reason,
+                    request.bookingSource);
 
             log.info("Appointment created with ID: {}", created.getId());
 
@@ -187,12 +190,38 @@ public class AppointmentController {
         }
     }
 
+    @GetMapping("/{id}/follow-through")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<?> getFollowThrough(@PathVariable Long id) {
+        try {
+            Patient patient = getCurrentPatient();
+            return ResponseEntity.ok(appointmentFollowThroughService.getFollowThrough(id, patient.getId()));
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
     @GetMapping("/{id}/intake-summary")
     @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN', 'PATIENT')")
     public ResponseEntity<?> getPreVisitIntakeSummary(@PathVariable Long id) {
         try {
             com.vikrant.careSync.dto.PreVisitIntakeResponse response = appointmentService.getPreVisitIntakeSummary(id);
             return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
+    @GetMapping("/{id}/pre-visit-brief")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<?> getPreVisitBrief(@PathVariable Long id) {
+        try {
+            Doctor currentDoctor = getCurrentDoctor();
+            return ResponseEntity.ok(appointmentService.getPreVisitBrief(id, currentDoctor.getId()));
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
             error.put("error", e.getMessage());
@@ -223,6 +252,21 @@ public class AppointmentController {
         try {
             com.vikrant.careSync.dto.SoapReportDto response = appointmentService.getSoapDraft(id);
             return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
+    @PutMapping("/{id}/soap-draft")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<?> saveReviewedSoapDraft(
+            @PathVariable Long id,
+            @RequestBody com.vikrant.careSync.dto.SoapReportDto reportDto) {
+        try {
+            Doctor currentDoctor = getCurrentDoctor();
+            return ResponseEntity.ok(appointmentService.saveReviewedSoapDraft(id, reportDto, currentDoctor.getId()));
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
             error.put("error", e.getMessage());
@@ -448,6 +492,20 @@ public class AppointmentController {
     }
 
     // DOCTOR ENDPOINTS - Only accessible by doctors
+
+    @GetMapping("/doctor/dashboard-metrics")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<?> getDoctorDashboardMetrics() {
+        try {
+            Doctor currentUser = getCurrentDoctor();
+            DoctorDashboardMetricsResponse metrics = appointmentService.getDoctorDashboardMetrics(currentUser.getId());
+            return ResponseEntity.ok(metrics);
+        } catch (Exception e) {
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
 
     @GetMapping("/doctor/my-patients")
     @PreAuthorize("hasRole('DOCTOR')")
@@ -753,6 +811,37 @@ public class AppointmentController {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
             return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    @GetMapping("/{id}/details")
+    @PreAuthorize("hasAnyRole('PATIENT', 'DOCTOR', 'ADMIN')")
+    public ResponseEntity<?> getAppointmentDetails(@PathVariable Long id) {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            AppointmentDetailsResponse details = appointmentService.getAppointmentDetails(id);
+
+            boolean isAdmin = authentication.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+            boolean isDoctor = authentication.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_DOCTOR"));
+            boolean isPatient = authentication.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_PATIENT"));
+
+            if (!isAdmin) {
+                if (isDoctor && !details.getDoctorId().equals(getCurrentDoctor().getId())) {
+                    return ResponseEntity.status(403)
+                            .body(Map.of("error", "Access denied: Appointment belongs to another doctor"));
+                }
+                if (isPatient && !details.getPatientId().equals(getCurrentPatient().getId())) {
+                    return ResponseEntity.status(403)
+                            .body(Map.of("error", "Access denied: Appointment belongs to another patient"));
+                }
+            }
+
+            return ResponseEntity.ok(details);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 

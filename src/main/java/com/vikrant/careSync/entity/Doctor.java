@@ -40,6 +40,9 @@ public class Doctor {
     @Column(name = "contact_info", length = 100)
     private String contactInfo;
 
+    @Column(name = "alternate_contact_info", length = 100)
+    private String alternateContactInfo;
+
     @Column(name = "specialization", length = 100)
     private String specialization;
 
@@ -58,6 +61,12 @@ public class Doctor {
     // Comma separated list of languages (e.g., "Hindi,Telugu,English")
     @Column(name = "languages", length = 255)
     private String languages;
+
+    @Column(name = "license_number", length = 100)
+    private String licenseNumber;
+
+    @Column(name = "bio", length = 1000)
+    private String bio;
 
     @Column(name = "is_verified", nullable = false, columnDefinition = "boolean default false")
     @Builder.Default
