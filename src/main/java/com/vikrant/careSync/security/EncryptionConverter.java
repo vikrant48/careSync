@@ -57,10 +57,9 @@ public class EncryptionConverter implements AttributeConverter<String, String> {
             cipher.init(Cipher.DECRYPT_MODE, secretKey);
             return new String(cipher.doFinal(Base64.getDecoder().decode(dbData)), StandardCharsets.UTF_8);
         } catch (Exception e) {
-            // HIPAA RECOMMENDATION: Log the failure for auditing but don't crash the app
-            // This allows the user to still log in even if their profile data is
-            // temporarily unreadable
-            return "[DECRYPTION_ERROR: Key Mismatch]";
+            // Fallback: If data was inserted unencrypted (e.g. via direct SQL seeding) or
+            // key mismatch, return raw dbData
+            return dbData;
         }
     }
 }

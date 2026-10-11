@@ -73,14 +73,9 @@ public class AuthenticationService implements IAuthenticationService {
         this.emailVerificationService = emailVerificationService;
     }
 
-    private Long generateSixDigitUserId() {
-        long min = 100000L;
-        long max = 999999L;
-        long userId;
-        do {
-            userId = ThreadLocalRandom.current().nextLong(min, max + 1);
-        } while (userRepository.existsById(userId));
-        return userId;
+    private synchronized Long generateNextUserId() {
+        Long maxId = userRepository.findMaxUserId().orElse(100000L);
+        return Math.max(100001L, maxId + 1);
     }
 
     @CacheEvict(value = "doctorListing", allEntries = true)
@@ -96,7 +91,8 @@ public class AuthenticationService implements IAuthenticationService {
         }
 
         // Enforce email verification unless skipEmailVerification is true
-        if (!Boolean.TRUE.equals(request.getSkipEmailVerification()) && !emailVerificationService.isVerified(request.getEmail())) {
+        if (!Boolean.TRUE.equals(request.getSkipEmailVerification())
+                && !emailVerificationService.isVerified(request.getEmail())) {
             throw new RuntimeException("Email not verified");
         }
 
@@ -129,7 +125,7 @@ public class AuthenticationService implements IAuthenticationService {
     }
 
     private AuthenticationResponse registerDoctor(RegisterRequest request) {
-        Long userId = generateSixDigitUserId();
+        Long userId = generateNextUserId();
 
         User user = User.builder()
                 .id(userId)
@@ -169,7 +165,7 @@ public class AuthenticationService implements IAuthenticationService {
     }
 
     private AuthenticationResponse registerPatient(RegisterRequest request) {
-        Long userId = generateSixDigitUserId();
+        Long userId = generateNextUserId();
 
         User user = User.builder()
                 .id(userId)

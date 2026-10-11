@@ -39,8 +39,8 @@ public class SeedingService implements ISeedingService {
     public Object seedSingleUser(SeedUserRequest request) {
         Long userId = request != null ? request.getUserId() : null;
         if (userId == null) {
-            Long maxExistingId = userRepository.findMaxUserId().orElse(300000L);
-            userId = Math.max(300001L, maxExistingId + 1);
+            Long maxExistingId = userRepository.findMaxUserId().orElse(100000L);
+            userId = Math.max(100001L, maxExistingId + 1);
         } else if (userRepository.existsById(userId)) {
             throw new RuntimeException("User already exists with ID: " + userId);
         }

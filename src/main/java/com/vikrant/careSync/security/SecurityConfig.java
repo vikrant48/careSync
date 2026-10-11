@@ -45,12 +45,18 @@ public class SecurityConfig {
                                 })
                                 .authorizeHttpRequests(auth -> auth
                                                 .requestMatchers("/api/auth/login", "/api/auth/register",
+                                                                "/api/auth/google",
                                                                 "/api/auth/refresh",
                                                                 "/api/auth/logout", "/api/auth/forgot-password",
+                                                                "/api/auth/forgot-password-otp",
                                                                 "/api/auth/reset-password",
-                                                                "/api/auth/check-availability")
+                                                                "/api/auth/reset-password-otp",
+                                                                "/api/auth/verify-otp",
+                                                                "/api/auth/check-availability",
+                                                                "/api/auth/email-verification/**")
                                                 .permitAll()
-                                                .requestMatchers("/api/auth/change-password").authenticated()
+                                                .requestMatchers("/api/auth/change-password", "/api/auth/current-user")
+                                                .authenticated()
                                                 .requestMatchers("/ws/**").permitAll()
                                                 .requestMatchers(HttpMethod.GET, "/api/master/**").permitAll()
                                                 .requestMatchers("/api/master/**").hasRole(AppConstants.Roles.ADMIN)

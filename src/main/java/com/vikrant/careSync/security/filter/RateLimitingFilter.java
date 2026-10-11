@@ -50,7 +50,8 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 
         Bucket targetBucket = null;
 
-        if (path.contains("/api/auth/send-otp") || path.contains("/api/auth/forgot-password")) {
+        if (path.contains("/api/auth/send-otp") || path.contains("/api/auth/forgot-password")
+                || path.contains("/api/auth/email-verification")) {
             // Max 5 OTP requests per minute
             targetBucket = otpBuckets.computeIfAbsent(clientIp, k -> createBucket(5, Duration.ofMinutes(1)));
         } else if (path.contains("/api/auth/login") || path.contains("/api/auth/register")) {
@@ -69,8 +70,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
                 response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
                 response.setContentType(MediaType.APPLICATION_JSON_VALUE);
                 response.getWriter().write(
-                    "{\"error\":\"Too Many Requests\",\"message\":\"Rate limit exceeded. Please try again in a minute.\"}"
-                );
+                        "{\"error\":\"Too Many Requests\",\"message\":\"Rate limit exceeded. Please try again in a minute.\"}");
             }
         } else {
             filterChain.doFilter(request, response);

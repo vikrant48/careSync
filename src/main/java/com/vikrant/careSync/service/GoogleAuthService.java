@@ -98,7 +98,7 @@ public class GoogleAuthService {
 
     private User registerGoogleUser(String email, String fullName, String givenName, String familyName, String picture,
             String requestedRole) {
-        Long userId = generateSixDigitUserId();
+        Long userId = generateNextUserId();
 
         // Generate a clean username from email
         String baseUsername = email.split("@")[0].replaceAll("[^a-zA-Z0-9]", "");
@@ -148,14 +148,9 @@ public class GoogleAuthService {
         return savedUser;
     }
 
-    private Long generateSixDigitUserId() {
-        long min = 100000L;
-        long max = 999999L;
-        long userId;
-        do {
-            userId = ThreadLocalRandom.current().nextLong(min, max + 1);
-        } while (userRepository.existsById(userId));
-        return userId;
+    private synchronized Long generateNextUserId() {
+        Long maxId = userRepository.findMaxUserId().orElse(100000L);
+        return Math.max(100001L, maxId + 1);
     }
 
     private AuthenticationResponse generateAuthResponse(User user, String role, String message, String ipAddress,
