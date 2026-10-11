@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -871,8 +872,26 @@ public class AppointmentController {
     @GetMapping("/available-slots")
     public ResponseEntity<?> getAvailableSlots(@RequestParam Long doctorId, @RequestParam String date) {
         try {
-            SlotAvailabilityResponse response = appointmentService.getAvailableSlots(doctorId,
-                    date);
+            if (doctorId == null || doctorId <= 0) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Invalid doctor ID"));
+            }
+
+            LocalDate parsedDate;
+            try {
+                parsedDate = LocalDate.parse(date);
+            } catch (Exception e) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Invalid date format. Expected YYYY-MM-DD"));
+            }
+
+            LocalDate today = LocalDate.now();
+            if (parsedDate.isBefore(today.minusDays(1))) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Cannot query slots for past dates"));
+            }
+            if (parsedDate.isAfter(today.plusYears(1))) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Date is beyond allowed scheduling window"));
+            }
+
+            SlotAvailabilityResponse response = appointmentService.getAvailableSlots(doctorId, date);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();

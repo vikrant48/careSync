@@ -14,7 +14,9 @@ import java.time.LocalDateTime;
 @ToString(exclude = { "doctor", "patient", "feedback" })
 @EqualsAndHashCode(exclude = { "doctor", "patient", "feedback" })
 @Entity
-@Table(name = "appointments")
+@Table(name = "appointments", indexes = {
+        @Index(name = "idx_appointments_slots_lookup", columnList = "doctor_id, is_active, appointment_date_time, status")
+})
 public class Appointment {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

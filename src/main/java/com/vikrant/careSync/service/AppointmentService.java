@@ -293,9 +293,9 @@ public class AppointmentService {
     }
 
     public List<Appointment> getDoctorAppointmentsByDate(Long doctorId, LocalDateTime date) {
-        return appointmentRepository.findByDoctorId(doctorId).stream()
-                .filter(appointment -> appointment.getAppointmentDateTime().toLocalDate().equals(date.toLocalDate()))
-                .toList();
+        LocalDateTime startOfDay = date.toLocalDate().atStartOfDay();
+        LocalDateTime nextDayStart = startOfDay.plusDays(1);
+        return appointmentRepository.findByDoctorIdAndAppointmentDateTimeBetween(doctorId, startOfDay, nextDayStart);
     }
 
     public List<Appointment> getUpcomingAppointments(Long doctorId) {
@@ -575,9 +575,11 @@ public class AppointmentService {
 
         long todayAppointments = countAppointmentsOn(appointments, today);
         long yesterdayAppointments = countAppointmentsOn(appointments, yesterday);
-        long pendingReports = appointments.stream().filter(appointment -> isPendingReport(appointment.getStatus())).count();
+        long pendingReports = appointments.stream().filter(appointment -> isPendingReport(appointment.getStatus()))
+                .count();
         long pendingReportsYesterday = appointments.stream()
-                .filter(appointment -> isPendingReport(statusAt(appointment, logsByAppointment.get(appointment.getId()), yesterdayEnd)))
+                .filter(appointment -> isPendingReport(
+                        statusAt(appointment, logsByAppointment.get(appointment.getId()), yesterdayEnd)))
                 .count();
 
         Map<Long, LocalDate> firstVisitByPatient = new HashMap<>();
@@ -672,20 +674,24 @@ public class AppointmentService {
         // Generate all possible 30-minute slots for doctor working hours
         List<String> allSlots = generateDoctorWorkingSlots();
 
-        // Get existing appointments for the date
-        LocalDateTime dateTime = LocalDateTime.parse(date + "T00:00:00");
-        List<Appointment> existingAppointments = getDoctorAppointmentsByDate(doctorId, dateTime);
+        // Query only booked slot times via sargable projection query (index-only scan)
+        LocalDateTime startOfDay = requestedLocalDate.atStartOfDay();
+        LocalDateTime nextDayStart = startOfDay.plusDays(1);
+        List<LocalDateTime> bookedSlotTimes = appointmentRepository.findBookedSlotTimesByDoctorAndDate(doctorId,
+                startOfDay, nextDayStart);
+        Set<String> bookedTimeStrings = bookedSlotTimes.stream()
+                .map(dt -> String.format("%02d:%02d", dt.getHour(), dt.getMinute()))
+                .collect(Collectors.toSet());
 
         // If the date is today, filter out past slots
-        LocalDate requestedDate = dateTime.toLocalDate();
         LocalDate today = LocalDate.now();
         LocalTime now = LocalTime.now();
 
         // Filter out booked/confirmed slots, locked slots, and past slots if today
         List<String> availableSlots = allSlots.stream()
                 .filter(slot -> {
-                    // Check if slot is already taken
-                    if (isSlotUnavailable(existingAppointments, slot)) {
+                    // Check if slot is already taken (O(1) set lookup)
+                    if (bookedTimeStrings.contains(slot)) {
                         return false;
                     }
 
@@ -695,8 +701,8 @@ public class AppointmentService {
                     }
 
                     // If today, check if slot is in the future
-                    if (requestedDate.equals(today)) {
-                        java.time.LocalTime slotTime = java.time.LocalTime.parse(slot);
+                    if (requestedLocalDate.equals(today)) {
+                        LocalTime slotTime = LocalTime.parse(slot);
                         return slotTime.isAfter(now);
                     }
 
@@ -1118,11 +1124,13 @@ public class AppointmentService {
                 .appointmentId(appointmentId)
                 .patientId(appointment.getPatient().getId())
                 .historySummary(history != null && history.isSuccess() && history.getSummary() != null
-                        ? history.getSummary() : "No prior visit summary is available.")
+                        ? history.getSummary()
+                        : "No prior visit summary is available.")
                 .currentMedications(intake != null && intake.getCurrentMedications() != null
                         && !intake.getCurrentMedications().isBlank() ? intake.getCurrentMedications() : "Not provided")
                 .allergies(intake != null && intake.getAllergies() != null && !intake.getAllergies().isBlank()
-                        ? intake.getAllergies() : "Not provided")
+                        ? intake.getAllergies()
+                        : "Not provided")
                 .unfinishedFollowUps(unfinished.isBlank() ? "No unfinished follow-ups found." : unfinished)
                 .build();
     }
