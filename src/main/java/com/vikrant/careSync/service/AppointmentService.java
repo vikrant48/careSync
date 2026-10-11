@@ -199,8 +199,13 @@ public class AppointmentService {
         return response;
     }
 
-    // Emergency appointment booking - books at current time
+    // Emergency appointment booking - books at current time (or client local time)
     public Appointment bookEmergencyAppointment(Long doctorId, Long patientId, String reason) {
+        return bookEmergencyAppointment(doctorId, patientId, reason, null);
+    }
+
+    public Appointment bookEmergencyAppointment(Long doctorId, Long patientId, String reason,
+            LocalDateTime clientTime) {
         Doctor doctor = doctorRepository.findByIdForUpdate(doctorId)
                 .orElseThrow(() -> new RuntimeException("Doctor not found"));
 
@@ -221,8 +226,9 @@ public class AppointmentService {
             throw new RuntimeException("Doctor is currently on leave");
         }
 
-        // Set appointment time to current time (emergency booking)
-        LocalDateTime emergencyTime = LocalDateTime.now();
+        // Set appointment time to client time if provided, otherwise fallback to server
+        // time
+        LocalDateTime emergencyTime = (clientTime != null) ? clientTime : LocalDateTime.now();
 
         // Create emergency appointment with BOOKED status
         Appointment appointment = Appointment.builder()
@@ -230,7 +236,7 @@ public class AppointmentService {
                 .patient(patient)
                 .appointmentDateTime(emergencyTime)
                 .status(Appointment.Status.BOOKED)
-                .reason("EMERGENCY: " + reason)
+                .reason("EMERGENCY: " + (reason != null && !reason.isBlank() ? reason : "Emergency booking"))
                 .bookingSource(Appointment.BookingSource.EMERGENCY)
                 .build();
 

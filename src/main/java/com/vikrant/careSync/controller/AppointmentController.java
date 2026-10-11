@@ -904,15 +904,17 @@ public class AppointmentController {
     @PostMapping("/patient/book-emergency")
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<?> bookEmergencyAppointment(@RequestParam Long doctorId,
-            @RequestParam(required = false) String reason) {
+            @RequestParam(required = false) String reason,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) LocalDateTime appointmentDateTime) {
         try {
             Patient currentUser = getCurrentPatient();
 
-            // Book emergency appointment at current time
+            // Book emergency appointment at client local time (or server now if null)
             Appointment emergencyAppointment = appointmentService.bookEmergencyAppointment(
                     doctorId,
                     currentUser.getId(),
-                    reason != null ? reason : "Emergency appointment");
+                    reason != null && !reason.isBlank() ? reason : "Emergency booking",
+                    appointmentDateTime);
 
             return ResponseEntity.ok(new AppointmentResponse(emergencyAppointment));
         } catch (Exception e) {
