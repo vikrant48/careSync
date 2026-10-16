@@ -19,7 +19,7 @@ public class ReportingController {
     private final ReportingService reportingService;
 
     @GetMapping("/doctor/{doctorId}/performance")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelf(#doctorId)")
     public ResponseEntity<Map<String, Object>> getDoctorPerformanceReport(
             @PathVariable Long doctorId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
@@ -33,7 +33,7 @@ public class ReportingController {
     }
 
     @GetMapping("/patient/{patientId}/analytics")
-    @PreAuthorize("hasRole('PATIENT')")
+    @PreAuthorize("hasRole('PATIENT') and @access.isSelf(#patientId)")
     public ResponseEntity<Map<String, Object>> getPatientAnalytics(@PathVariable Long patientId) {
         try {
             Map<String, Object> analytics = reportingService.getPatientAnalytics(patientId);
@@ -70,6 +70,7 @@ public class ReportingController {
     }
 
     @GetMapping("/specialization/analysis")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN')")
     public ResponseEntity<Map<String, Object>> getSpecializationAnalysis() {
         try {
             Map<String, Object> analysis = reportingService.getSpecializationAnalysis();
@@ -80,7 +81,7 @@ public class ReportingController {
     }
 
     @GetMapping("/patients/demographics")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Map<String, Object>> getPatientDemographicsReport() {
         try {
             Map<String, Object> report = reportingService.getPatientDemographicsReport();

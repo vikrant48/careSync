@@ -2,6 +2,7 @@ package com.vikrant.careSync.service;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vikrant.careSync.security.access.AccessGuard;
 import com.vikrant.careSync.dto.GroqAiStructuredResponse;
 import com.vikrant.careSync.dto.AiBookingSuggestion;
 import com.vikrant.careSync.dto.AiIntakeDraftResponse;
@@ -30,10 +31,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -58,6 +55,8 @@ public class AiService {
     private final PatientRepository patientRepository;
     private final AiAuditService aiAuditService;
     private final GeminiClient geminiClient;
+    private final AccessGuard accessGuard;
+    private final SupabaseStorageService supabaseStorageService;
 
     public AiChatResponse getResponse(AiChatRequest request) {
         long startTime = System.currentTimeMillis();
@@ -168,7 +167,8 @@ public class AiService {
                         String context = "";
                         if (isDoctor && (userMessage.toLowerCase().contains("summarize")
                                 || userMessage.toLowerCase().contains("history"))) {
-                            List<Patient> patients = patientRepository.findAll();
+                            // Only the doctor's own patients can be summarized
+                            List<Patient> patients = patientRepository.findAllById(accessGuard.treatedPatientIds());
                             for (Patient p : patients) {
                                 if (userMessage.toLowerCase().contains(p.getName().toLowerCase())) {
                                     MedicalSummaryResponse summary = summarizePatientHistory(p.getId());
@@ -310,14 +310,7 @@ public class AiService {
     }
 
     private String extractJson(String text) {
-        if (text == null)
-            return "{}";
-        int start = text.indexOf("{");
-        int end = text.lastIndexOf("}");
-        if (start != -1 && end != -1 && end > start) {
-            return text.substring(start, end + 1);
-        }
-        return text.trim();
+        return com.vikrant.careSync.service.ai.AiJson.extractObject(text);
     }
 
     public MedicalSummaryResponse summarizePatientHistory(Long patientId) {
@@ -545,7 +538,12 @@ public class AiService {
                 log.info("Structuring doctor dictation notes using Gemini 1.5 Flash LLM...");
                 aiResult = geminiClient.generateVisionContent(null, null, prompt);
             } else {
-                aiResult = "{\"chiefComplaint\":\"" + transcript + "\",\"diagnosis\":\"Clinical evaluation required\",\"prescriptions\":[],\"labOrders\":[],\"soapNote\":{\"subjective\":\"" + transcript + "\",\"objective\":\"Vitals within range\",\"assessment\":\"Clinical evaluation\",\"plan\":\"Standard follow-up\"}}";
+                // No AI configured: return the dictation as-is; never invent vitals or an assessment
+                aiResult = new ObjectMapper().writeValueAsString(java.util.Map.of(
+                        "chiefComplaint", transcript,
+                        "prescriptions", java.util.List.of(),
+                        "labOrders", java.util.List.of(),
+                        "soapNote", java.util.Map.of("subjective", transcript)));
             }
 
             if (aiResult != null && !aiResult.isBlank()) {
@@ -599,7 +597,8 @@ public class AiService {
         String expiryDate = "";
         byte[] file = downloadCertificate(certificate.getUrl());
         if (file == null) {
-            mismatches.add("The certificate file could not be read automatically. Review the document manually.");
+            mismatches.add("The certificate file is not stored in CareSync or could not be read. "
+                    + "Review the document manually.");
         } else if (geminiClient == null || !geminiClient.isConfigured()) {
             mismatches.add("Automatic certificate reading is unavailable. Review the document manually.");
         } else {
@@ -648,24 +647,14 @@ public class AiService {
                 .build();
     }
 
+    /**
+     * Only certificate files uploaded to CareSync storage are read, through the storage API. A link the doctor
+     * typed in is never fetched: that would let anyone make the server call internal addresses (SSRF).
+     */
     private byte[] downloadCertificate(String url) {
-        if (url == null || !(url.startsWith("https://") || url.startsWith("http://"))) {
-            return null;
-        }
-        try {
-            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5))
-                    .followRedirects(HttpClient.Redirect.NORMAL).build();
-            HttpResponse<byte[]> response = client.send(HttpRequest.newBuilder(URI.create(url))
-                    .timeout(Duration.ofSeconds(10)).GET().build(), HttpResponse.BodyHandlers.ofByteArray());
-            if (response.statusCode() >= 400 || response.body() == null || response.body().length == 0
-                    || response.body().length > 8_000_000) {
-                return null;
-            }
-            return response.body();
-        } catch (Exception e) {
-            log.warn("Certificate download failed: {}", e.getMessage());
-            return null;
-        }
+        return supabaseStorageService
+                .readOwnFile(url, SupabaseStorageService.FileType.CERTIFICATE, 8_000_000L)
+                .orElse(null);
     }
 
     private String mimeType(String url) {

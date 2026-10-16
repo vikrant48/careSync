@@ -27,11 +27,15 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
 @Transactional
 public class BookingService {
+
+    @Autowired
+    private DocumentService documentService;
 
     @Autowired
     private BookingRepository bookingRepository;
@@ -79,31 +83,9 @@ public class BookingService {
         // Patient is booking for themselves
         Patient patient = currentPatient;
 
-        // Handle full body checkup
-        List<Long> testIds;
-        if (request.getIsFullBodyCheckup() != null && request.getIsFullBodyCheckup()) {
-            // Get all active lab tests for full body checkup
-            List<LabTest> allActiveTests = labTestRepository.findAllActiveTestsOrderByName();
-            testIds = allActiveTests.stream().map(LabTest::getId).collect(Collectors.toList());
-        } else {
-            testIds = request.getSelectedTestIds();
-        }
+        List<Long> testIds = requestedTestIds(request);
 
-        // Validate selected tests
-        if (testIds == null || testIds.isEmpty()) {
-            throw new RuntimeException("At least one test must be selected");
-        }
-
-        List<LabTest> selectedTests = labTestRepository.findAllById(testIds);
-        if (selectedTests.size() != testIds.size()) {
-            throw new RuntimeException("One or more selected tests not found");
-        }
-
-        // Validate all tests are active
-        boolean hasInactiveTest = selectedTests.stream().anyMatch(test -> !test.getIsActive());
-        if (hasInactiveTest) {
-            throw new RuntimeException("One or more selected tests are not available");
-        }
+        List<LabTest> selectedTests = loadBookableTests(testIds);
 
         // Calculate total price
         BigDecimal totalPrice = labTestRepository.calculateTotalPriceByIds(testIds);
@@ -113,15 +95,8 @@ public class BookingService {
             throw new RuntimeException("Payment amount does not match booking total");
         }
 
-        // Create booking entity first
-        Booking booking = new Booking();
-        booking.setPatient(patient);
-        booking.setSelectedTests(selectedTests);
-        booking.setTotalPrice(totalPrice);
-        booking.setPrescribedBy("Self");
-        booking.setBookingDate(request.getBookingDate() != null ? request.getBookingDate() : LocalDateTime.now());
-        booking.setNotes(request.getNotes());
-        booking.setStatus(Booking.BookingStatus.PENDING); // Initially pending until payment is successful
+        // Pending until payment is successful
+        Booking booking = newPendingBooking(patient, selectedTests, totalPrice, null, "Self", request);
 
         // Save booking
         booking = bookingRepository.save(booking);
@@ -182,45 +157,16 @@ public class BookingService {
         Patient patient = patientRepository.findById(request.getPatientId())
                 .orElseThrow(() -> new RuntimeException("Patient not found with ID: " + request.getPatientId()));
 
-        // Handle full body checkup
-        List<Long> testIds;
-        if (request.getIsFullBodyCheckup() != null && request.getIsFullBodyCheckup()) {
-            // Get all active lab tests for full body checkup
-            List<LabTest> allActiveTests = labTestRepository.findAllActiveTestsOrderByName();
-            testIds = allActiveTests.stream().map(LabTest::getId).collect(Collectors.toList());
-        } else {
-            testIds = request.getSelectedTestIds();
-        }
+        List<Long> testIds = requestedTestIds(request);
 
-        // Validate selected tests
-        if (testIds == null || testIds.isEmpty()) {
-            throw new RuntimeException("At least one test must be selected");
-        }
-
-        List<LabTest> selectedTests = labTestRepository.findAllById(testIds);
-        if (selectedTests.size() != testIds.size()) {
-            throw new RuntimeException("One or more selected tests not found");
-        }
-
-        // Validate all tests are active
-        boolean hasInactiveTest = selectedTests.stream().anyMatch(test -> !test.getIsActive());
-        if (hasInactiveTest) {
-            throw new RuntimeException("One or more selected tests are not available");
-        }
+        List<LabTest> selectedTests = loadBookableTests(testIds);
 
         // Calculate total price
         BigDecimal totalPrice = labTestRepository.calculateTotalPriceByIds(testIds);
 
-        // Create booking entity
-        Booking booking = new Booking();
-        booking.setPatient(patient);
-        booking.setSelectedTests(selectedTests);
-        booking.setTotalPrice(totalPrice);
-        booking.setDoctor(currentDoctor);
-        booking.setPrescribedBy("Doctor " + currentDoctor.getFirstName() + " " + currentDoctor.getLastName());
-        booking.setBookingDate(request.getBookingDate() != null ? request.getBookingDate() : LocalDateTime.now());
-        booking.setNotes(request.getNotes());
-        booking.setStatus(Booking.BookingStatus.PENDING); // Pending until patient pays
+        // Pending until the patient pays
+        Booking booking = newPendingBooking(patient, selectedTests, totalPrice, currentDoctor,
+                "Doctor " + currentDoctor.getFirstName() + " " + currentDoctor.getLastName(), request);
 
         // Save booking
         booking = bookingRepository.save(booking);
@@ -266,31 +212,9 @@ public class BookingService {
             patient = currentPatient;
         }
 
-        // Handle full body checkup
-        List<Long> testIds;
-        if (request.getIsFullBodyCheckup() != null && request.getIsFullBodyCheckup()) {
-            // Get all active lab tests for full body checkup
-            List<LabTest> allActiveTests = labTestRepository.findAllActiveTestsOrderByName();
-            testIds = allActiveTests.stream().map(LabTest::getId).collect(Collectors.toList());
-        } else {
-            testIds = request.getSelectedTestIds();
-        }
+        List<Long> testIds = requestedTestIds(request);
 
-        // Validate selected tests
-        if (testIds == null || testIds.isEmpty()) {
-            throw new RuntimeException("At least one test must be selected");
-        }
-
-        List<LabTest> selectedTests = labTestRepository.findAllById(testIds);
-        if (selectedTests.size() != testIds.size()) {
-            throw new RuntimeException("One or more selected tests not found");
-        }
-
-        // Validate all tests are active
-        boolean hasInactiveTest = selectedTests.stream().anyMatch(test -> !test.getIsActive());
-        if (hasInactiveTest) {
-            throw new RuntimeException("One or more selected tests are not available");
-        }
+        List<LabTest> selectedTests = loadBookableTests(testIds);
 
         // Calculate total price
         BigDecimal totalPrice = labTestRepository.calculateTotalPriceByIds(testIds);
@@ -303,18 +227,7 @@ public class BookingService {
             prescribedBy = "Self";
         }
 
-        // Create booking entity
-        Booking booking = new Booking();
-        booking.setPatient(patient);
-        booking.setSelectedTests(selectedTests);
-        booking.setTotalPrice(totalPrice);
-        if (currentDoctor != null) {
-            booking.setDoctor(currentDoctor);
-        }
-        booking.setPrescribedBy(prescribedBy);
-        booking.setBookingDate(request.getBookingDate() != null ? request.getBookingDate() : LocalDateTime.now());
-        booking.setNotes(request.getNotes());
-        // Status is set to PENDING by default in entity
+        Booking booking = newPendingBooking(patient, selectedTests, totalPrice, currentDoctor, prescribedBy, request);
 
         // Save booking
         booking = bookingRepository.save(booking);
@@ -330,9 +243,7 @@ public class BookingService {
                 .orElseThrow(() -> new RuntimeException("Patient not found with ID: " + userId));
 
         List<Booking> bookings = bookingRepository.findByPatientIdOrderByBookingDateDesc(userId);
-        return bookings.stream()
-                .map(this::convertToBookingResponse)
-                .collect(Collectors.toList());
+        return convertToBookingResponses(bookings);
     }
 
     /**
@@ -340,9 +251,7 @@ public class BookingService {
      */
     public List<BookingResponse> getAllBookings() {
         List<Booking> bookings = bookingRepository.findAllWithDetails();
-        return bookings.stream()
-                .map(this::convertToBookingResponse)
-                .collect(Collectors.toList());
+        return convertToBookingResponses(bookings);
     }
 
     /**
@@ -350,9 +259,7 @@ public class BookingService {
      */
     public List<BookingResponse> getBookingsByStatus(Booking.BookingStatus status) {
         List<Booking> bookings = bookingRepository.findByStatusOrderByBookingDateDesc(status);
-        return bookings.stream()
-                .map(this::convertToBookingResponse)
-                .collect(Collectors.toList());
+        return convertToBookingResponses(bookings);
     }
 
     /**
@@ -369,9 +276,7 @@ public class BookingService {
                 .orElseThrow(() -> new RuntimeException("Only patients can view their own bookings"));
 
         List<Booking> bookings = bookingRepository.findByPatientOrderByBookingDateDesc(currentPatient);
-        return bookings.stream()
-                .map(this::convertToBookingResponse)
-                .collect(Collectors.toList());
+        return convertToBookingResponses(bookings);
     }
 
     /**
@@ -432,29 +337,7 @@ public class BookingService {
      */
     public List<BookingResponse> getBookingsByDateRange(LocalDateTime startDate, LocalDateTime endDate) {
         List<Booking> bookings = bookingRepository.findByBookingDateBetween(startDate, endDate);
-        return bookings.stream()
-                .map(this::convertToBookingResponse)
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * Security helper method: Check if the current user is the specified user
-     * Used in @PreAuthorize expressions
-     */
-    public boolean isCurrentUser(Long userId) {
-        try {
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            if (authentication == null || !authentication.isAuthenticated()) {
-                return false;
-            }
-
-            String currentUsername = authentication.getName();
-            Patient currentPatient = patientRepository.findByUsername(currentUsername).orElse(null);
-
-            return currentPatient != null && currentPatient.getId().equals(userId);
-        } catch (Exception e) {
-            return false;
-        }
+        return convertToBookingResponses(bookings);
     }
 
     /**
@@ -485,7 +368,66 @@ public class BookingService {
     /**
      * Convert Booking entity to BookingResponse DTO
      */
+    /** A full body checkup books every active test; otherwise the tests the request selected. */
+    private List<Long> requestedTestIds(BookingRequest request) {
+        if (Boolean.TRUE.equals(request.getIsFullBodyCheckup())) {
+            return labTestRepository.findAllActiveTestsOrderByName().stream().map(LabTest::getId)
+                    .collect(Collectors.toList());
+        }
+        return request.getSelectedTestIds();
+    }
+
+    /** The selected tests, all existing and active (shared by every way of creating a booking). */
+    private List<LabTest> loadBookableTests(List<Long> testIds) {
+        if (testIds == null || testIds.isEmpty()) {
+            throw new RuntimeException("At least one test must be selected");
+        }
+        List<LabTest> selectedTests = labTestRepository.findAllById(testIds);
+        if (selectedTests.size() != testIds.size()) {
+            throw new RuntimeException("One or more selected tests not found");
+        }
+        if (selectedTests.stream().anyMatch(test -> !test.getIsActive())) {
+            throw new RuntimeException("One or more selected tests are not available");
+        }
+        return selectedTests;
+    }
+
+    /** A new booking in PENDING status; doctor is null for a patient's own booking. */
+    private Booking newPendingBooking(Patient patient, List<LabTest> selectedTests, BigDecimal totalPrice,
+            Doctor doctor, String prescribedBy, BookingRequest request) {
+        Booking booking = new Booking();
+        booking.setPatient(patient);
+        booking.setSelectedTests(selectedTests);
+        booking.setTotalPrice(totalPrice);
+        if (doctor != null) {
+            booking.setDoctor(doctor);
+        }
+        booking.setPrescribedBy(prescribedBy);
+        booking.setBookingDate(request.getBookingDate() != null ? request.getBookingDate() : LocalDateTime.now());
+        booking.setNotes(request.getNotes());
+        booking.setStatus(Booking.BookingStatus.PENDING);
+        return booking;
+    }
+
+    /** Lists: the lab reports of all bookings come from one query instead of one per booking. */
+    private List<BookingResponse> convertToBookingResponses(List<Booking> bookings) {
+        if (bookings.isEmpty()) {
+            return new java.util.ArrayList<>();
+        }
+        Map<Long, List<Document>> reportsByBooking = documentRepository
+                .findActiveByBookingIdIn(bookings.stream().map(Booking::getId).toList()).stream()
+                .collect(Collectors.groupingBy(document -> document.getBooking().getId()));
+        return bookings.stream()
+                .map(booking -> convertToBookingResponse(booking,
+                        reportsByBooking.getOrDefault(booking.getId(), List.of())))
+                .collect(Collectors.toList());
+    }
+
     private BookingResponse convertToBookingResponse(Booking booking) {
+        return convertToBookingResponse(booking, documentRepository.findByBookingId(booking.getId()));
+    }
+
+    private BookingResponse convertToBookingResponse(Booking booking, List<Document> reports) {
         String patientName = "";
 
         // Get patient name
@@ -520,10 +462,9 @@ public class BookingService {
                 .build();
 
         // Populate lab reports
-        List<Document> reports = documentRepository.findByBookingId(booking.getId());
         if (reports != null && !reports.isEmpty()) {
             response.setLabReports(reports.stream()
-                    .map(DocumentDto::fromEntity)
+                    .map(documentService::toDto) // signed links for private lab reports
                     .collect(Collectors.toList()));
         }
 

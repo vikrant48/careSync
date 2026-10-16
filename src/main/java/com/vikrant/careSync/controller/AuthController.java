@@ -1,5 +1,6 @@
 package com.vikrant.careSync.controller;
 
+import com.vikrant.careSync.exception.ClientErrorMessages;
 import com.vikrant.careSync.constants.AppConstants;
 import com.vikrant.careSync.dto.DoctorDto;
 import com.vikrant.careSync.dto.PatientDto;
@@ -11,6 +12,8 @@ import com.vikrant.careSync.service.EmailVerificationService;
 import com.vikrant.careSync.service.GoogleAuthService;
 import com.vikrant.careSync.security.service.RefreshTokenService;
 import com.vikrant.careSync.security.service.SecurityService;
+import com.vikrant.careSync.security.service.TokenIssuer;
+import com.vikrant.careSync.security.ClientIpResolver;
 import com.vikrant.careSync.security.JwtService;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.PatientRepository;
@@ -39,11 +42,13 @@ public class AuthController {
     private final RefreshTokenService refreshTokenService;
     private final SecurityService securityService;
     private final JwtService jwtService;
+    private final TokenIssuer tokenIssuer;
     private final UserService userService;
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
     private final EmailVerificationService emailVerificationService;
     private final GoogleAuthService googleAuthService;
+    private final ClientIpResolver clientIpResolver;
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Authenticate user with Google", description = "Verifies Google ID token and returns JWT access and refresh tokens")
     @PostMapping("/google")
@@ -55,9 +60,7 @@ public class AuthController {
             AuthenticationResponse response = googleAuthService.authenticateGoogleUser(request, ipAddress, userAgent);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -68,9 +71,7 @@ public class AuthController {
             AuthenticationResponse response = authenticationService.register(request);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -83,9 +84,7 @@ public class AuthController {
             successResponse.put("message", "Verification OTP sent to email");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -102,9 +101,7 @@ public class AuthController {
             successResponse.put("message", "Email verified successfully");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -116,9 +113,7 @@ public class AuthController {
             successResponse.put("verified", verified);
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -141,9 +136,7 @@ public class AuthController {
             AuthenticationResponse response = authenticationService.authenticate(request, ipAddress, userAgent);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -155,24 +148,28 @@ public class AuthController {
 
             refreshTokenService.verifyExpiration(refreshToken);
 
+            // The refresh token only renews a session that is still live (not logged out, revoked or expired)
+            String sessionId = refreshToken.getSessionId();
+            if (!securityService.isSessionUsable(sessionId)) {
+                refreshTokenService.deleteRefreshToken(request.getRefreshToken());
+                throw new RuntimeException("Your session has ended. Please log in again.");
+            }
+
             // Load user details to generate new JWT
             String username = refreshToken.getUsername();
             String userType = refreshToken.getUserType();
 
-            // Generate new access token using JwtService
+            // The old refresh token is single-use; new tokens for the same session
             UserDetails userDetails = loadUserDetails(username, userType);
-            String newAccessToken = jwtService.generateToken(userDetails);
-
-            // Delete old refresh token and create new one for security
             refreshTokenService.deleteRefreshToken(request.getRefreshToken());
-            var newRefreshToken = refreshTokenService.createRefreshToken(username, userType);
+            TokenIssuer.IssuedTokens tokens = tokenIssuer.renewSession(userDetails, userType, sessionId);
 
             // Get complete user data
             Object userData = getUserData(username, userType);
 
             RefreshTokenResponse response = RefreshTokenResponse.builder()
-                    .accessToken(newAccessToken)
-                    .refreshToken(newRefreshToken.getToken())
+                    .accessToken(tokens.accessToken())
+                    .refreshToken(tokens.refreshToken())
                     .tokenType("Bearer")
                     .username(username)
                     .role(userType)
@@ -181,16 +178,22 @@ public class AuthController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<?> logout(@Valid @RequestBody LogoutRequest request) {
+    public ResponseEntity<?> logout(@Valid @RequestBody LogoutRequest request, HttpServletRequest httpRequest) {
         try {
+            // End the whole session, so its access token stops working now rather than at expiry
+            refreshTokenService.findByToken(request.getRefreshToken())
+                    .ifPresent(token -> endSession(token.getSessionId()));
             refreshTokenService.deleteRefreshToken(request.getRefreshToken());
+            // The access token sent with the request names its session too (the refresh token may have rotated)
+            String authHeader = httpRequest.getHeader("Authorization");
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                endSession(jwtService.extractSessionId(authHeader.substring(7)));
+            }
 
             LogoutResponse response = LogoutResponse.builder()
                     .message("Successfully logged out")
@@ -199,9 +202,7 @@ public class AuthController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -217,9 +218,7 @@ public class AuthController {
             successResponse.put("message", "Password changed successfully");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -232,9 +231,7 @@ public class AuthController {
             successResponse.put("message", "Password reset email sent");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -246,9 +243,7 @@ public class AuthController {
             successResponse.put("message", "If account exists, an OTP has been sent");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -261,9 +256,7 @@ public class AuthController {
             successResponse.put("message", "Password reset successfully");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -275,9 +268,7 @@ public class AuthController {
             successResponse.put("message", "OTP verified. You may reset your password");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -289,9 +280,7 @@ public class AuthController {
             successResponse.put("message", "Password reset successfully");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -309,27 +298,22 @@ public class AuthController {
             UserDto userDto = userService.getUserByUsername(username);
             return ResponseEntity.ok(userDto);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
     private String getClientIPAddress(HttpServletRequest request) {
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isEmpty() && !"unknown".equalsIgnoreCase(xForwardedFor)) {
-            return xForwardedFor.split(",")[0].trim();
-        }
-
-        String xRealIP = request.getHeader("X-Real-IP");
-        if (xRealIP != null && !xRealIP.isEmpty() && !"unknown".equalsIgnoreCase(xRealIP)) {
-            return xRealIP;
-        }
-
-        return request.getRemoteAddr();
+        return clientIpResolver.resolve(request);
     }
 
     // Helper method to get the current username from JWT token
+    private void endSession(String sessionId) {
+        if (sessionId != null) {
+            securityService.deactivateSession(sessionId);
+            refreshTokenService.deleteBySessionId(sessionId);
+        }
+    }
+
     private String getCurrentUsername(HttpServletRequest request) {
         final String authHeader = request.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {

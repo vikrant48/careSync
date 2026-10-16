@@ -90,6 +90,7 @@ public class MedicalHistoryService implements IMedicalHistoryService {
         if (target == null) {
             target = medicalHistory;
         } else {
+            assertEditable(target);
             if (medicalHistory.getVisitDate() != null)
                 target.setVisitDate(medicalHistory.getVisitDate());
             if (medicalHistory.getSymptoms() != null)
@@ -121,32 +122,25 @@ public class MedicalHistoryService implements IMedicalHistoryService {
 
     @Override
     public List<MedicalHistory> getMedicalHistoryByPatient(Long patientId) {
-        return medicalHistoryRepository.findByPatientId(patientId).stream()
-                .filter(mh -> !Boolean.TRUE.equals(mh.getIsDraft()))
-                .toList();
+        return medicalHistoryRepository.findFinalisedByPatientId(patientId);
     }
 
     public List<MedicalHistory> getRecentMedicalHistory(Long patientId, int limit) {
-        return medicalHistoryRepository.findByPatientIdOrderByVisitDateDesc(patientId)
-                .stream()
-                .limit(limit)
-                .toList();
+        return medicalHistoryRepository.findRecentByPatientId(patientId,
+                org.springframework.data.domain.PageRequest.of(0, Math.max(1, limit)));
     }
 
     public List<MedicalHistory> getMedicalHistoryByDateRange(Long patientId, String startDate, String endDate) {
+        LocalDate start;
+        LocalDate end;
         try {
-            LocalDate start = LocalDate.parse(startDate);
-            LocalDate end = LocalDate.parse(endDate);
-
-            return medicalHistoryRepository.findByPatientId(patientId).stream()
-                    .filter(history -> {
-                        LocalDate visitDate = history.getVisitDate();
-                        return !visitDate.isBefore(start) && !visitDate.isAfter(end);
-                    })
-                    .toList();
+            start = LocalDate.parse(startDate);
+            end = LocalDate.parse(endDate);
         } catch (Exception e) {
             throw new RuntimeException("Invalid date format. Use YYYY-MM-DD");
         }
+        // Same inclusive range as before, filtered in SQL instead of loading the whole history
+        return medicalHistoryRepository.findByPatientIdAndVisitDateBetween(patientId, start, end);
     }
 
     @Override
@@ -159,17 +153,7 @@ public class MedicalHistoryService implements IMedicalHistoryService {
         MedicalHistory existingHistory = medicalHistoryRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Medical history not found"));
 
-        if (Boolean.TRUE.equals(existingHistory.getIsSigned()) || Boolean.FALSE.equals(existingHistory.getIsDraft())) {
-            throw new IllegalStateException(
-                    "Medical record is electronically signed and locked. Modifications post-completion are prohibited.");
-        }
-
-        if (existingHistory.getAppointmentId() != null) {
-            Appointment appt = appointmentRepository.findById(existingHistory.getAppointmentId()).orElse(null);
-            if (appt != null && appt.getStatus() == Appointment.Status.COMPLETED) {
-                throw new IllegalStateException("Appointment is completed. Medical record is locked.");
-            }
-        }
+        assertEditable(existingHistory);
 
         // Update fields if provided
         if (updatedHistory.getVisitDate() != null) {
@@ -204,6 +188,7 @@ public class MedicalHistoryService implements IMedicalHistoryService {
     public void deleteMedicalHistory(Long id) {
         MedicalHistory medicalHistory = medicalHistoryRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Medical history not found"));
+        assertEditable(medicalHistory);
         medicalHistoryRepository.delete(medicalHistory);
     }
 
@@ -241,7 +226,9 @@ public class MedicalHistoryService implements IMedicalHistoryService {
     @Override
     public List<MedicalHistory> getMedicalHistoryByDiagnosis(Long patientId, String diagnosis) {
         return medicalHistoryRepository.findByPatientId(patientId).stream()
-                .filter(history -> history.getDiagnosis().toLowerCase().contains(diagnosis.toLowerCase()))
+                // diagnosis is encrypted, so this match can only happen after decryption
+                .filter(history -> history.getDiagnosis() != null
+                        && history.getDiagnosis().toLowerCase().contains(diagnosis.toLowerCase()))
                 .toList();
     }
 
@@ -299,7 +286,14 @@ public class MedicalHistoryService implements IMedicalHistoryService {
         if (records.size() == 1) {
             return records.get(0);
         }
-        MedicalHistory primary = records.get(0);
+        // Legacy duplicates: a signed record is authoritative and is returned unchanged
+        for (MedicalHistory record : records) {
+            if (Boolean.TRUE.equals(record.getIsSigned())) {
+                return record;
+            }
+        }
+        // Otherwise fill gaps from the other drafts into a detached copy; a GET must never modify records
+        MedicalHistory primary = copyOf(records.get(0));
         for (int i = 1; i < records.size(); i++) {
             MedicalHistory secondary = records.get(i);
             if (primary.getSubjective() == null || primary.getSubjective().trim().isEmpty()) {
@@ -333,6 +327,50 @@ public class MedicalHistoryService implements IMedicalHistoryService {
                 primary.setSymptoms(secondary.getSymptoms());
             }
         }
-        return medicalHistoryRepository.save(primary);
+        return primary;
+    }
+
+    /**
+     * A record that is signed, finalized (not a draft), or belongs to a completed appointment is part of
+     * the legal medical record and must never be changed or deleted. Every write path calls this.
+     */
+    public void assertEditable(MedicalHistory record) {
+        if (record == null || record.getId() == null) {
+            return; // new record
+        }
+        if (Boolean.TRUE.equals(record.getIsSigned()) || Boolean.FALSE.equals(record.getIsDraft())) {
+            throw new IllegalStateException(
+                    "Medical record is electronically signed and locked. Modifications post-completion are prohibited.");
+        }
+        if (record.getAppointmentId() != null) {
+            Appointment appt = appointmentRepository.findById(record.getAppointmentId()).orElse(null);
+            if (appt != null && appt.getStatus() == Appointment.Status.COMPLETED) {
+                throw new IllegalStateException("Appointment is completed. Medical record is locked.");
+            }
+        }
+    }
+
+    private static MedicalHistory copyOf(MedicalHistory source) {
+        MedicalHistory copy = new MedicalHistory();
+        copy.setId(source.getId());
+        copy.setPatient(source.getPatient());
+        copy.setDoctor(source.getDoctor());
+        copy.setVisitDate(source.getVisitDate());
+        copy.setSymptoms(source.getSymptoms());
+        copy.setDiagnosis(source.getDiagnosis());
+        copy.setTreatment(source.getTreatment());
+        copy.setMedicine(source.getMedicine());
+        copy.setDoses(source.getDoses());
+        copy.setNotes(source.getNotes());
+        copy.setSubjective(source.getSubjective());
+        copy.setObjective(source.getObjective());
+        copy.setAssessment(source.getAssessment());
+        copy.setPlan(source.getPlan());
+        copy.setTranscript(source.getTranscript());
+        copy.setIsDraft(source.getIsDraft());
+        copy.setIsSigned(source.getIsSigned());
+        copy.setSignedAt(source.getSignedAt());
+        copy.setAppointmentId(source.getAppointmentId());
+        return copy;
     }
 }

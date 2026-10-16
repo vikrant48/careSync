@@ -24,14 +24,14 @@ public class VitalController {
 
     @Operation(summary = "Log new vital", description = "Records new health metrics for a patient")
     @PostMapping
-    @PreAuthorize("hasRole('PATIENT')")
+    @PreAuthorize("hasRole('PATIENT') and @access.isSelf(#vitalDto.patientId)")
     public ResponseEntity<VitalDto> logVital(@RequestBody VitalDto vitalDto) {
         return ResponseEntity.ok(vitalService.logVital(vitalDto));
     }
 
     @Operation(summary = "Get patient vitals", description = "Retrieves all recorded vitals for a specific patient")
     @GetMapping("/patient/{patientId}")
-    @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR')")
+    @PreAuthorize("@access.canAccessPatient(#patientId)")
     public ResponseEntity<List<VitalDto>> getPatientVitals(@PathVariable Long patientId) {
         return ResponseEntity.ok(vitalService.getPatientVitals(patientId));
     }

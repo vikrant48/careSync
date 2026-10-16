@@ -18,8 +18,6 @@ public interface UserSessionRepository extends JpaRepository<UserSession, Long> 
     
     List<UserSession> findByUsernameAndActiveTrue(String username);
     
-    @Query("SELECT us FROM UserSession us WHERE us.lastActivity < :threshold AND us.active = true")
-    List<UserSession> findInactiveSessions(@Param("threshold") Instant threshold);
     
     @Modifying
     @Query("UPDATE UserSession us SET us.lastActivity = :lastActivity WHERE us.sessionId = :sessionId")
@@ -28,4 +26,14 @@ public interface UserSessionRepository extends JpaRepository<UserSession, Long> 
     @Modifying
     @Query("UPDATE UserSession us SET us.active = false WHERE us.username = :username")
     void deactivateAllSessionsForUser(@Param("username") String username);
+
+    @Modifying
+    @Query("UPDATE UserSession us SET us.active = false WHERE us.sessionId = :sessionId")
+    int deactivateBySessionId(@Param("sessionId") String sessionId);
+
+    @Modifying
+    @Query("UPDATE UserSession us SET us.active = false WHERE us.active = true "
+            + "AND (COALESCE(us.lastActivity, us.loginTime) < :idleBefore OR us.loginTime < :startedBefore)")
+    int deactivateExpiredSessions(@Param("idleBefore") Instant idleBefore,
+            @Param("startedBefore") Instant startedBefore);
 } 

@@ -19,7 +19,8 @@ public class ChatMessage {
     @Column(nullable = false)
     private Long appointmentId;
 
-    @Column(nullable = false)
+    @Convert(converter = com.vikrant.careSync.security.crypto.EncryptedTextConverter.class)
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
     @Column(nullable = false)

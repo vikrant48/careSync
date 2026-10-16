@@ -1,5 +1,8 @@
 package com.vikrant.careSync.controller;
 
+import com.vikrant.careSync.exception.ClientErrorMessages;
+import org.springframework.security.access.prepost.PreAuthorize;
+import com.vikrant.careSync.security.access.CurrentUserService;
 import com.vikrant.careSync.entity.MedicalHistory;
 import com.vikrant.careSync.entity.Patient;
 import com.vikrant.careSync.entity.Doctor;
@@ -7,7 +10,6 @@ import com.vikrant.careSync.dto.CreateMedicalHistoryRequest;
 import com.vikrant.careSync.dto.MedicalHistoryDto;
 import com.vikrant.careSync.dto.MedicalHistoryWithDoctorDto;
 import com.vikrant.careSync.service.interfaces.IMedicalHistoryService;
-import com.vikrant.careSync.repository.DoctorRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -29,21 +31,12 @@ import java.util.stream.Collectors;
 public class MedicalHistoryController {
 
     private final IMedicalHistoryService medicalHistoryService;
-    private final DoctorRepository doctorRepository;
+    private final CurrentUserService currentUserService;
 
-    // Get current authenticated doctor
-    private Doctor getCurrentDoctor() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.isAuthenticated()) {
-            String username = authentication.getName();
-            return doctorRepository.findByUsername(username)
-                    .orElseThrow(() -> new RuntimeException("Doctor not found with username: " + username));
-        }
-        throw new RuntimeException("User not authenticated");
-    }
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Create medical history", description = "Records a new medical visit entry for a patient (Doctor only)")
     @PostMapping
+    @PreAuthorize("hasRole('DOCTOR') and @access.canAccessPatient(#request.patientId)")
     public ResponseEntity<?> createMedicalHistory(@Valid @RequestBody CreateMedicalHistoryRequest request) {
         try {
             MedicalHistory medicalHistory = new MedicalHistory();
@@ -54,7 +47,7 @@ public class MedicalHistoryController {
             medicalHistory.setPatient(patient);
 
             // Set doctor from current authenticated user
-            Doctor currentDoctor = getCurrentDoctor();
+            Doctor currentDoctor = currentUserService.requireDoctor();
             medicalHistory.setDoctor(currentDoctor);
 
             medicalHistory.setVisitDate(request.getVisitDate());
@@ -69,13 +62,12 @@ public class MedicalHistoryController {
             MedicalHistory createdHistory = medicalHistoryService.createMedicalHistory(medicalHistory);
             return ResponseEntity.ok(new MedicalHistoryDto(createdHistory, "Medical history created successfully"));
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
     @PostMapping("/with-doctor")
+    @PreAuthorize("hasRole('DOCTOR') and @access.canAccessPatient(#request.patientId)")
     public ResponseEntity<?> createMedicalHistoryWithDoctor(
             @Valid @RequestBody CreateMedicalHistoryRequest request) {
         try {
@@ -87,7 +79,7 @@ public class MedicalHistoryController {
             medicalHistory.setPatient(patient);
 
             // Set doctor from current authenticated user
-            Doctor currentDoctor = getCurrentDoctor();
+            Doctor currentDoctor = currentUserService.requireDoctor();
             medicalHistory.setDoctor(currentDoctor);
 
             medicalHistory.setVisitDate(request.getVisitDate());
@@ -103,25 +95,23 @@ public class MedicalHistoryController {
                     currentDoctor.getId());
             return ResponseEntity.ok(new MedicalHistoryDto(createdHistory, "Medical history created successfully"));
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("@access.canAccessMedicalHistory(#id)")
     public ResponseEntity<?> getMedicalHistoryById(@PathVariable Long id) {
         try {
             MedicalHistory medicalHistory = medicalHistoryService.getMedicalHistoryById(id);
             return ResponseEntity.ok(new MedicalHistoryDto(medicalHistory));
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
     @GetMapping("/appointment/{appointmentId}")
+    @PreAuthorize("@access.canAccessAppointment(#appointmentId)")
     public ResponseEntity<?> getMedicalHistoryByAppointment(@PathVariable Long appointmentId) {
         try {
             MedicalHistory medicalHistory = medicalHistoryService.getMedicalHistoryByAppointmentId(appointmentId);
@@ -130,13 +120,12 @@ public class MedicalHistoryController {
             }
             return ResponseEntity.ok(Map.of());
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
     @GetMapping("/patient/{patientId}")
+    @PreAuthorize("@access.canAccessPatient(#patientId)")
     public ResponseEntity<?> getMedicalHistoryByPatient(@PathVariable Long patientId) {
         try {
             List<MedicalHistory> medicalHistories = medicalHistoryService.getMedicalHistoryByPatient(patientId);
@@ -145,13 +134,12 @@ public class MedicalHistoryController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(dtos);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
     @GetMapping("/patient/{patientId}/recent")
+    @PreAuthorize("@access.canAccessPatient(#patientId)")
     public ResponseEntity<?> getRecentMedicalHistory(@PathVariable Long patientId,
             @RequestParam(defaultValue = "10") int limit) {
         try {
@@ -161,13 +149,12 @@ public class MedicalHistoryController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(dtos);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
     @GetMapping("/patient/{patientId}/by-date-range")
+    @PreAuthorize("@access.canAccessPatient(#patientId)")
     public ResponseEntity<?> getMedicalHistoryByDateRange(
             @PathVariable Long patientId,
             @RequestParam String startDate,
@@ -180,13 +167,12 @@ public class MedicalHistoryController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(dtos);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN') and @access.canAccessMedicalHistory(#id)")
     public ResponseEntity<?> updateMedicalHistory(@PathVariable Long id,
             @Valid @RequestBody CreateMedicalHistoryRequest request) {
         try {
@@ -203,13 +189,12 @@ public class MedicalHistoryController {
             MedicalHistory updatedHistory = medicalHistoryService.updateMedicalHistory(id, medicalHistory);
             return ResponseEntity.ok(new MedicalHistoryDto(updatedHistory));
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN') and @access.canAccessMedicalHistory(#id)")
     public ResponseEntity<?> deleteMedicalHistory(@PathVariable Long id) {
         try {
             medicalHistoryService.deleteMedicalHistory(id);
@@ -217,25 +202,23 @@ public class MedicalHistoryController {
             successResponse.put("message", "Medical history deleted successfully");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
     @GetMapping("/patient/{patientId}/summary")
+    @PreAuthorize("@access.canAccessPatient(#patientId)")
     public ResponseEntity<?> getMedicalHistorySummary(@PathVariable Long patientId) {
         try {
             Map<String, Object> summary = medicalHistoryService.getMedicalHistorySummary(patientId);
             return ResponseEntity.ok(summary);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
     @GetMapping("/patient/{patientId}/diagnosis/{diagnosis}")
+    @PreAuthorize("@access.canAccessPatient(#patientId)")
     public ResponseEntity<?> getMedicalHistoryByDiagnosis(
             @PathVariable Long patientId,
             @PathVariable String diagnosis) {
@@ -247,22 +230,19 @@ public class MedicalHistoryController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(dtos);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
     @GetMapping("/patient/{patientId}/with-doctor")
+    @PreAuthorize("@access.canAccessPatient(#patientId)")
     public ResponseEntity<?> getMedicalHistoryWithDoctorByPatient(@PathVariable Long patientId) {
         try {
             List<MedicalHistoryWithDoctorDto> medicalHistories = medicalHistoryService
                     .getMedicalHistoryWithDoctorByPatient(patientId);
             return ResponseEntity.ok(medicalHistories);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 }

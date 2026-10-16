@@ -10,6 +10,10 @@ import java.util.Optional;
 
 public interface CertificateRepository extends JpaRepository<Certificate, Long> {
 
+    // Access-control lookup (AccessGuard): owning doctor id only
+    @Query("SELECT c.doctor.id FROM Certificate c WHERE c.id = :id")
+    Optional<Long> findDoctorIdById(@Param("id") Long id);
+
     @Query("SELECT c FROM Certificate c WHERE c.doctor.id = :doctorId")
     List<Certificate> findByDoctorId(@Param("doctorId") Long doctorId);
 

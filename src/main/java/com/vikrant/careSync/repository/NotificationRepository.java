@@ -7,9 +7,11 @@ import java.util.List;
 
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
 
-    List<Notification> findByRecipientTypeAndRecipientIdOrderByTimestampDesc(String recipientType, Long recipientId);
-
     long countByRecipientTypeAndRecipientIdAndReadIsFalse(String recipientType, Long recipientId);
+
+    // The feed is polled: newest 100 only (index: recipient_type, recipient_id, timestamp DESC)
+    List<Notification> findTop100ByRecipientTypeAndRecipientIdOrderByTimestampDesc(String recipientType,
+            Long recipientId);
 
     // Mark read will be handled in service by loading and saving the entity
 }

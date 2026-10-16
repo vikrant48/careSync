@@ -1,5 +1,6 @@
 package com.vikrant.careSync.controller;
 
+import com.vikrant.careSync.exception.ClientErrorMessages;
 import com.vikrant.careSync.security.service.SecurityService;
 import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Patient;
@@ -44,6 +45,10 @@ public class AdminController {
     private final CertificateRepository certificateRepository;
     private final AiService aiService;
     private final DoctorService doctorService;
+    private final com.vikrant.careSync.service.AccountStatusService accountStatusService;
+    private final com.vikrant.careSync.service.storage.MedicalFileMigrationService medicalFileMigrationService;
+    private final com.vikrant.careSync.security.crypto.FieldReencryptionService fieldReencryptionService;
+    private final com.vikrant.careSync.service.AuditService auditService;
 
     @GetMapping("/users")
     public ResponseEntity<List<UserSummaryDto>> getAllUsersSummary() {
@@ -83,22 +88,7 @@ public class AdminController {
 
         User user = userOpt.get();
         boolean newStatus = !Boolean.TRUE.equals(user.getIsActive());
-        user.setIsActive(newStatus);
-        userRepository.save(user);
-
-        // Sync with linked Doctor or Patient if present
-        doctorRepository.findById(user.getId()).ifPresent(doctor -> {
-            doctor.setIsActive(newStatus);
-            doctorRepository.save(doctor);
-        });
-        patientRepository.findById(user.getId()).ifPresent(patient -> {
-            patient.setIsActive(newStatus);
-            patientRepository.save(patient);
-        });
-        if (!newStatus) {
-            securityService.deactivateAllUserSessions(username);
-            refreshTokenService.deleteByUsername(username);
-        }
+        accountStatusService.setActive(user.getId(), newStatus);
 
         Map<String, Object> response = new HashMap<>();
         response.put("message", "User " + username + " is now " + (newStatus ? "ACTIVE" : "INACTIVE"));
@@ -120,22 +110,7 @@ public class AdminController {
             return ResponseEntity.badRequest().body(errorResponse);
         }
 
-        User user = userOpt.get();
-        user.setIsActive(active);
-        userRepository.save(user);
-
-        doctorRepository.findById(user.getId()).ifPresent(doctor -> {
-            doctor.setIsActive(active);
-            doctorRepository.save(doctor);
-        });
-        patientRepository.findById(user.getId()).ifPresent(patient -> {
-            patient.setIsActive(active);
-            patientRepository.save(patient);
-        });
-        if (!active) {
-            securityService.deactivateAllUserSessions(username);
-            refreshTokenService.deleteByUsername(username);
-        }
+        accountStatusService.setActive(userOpt.get().getId(), active);
 
         Map<String, Object> response = new HashMap<>();
         response.put("message", "User " + username + " active status set to " + active);
@@ -217,9 +192,7 @@ public class AdminController {
             response.put("message", "IP address " + ipAddress + " has been unblocked");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -231,9 +204,7 @@ public class AdminController {
             response.put("message", "All IP addresses have been unblocked");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -246,9 +217,7 @@ public class AdminController {
             response.put("message", "Expired blocked IPs and sessions have been cleaned up");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -266,19 +235,14 @@ public class AdminController {
             }
 
             Doctor doctor = doctorOpt.get();
-            doctor.setIsActive(false);
-            doctorRepository.save(doctor);
-            securityService.deactivateAllUserSessions(doctor.getUsername());
-            refreshTokenService.deleteByUsername(doctor.getUsername());
+            accountStatusService.setActive(doctor.getId(), false);
 
             Map<String, String> response = new HashMap<>();
             response.put("message", "Doctor " + doctor.getUsername() + " has been blocked");
             response.put("reason", reason != null ? reason : "No reason provided");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -296,19 +260,14 @@ public class AdminController {
             }
 
             Patient patient = patientOpt.get();
-            patient.setIsActive(false);
-            patientRepository.save(patient);
-            securityService.deactivateAllUserSessions(patient.getUsername());
-            refreshTokenService.deleteByUsername(patient.getUsername());
+            accountStatusService.setActive(patient.getId(), false);
 
             Map<String, String> response = new HashMap<>();
             response.put("message", "Patient " + patient.getUsername() + " has been blocked");
             response.put("reason", reason != null ? reason : "No reason provided");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -325,16 +284,13 @@ public class AdminController {
             }
 
             Doctor doctor = doctorOpt.get();
-            doctor.setIsActive(true);
-            doctorRepository.save(doctor);
+            accountStatusService.setActive(doctor.getId(), true);
 
             Map<String, String> response = new HashMap<>();
             response.put("message", "Doctor " + doctor.getUsername() + " has been unblocked");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -351,16 +307,13 @@ public class AdminController {
             }
 
             Patient patient = patientOpt.get();
-            patient.setIsActive(true);
-            patientRepository.save(patient);
+            accountStatusService.setActive(patient.getId(), true);
 
             Map<String, String> response = new HashMap<>();
             response.put("message", "Patient " + patient.getUsername() + " has been unblocked");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -376,9 +329,7 @@ public class AdminController {
             response.put("message", "IP address " + ipAddress + " has been blocked for " + hoursToBlock + " hours");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -391,9 +342,7 @@ public class AdminController {
                     .map(UserSessionDto::new).collect(Collectors.toList());
             return ResponseEntity.ok(sessions);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -401,13 +350,12 @@ public class AdminController {
     public ResponseEntity<Map<String, String>> deactivateSession(@PathVariable String sessionId) {
         try {
             securityService.deactivateSession(sessionId);
+            refreshTokenService.deleteBySessionId(sessionId);
             Map<String, String> response = new HashMap<>();
             response.put("message", "Session " + sessionId + " has been deactivated");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -419,9 +367,7 @@ public class AdminController {
             response.put("message", "All sessions for user " + username + " have been deactivated");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -433,9 +379,7 @@ public class AdminController {
             response.put("message", "Expired sessions have been cleaned up");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -476,5 +420,44 @@ public class AdminController {
         response.put("username", user.getUsername());
         response.put("userId", userId);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Moves medical files uploaded before the private bucket existed into it. Dry run by default;
+     * public copies are kept unless deleteOriginals=true (run that only after checking the moved files open).
+     */
+    @PostMapping("/storage/move-medical-files")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Object>> moveMedicalFilesToPrivateBucket(
+            @RequestParam(defaultValue = "true") boolean dryRun,
+            @RequestParam(defaultValue = "false") boolean deleteOriginals) {
+        return ResponseEntity.ok(medicalFileMigrationService.moveMedicalFilesToPrivateBucket(dryRun, deleteOriginals));
+    }
+
+    /**
+     * Rewrites encrypted patient-data columns into AES-256-GCM (old AES/ECB values and plaintext). Dry run by
+     * default. Take a database backup (Neon branch) before the real run.
+     */
+    @PostMapping("/security/reencrypt-fields")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Object>> reencryptFields(@RequestParam(defaultValue = "true") boolean dryRun) {
+        return ResponseEntity.ok(fieldReencryptionService.reencryptAll(dryRun));
+    }
+
+    /** Audit trail of patient-data access, newest first. Filters are optional; dates are ISO date-times. */
+    @GetMapping("/audit-logs")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<org.springframework.data.domain.Page<com.vikrant.careSync.entity.AuditLog>> getAuditLogs(
+            @RequestParam(required = false) String username,
+            @RequestParam(required = false) String recordId,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) java.time.LocalDateTime from,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) java.time.LocalDateTime to,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(
+                Math.max(0, page), Math.min(Math.max(1, size), 200));
+        return ResponseEntity.ok(auditService.search(username, recordId, from, to, pageable));
     }
 }

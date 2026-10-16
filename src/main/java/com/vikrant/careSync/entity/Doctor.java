@@ -87,17 +87,20 @@ public class Doctor {
     @org.hibernate.annotations.BatchSize(size = 100)
     private List<Certificate> certificates;
 
-    @OneToMany(mappedBy = "doctor", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    // Clinical records outlive the account: never deleted through it (retention rules)
+    @OneToMany(mappedBy = "doctor", cascade = { CascadeType.PERSIST, CascadeType.MERGE }, fetch = FetchType.LAZY)
     @JsonManagedReference
     @org.hibernate.annotations.BatchSize(size = 100)
     private List<Appointment> appointments;
 
-    @OneToMany(mappedBy = "doctor", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    // Clinical records outlive the account: never deleted through it (retention rules)
+    @OneToMany(mappedBy = "doctor", cascade = { CascadeType.PERSIST, CascadeType.MERGE }, fetch = FetchType.LAZY)
     @JsonManagedReference
     @org.hibernate.annotations.BatchSize(size = 100)
     private List<Feedback> feedbacks;
 
-    @OneToMany(mappedBy = "doctor", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    // Clinical records outlive the account: never deleted through it (retention rules)
+    @OneToMany(mappedBy = "doctor", cascade = { CascadeType.PERSIST, CascadeType.MERGE }, fetch = FetchType.LAZY)
     @JsonManagedReference
     @org.hibernate.annotations.BatchSize(size = 100)
     private List<Document> documents;

@@ -15,8 +15,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -151,6 +153,64 @@ public class AppointmentStateMachineService {
         }
     }
 
+    // ---- Workflow transition rules -------------------------------------------------------------
+
+    private static final Set<Appointment.Status> PRE_ACCEPT = EnumSet.of(
+            Appointment.Status.BOOKED, Appointment.Status.REQUESTED,
+            Appointment.Status.CONFIRMED, Appointment.Status.SCHEDULED);
+    private static final Set<Appointment.Status> INTAKE_STAGE = EnumSet.of(
+            Appointment.Status.INTAKE, Appointment.Status.INTAKE_COMPLETED);
+    private static final Set<Appointment.Status> WAITING_STAGE = EnumSet.of(
+            Appointment.Status.WAITING_ROOM, Appointment.Status.READY_FOR_VISIT);
+    private static final Set<Appointment.Status> RECORD_STAGE = EnumSet.of(
+            Appointment.Status.MEDICAL_RECORD, Appointment.Status.REPORT_DRAFTED);
+    /** Completed or terminal: no action may change these appointments any more. */
+    static final Set<Appointment.Status> CLOSED = EnumSet.of(
+            Appointment.Status.COMPLETED, Appointment.Status.CANCELLED, Appointment.Status.CANCELLED_BY_PATIENT,
+            Appointment.Status.CANCELLED_BY_DOCTOR, Appointment.Status.REJECTED, Appointment.Status.NO_SHOW,
+            Appointment.Status.NO_SHOW_PATIENT, Appointment.Status.NO_SHOW_DOCTOR, Appointment.Status.AUTO_CLOSED);
+
+    /** Actions that only open a screen; they never change the appointment. */
+    private static final Set<String> VIEW_ACTIONS = Set.of(
+            "CHAT", "VIEW_RECORD", "VIEW_INTAKE", "OPEN_INTAKE", "EDIT_RECORD", "PREVIEW_PDF",
+            "PREVIEW_AND_COMPLETE", "DOWNLOAD_RX", "SUBMIT_FEEDBACK", "RESCHEDULE");
+
+    private static Set<Appointment.Status> union(Set<Appointment.Status> a, Set<Appointment.Status> b) {
+        Set<Appointment.Status> result = EnumSet.copyOf(a);
+        result.addAll(b);
+        return result;
+    }
+
+    private static void requireRole(User currentUser, String action, User.Role... roles) {
+        for (User.Role role : roles) {
+            if (currentUser.getRole() == role) {
+                return;
+            }
+        }
+        throw new SecurityException("Your role cannot perform " + action);
+    }
+
+    private static void requireStatus(Appointment appointment, String action, Set<Appointment.Status> allowed) {
+        if (!allowed.contains(appointment.getStatus())) {
+            throw new IllegalStateException(
+                    "Cannot perform " + action + " while the appointment is " + appointment.getStatus());
+        }
+    }
+
+    private static void moveTo(Appointment appointment, Appointment.Status newStatus, String actor) {
+        appointment.setStatus(newStatus);
+        appointment.setStatusChangedAt(LocalDateTime.now());
+        appointment.setStatusChangedBy(actor);
+        if (Appointment.isTerminalStatus(newStatus) || newStatus == Appointment.Status.REJECTED) {
+            appointment.setIsActive(false);
+        }
+    }
+
+    /**
+     * Runs one workflow action. Every action has the roles allowed to run it and the statuses it may
+     * start from, so a visit cannot be moved backwards, skipped ahead, or reopened once closed.
+     * Role violations raise SecurityException (403); invalid transitions IllegalStateException (409).
+     */
     public Appointment executeAction(Long appointmentId, String actionKey, User currentUser,
             Map<String, Object> payload) {
         Appointment appointment = appointmentRepository.findByIdForUpdate(appointmentId)
@@ -158,90 +218,93 @@ public class AppointmentStateMachineService {
 
         validateOwnership(appointment, currentUser);
 
+        String action = actionKey.toUpperCase();
         Appointment.Status oldStatus = appointment.getStatus();
         String reason = payload != null && payload.get("reason") != null ? payload.get("reason").toString() : null;
+        String actor = currentUser.getUsername();
+        boolean isPatient = currentUser.getRole() == User.Role.PATIENT;
 
-        switch (actionKey.toUpperCase()) {
+        if (!VIEW_ACTIONS.contains(action) && CLOSED.contains(oldStatus)) {
+            throw new IllegalStateException("This appointment is " + oldStatus + " and can no longer be changed");
+        }
+
+        switch (action) {
             case "CONFIRM":
-                if (appointment.getStatus() == Appointment.Status.CONFIRMED
-                        || appointment.getStatus() == Appointment.Status.SCHEDULED) {
-                    // Already confirmed, idempotent success
-                    break;
+                requireRole(currentUser, action, User.Role.PATIENT, User.Role.ADMIN);
+                if (oldStatus == Appointment.Status.CONFIRMED || oldStatus == Appointment.Status.SCHEDULED) {
+                    break; // already confirmed, idempotent success
                 }
-                if (appointment.getStatus() != Appointment.Status.BOOKED) {
-                    throw new IllegalStateException("Cannot confirm booking from status: " + oldStatus);
-                }
-                appointment.setStatus(Appointment.Status.CONFIRMED);
+                requireStatus(appointment, action, EnumSet.of(Appointment.Status.BOOKED));
+                moveTo(appointment, Appointment.Status.CONFIRMED, actor);
                 break;
 
             case "ACCEPT":
-                if (currentUser.getRole() != User.Role.DOCTOR && currentUser.getRole() != User.Role.ADMIN) {
-                    throw new IllegalArgumentException("Only doctors can accept appointments");
+                requireRole(currentUser, action, User.Role.DOCTOR, User.Role.ADMIN);
+                if (INTAKE_STAGE.contains(oldStatus) || WAITING_STAGE.contains(oldStatus)
+                        || oldStatus == Appointment.Status.IN_PROGRESS) {
+                    break; // already accepted, idempotent success
                 }
-                if (oldStatus == Appointment.Status.INTAKE || oldStatus == Appointment.Status.INTAKE_COMPLETED
-                        || oldStatus == Appointment.Status.WAITING_ROOM || oldStatus == Appointment.Status.IN_PROGRESS
-                        || oldStatus == Appointment.Status.COMPLETED) {
-                    // Already accepted, idempotent success
-                    break;
-                }
-                if (oldStatus != Appointment.Status.BOOKED && oldStatus != Appointment.Status.CONFIRMED
-                        && oldStatus != Appointment.Status.SCHEDULED) {
-                    throw new IllegalStateException("Cannot accept appointment from status: " + oldStatus);
-                }
-                appointment.setStatus(Appointment.Status.INTAKE);
+                requireStatus(appointment, action, PRE_ACCEPT);
+                moveTo(appointment, Appointment.Status.INTAKE, actor);
                 break;
 
             case "REJECT":
-                if (currentUser.getRole() != User.Role.DOCTOR) {
-                    throw new IllegalArgumentException("Only doctors can reject appointments");
-                }
+                requireRole(currentUser, action, User.Role.DOCTOR);
+                requireStatus(appointment, action, PRE_ACCEPT);
                 if (reason == null || reason.trim().isEmpty()) {
                     throw new IllegalArgumentException("Rejection reason is required");
                 }
-                appointment.setStatus(Appointment.Status.REJECTED);
                 appointment.setCancellationReason(reason);
-                appointment.setIsActive(false);
+                moveTo(appointment, Appointment.Status.REJECTED, actor);
                 break;
 
             case "CANCEL":
-                if (currentUser.getRole() == User.Role.PATIENT) {
+                if (isPatient) {
                     if (oldStatus != Appointment.Status.BOOKED && oldStatus != Appointment.Status.CONFIRMED) {
                         throw new IllegalStateException("Patient cannot cancel appointment once doctor has accepted.");
                     }
-                    appointment.setStatus(Appointment.Status.CANCELLED_BY_PATIENT);
                 } else {
-                    appointment.setStatus(Appointment.Status.CANCELLED_BY_DOCTOR);
+                    // Doctors may cancel until the consultation starts; afterwards the visit must be completed
+                    requireStatus(appointment, action, union(union(PRE_ACCEPT, INTAKE_STAGE), WAITING_STAGE));
                 }
                 if (reason != null) {
                     appointment.setCancellationReason(reason);
                 }
-                appointment.setIsActive(false);
+                moveTo(appointment, isPatient ? Appointment.Status.CANCELLED_BY_PATIENT
+                        : Appointment.Status.CANCELLED_BY_DOCTOR, actor);
                 break;
 
             case "SUBMIT_INTAKE":
-                appointment.setIntakeCompleted(true);
-                appointment.setStatus(Appointment.Status.WAITING_ROOM);
-                break;
-
             case "FILL_WITH_DOCTOR":
-                appointment.setStatus(Appointment.Status.WAITING_ROOM);
+                requireRole(currentUser, action, User.Role.PATIENT, User.Role.ADMIN);
+                if (WAITING_STAGE.contains(oldStatus)) {
+                    break; // already in the waiting room
+                }
+                requireStatus(appointment, action, INTAKE_STAGE);
+                if ("SUBMIT_INTAKE".equals(action)) {
+                    appointment.setIntakeCompleted(true);
+                }
+                moveTo(appointment, Appointment.Status.WAITING_ROOM, actor);
                 break;
 
             case "JOIN_WAITING_ROOM":
             case "JOIN_VIDEO":
             case "JOIN_ROOM":
             case "DEVICE_TEST":
+                if (!isPatient) {
+                    break; // a doctor joining the room does not change the patient state
+                }
+                requireStatus(appointment, action,
+                        union(union(INTAKE_STAGE, WAITING_STAGE), EnumSet.of(Appointment.Status.IN_PROGRESS)));
                 appointment.setPatientReady(true);
-                if (appointment.canChangeStatus(Appointment.Status.WAITING_ROOM)) {
-                    appointment.changeStatus(Appointment.Status.WAITING_ROOM, "PATIENT_JOINED_WAITING_ROOM");
+                if (INTAKE_STAGE.contains(oldStatus)) {
+                    moveTo(appointment, Appointment.Status.WAITING_ROOM, "PATIENT_JOINED_WAITING_ROOM");
                 }
                 break;
 
-            case "CHAT":
-                // In-session communication action, no status state change required
-                break;
-
-            case "CONFIRM_INTAKE":
+            case "CONFIRM_INTAKE": {
+                requireRole(currentUser, action, User.Role.PATIENT, User.Role.ADMIN);
+                requireStatus(appointment, action, union(INTAKE_STAGE, WAITING_STAGE));
                 com.vikrant.careSync.entity.AppointmentIntake currentIntake = intakeRepository
                         .findByAppointmentId(appointmentId)
                         .orElseGet(() -> intakeRepository.save(com.vikrant.careSync.entity.AppointmentIntake.builder()
@@ -250,16 +313,17 @@ public class AppointmentStateMachineService {
                                 .build()));
                 currentIntake.setIsConfirmedByPatient(true);
                 currentIntake.setConfirmedAt(LocalDateTime.now());
-                currentIntake.setConfirmedBy(currentUser.getUsername());
+                currentIntake.setConfirmedBy(actor);
                 currentIntake.setIntakeStatus("CONFIRMED");
                 intakeRepository.save(currentIntake);
                 appointment.setPatientReady(true);
                 break;
+            }
 
-            case "EDIT_INTAKE":
-                if (currentUser.getRole() != User.Role.DOCTOR && currentUser.getRole() != User.Role.ADMIN) {
-                    throw new IllegalArgumentException("Only doctors can edit patient intake");
-                }
+            case "EDIT_INTAKE": {
+                requireRole(currentUser, action, User.Role.DOCTOR, User.Role.ADMIN);
+                requireStatus(appointment, action,
+                        union(union(INTAKE_STAGE, WAITING_STAGE), EnumSet.of(Appointment.Status.IN_PROGRESS)));
                 com.vikrant.careSync.entity.AppointmentIntake intakeToEdit = intakeRepository
                         .findByAppointmentId(appointmentId)
                         .orElseGet(() -> com.vikrant.careSync.entity.AppointmentIntake.builder()
@@ -296,16 +360,15 @@ public class AppointmentStateMachineService {
                 intakeToEdit.setIsConfirmedByPatient(false);
                 intakeRepository.save(intakeToEdit);
                 break;
+            }
 
             case "START_PROGRESS":
-            case "OVERRIDE_START_PROGRESS":
-                if (currentUser.getRole() != User.Role.DOCTOR && currentUser.getRole() != User.Role.ADMIN) {
-                    throw new IllegalArgumentException("Only doctors can start consultations");
+            case "OVERRIDE_START_PROGRESS": {
+                requireRole(currentUser, action, User.Role.DOCTOR, User.Role.ADMIN);
+                if (oldStatus == Appointment.Status.IN_PROGRESS) {
+                    return appointment; // already in progress, idempotent success
                 }
-                if (appointment.getStatus() == Appointment.Status.IN_PROGRESS) {
-                    // Already in progress, idempotent success
-                    return appointment;
-                }
+                requireStatus(appointment, action, union(INTAKE_STAGE, WAITING_STAGE));
                 com.vikrant.careSync.entity.AppointmentIntake intakeForStart = intakeRepository
                         .findByAppointmentId(appointmentId)
                         .orElseGet(() -> intakeRepository.save(com.vikrant.careSync.entity.AppointmentIntake.builder()
@@ -318,7 +381,7 @@ public class AppointmentStateMachineService {
                 if (!Boolean.TRUE.equals(intakeForStart.getIsConfirmedByPatient())) {
                     intakeForStart.setIsConfirmedByPatient(true);
                     intakeForStart.setConfirmedAt(LocalDateTime.now());
-                    intakeForStart.setConfirmedBy(currentUser.getUsername());
+                    intakeForStart.setConfirmedBy(actor);
                     intakeRepository.save(intakeForStart);
                 }
 
@@ -326,84 +389,70 @@ public class AppointmentStateMachineService {
                     appointment.setVisitStartedAt(LocalDateTime.now());
                 }
                 appointment.setPatientReady(true);
-                appointment.setStatus(Appointment.Status.IN_PROGRESS);
+                moveTo(appointment, Appointment.Status.IN_PROGRESS, actor);
                 eventPublisher.publishEvent(new VisitStartedEvent(this, appointment.getId(),
                         appointment.getDoctor().getId(), appointment.getPatient().getId()));
                 break;
+            }
 
             case "ADD_MEDICAL_RECORD":
             case "AI_SOAP":
-                appointment.setStatus(Appointment.Status.MEDICAL_RECORD);
+                requireRole(currentUser, action, User.Role.DOCTOR, User.Role.ADMIN);
+                if (RECORD_STAGE.contains(oldStatus)) {
+                    break; // already in the medical record stage
+                }
+                requireStatus(appointment, action, EnumSet.of(Appointment.Status.IN_PROGRESS));
+                moveTo(appointment, Appointment.Status.MEDICAL_RECORD, actor);
                 break;
 
-            case "MOVE_TO_COMPLETE":
-                if (currentUser.getRole() != User.Role.DOCTOR && currentUser.getRole() != User.Role.ADMIN) {
-                    throw new IllegalArgumentException("Only doctors can move appointment to complete review stage");
-                }
+            case "MOVE_TO_COMPLETE": {
+                requireRole(currentUser, action, User.Role.DOCTOR, User.Role.ADMIN);
+                requireStatus(appointment, action, RECORD_STAGE);
                 com.vikrant.careSync.dto.RecordReadinessDto readiness = recordReadinessService
                         .checkReadiness(appointmentId);
                 if (!readiness.isReady()) {
                     throw new IllegalStateException(String.join("; ", readiness.getReasons()));
                 }
-                appointment.setStatus(Appointment.Status.READY_TO_COMPLETE);
+                moveTo(appointment, Appointment.Status.READY_TO_COMPLETE, actor);
                 break;
+            }
 
             case "BACK_TO_MEDICAL_RECORD":
-                if (currentUser.getRole() != User.Role.DOCTOR && currentUser.getRole() != User.Role.ADMIN) {
-                    throw new IllegalArgumentException("Only doctors can revert appointment to Medical Record stage");
-                }
+                requireRole(currentUser, action, User.Role.DOCTOR, User.Role.ADMIN);
                 if (oldStatus != Appointment.Status.READY_TO_COMPLETE) {
                     throw new IllegalStateException(
                             "Can only return to Medical Record stage from Complete review stage.");
                 }
                 log.info("Doctor {} returning appointment {} from READY_TO_COMPLETE to MEDICAL_RECORD stage",
-                        currentUser.getUsername(), appointmentId);
-                appointment.setStatus(Appointment.Status.MEDICAL_RECORD);
+                        actor, appointmentId);
+                moveTo(appointment, Appointment.Status.MEDICAL_RECORD, actor);
                 break;
 
             case "FORCE_CANCEL":
-                if (currentUser.getRole() != User.Role.ADMIN) {
-                    throw new IllegalArgumentException("Only admins can force cancel appointments");
-                }
-                appointment.setStatus(Appointment.Status.CANCELLED);
+                requireRole(currentUser, action, User.Role.ADMIN);
+                moveTo(appointment, Appointment.Status.CANCELLED, actor);
                 appointment.setIsActive(false);
                 break;
 
             case "FORCE_COMPLETE":
-                if (currentUser.getRole() != User.Role.ADMIN) {
-                    throw new IllegalArgumentException("Only admins can force complete appointments");
-                }
-                appointment.setStatus(Appointment.Status.COMPLETED);
-                break;
-
-            case "VIEW_RECORD":
-            case "VIEW_INTAKE":
-            case "OPEN_INTAKE":
-            case "EDIT_RECORD":
-            case "PREVIEW_PDF":
-            case "PREVIEW_AND_COMPLETE":
-            case "DOWNLOAD_RX":
-            case "SUBMIT_FEEDBACK":
-            case "RESCHEDULE":
-                // View/Modal navigation actions, return current appointment state without
-                // status mutation
-                log.info("Executing non-mutating view action '{}' for appointment {}", actionKey, appointmentId);
+                requireRole(currentUser, action, User.Role.ADMIN);
+                moveTo(appointment, Appointment.Status.COMPLETED, actor);
                 break;
 
             default:
+                if (VIEW_ACTIONS.contains(action)) {
+                    // View/Modal navigation actions, return current appointment state without status mutation
+                    log.info("Executing non-mutating view action '{}' for appointment {}", actionKey, appointmentId);
+                    break;
+                }
                 throw new IllegalArgumentException("Unknown action key: " + actionKey);
         }
 
         Appointment saved = appointmentRepository.save(appointment);
 
         // Audit Trail
-        AppointmentStatusLog statusLog = AppointmentStatusLog.builder()
-                .appointmentId(saved.getId())
-                .previousStatus(oldStatus)
-                .newStatus(saved.getStatus())
-                .changedBy(currentUser.getUsername())
-                .reason(reason != null ? reason : "Action " + actionKey + " executed by " + currentUser.getRole())
-                .build();
+        AppointmentStatusLog statusLog = AppointmentStatusLog.of(saved.getId(), oldStatus, saved.getStatus(), actor,
+                reason != null ? reason : "Action " + actionKey + " executed by " + currentUser.getRole());
         statusLogRepository.save(statusLog);
 
         return saved;

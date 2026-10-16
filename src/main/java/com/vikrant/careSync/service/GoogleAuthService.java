@@ -1,5 +1,6 @@
 package com.vikrant.careSync.service;
 
+import com.vikrant.careSync.security.service.TokenIssuer;
 import com.vikrant.careSync.constants.AppConstants;
 import com.vikrant.careSync.dto.DoctorDto;
 import com.vikrant.careSync.dto.PatientDto;
@@ -38,9 +39,8 @@ public class GoogleAuthService {
     private final PatientRepository patientRepository;
     private final DoctorRepository doctorRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JwtService jwtService;
-    private final RefreshTokenService refreshTokenService;
-    private final SecurityService securityService;
+    private final TokenIssuer tokenIssuer;
+    private final UserIdGenerator userIdGenerator;
     private final RestTemplate restTemplate = new RestTemplate();
 
     @Value("${app.google.client-id:}")
@@ -64,18 +64,8 @@ public class GoogleAuthService {
             throw new RuntimeException("Invalid or expired Google ID Token");
         }
 
-        if (tokenClaims == null || !tokenClaims.containsKey("email")) {
-            throw new RuntimeException("Invalid Google token payload");
-        }
-
+        validateClaims(tokenClaims);
         String email = (String) tokenClaims.get("email");
-        Object emailVerifiedObj = tokenClaims.get("email_verified");
-        boolean emailVerified = emailVerifiedObj != null &&
-                ("true".equalsIgnoreCase(String.valueOf(emailVerifiedObj)) || Boolean.TRUE.equals(emailVerifiedObj));
-
-        if (!emailVerified) {
-            throw new RuntimeException("Google account email is not verified");
-        }
 
         String name = (String) tokenClaims.getOrDefault("name", "Google User");
         String givenName = (String) tokenClaims.getOrDefault("given_name", "");
@@ -96,9 +86,37 @@ public class GoogleAuthService {
         return generateAuthResponse(user, roleStr, "Google login successful", ipAddress, userAgent);
     }
 
+    /**
+     * tokeninfo only proves Google issued the token; it must also have been issued to THIS app (aud),
+     * otherwise any site the user signed in to with Google could replay its token here and log in as them.
+     */
+    void validateClaims(Map<String, Object> tokenClaims) {
+        if (googleClientId == null || googleClientId.isBlank()) {
+            log.error("Google sign-in rejected: app.google.client-id (GOOGLE_CLIENT_ID) is not configured");
+            throw new RuntimeException("Google sign-in is not available");
+        }
+        if (tokenClaims == null || !tokenClaims.containsKey("email")) {
+            throw new RuntimeException("Invalid Google token payload");
+        }
+        if (!googleClientId.equals(String.valueOf(tokenClaims.get("aud")))) {
+            log.warn("Google ID token rejected: issued for a different client (aud mismatch)");
+            throw new RuntimeException("Invalid or expired Google ID Token");
+        }
+        String issuer = String.valueOf(tokenClaims.get("iss"));
+        if (!"accounts.google.com".equals(issuer) && !"https://accounts.google.com".equals(issuer)) {
+            throw new RuntimeException("Invalid or expired Google ID Token");
+        }
+        Object emailVerifiedObj = tokenClaims.get("email_verified");
+        boolean emailVerified = emailVerifiedObj != null &&
+                ("true".equalsIgnoreCase(String.valueOf(emailVerifiedObj)) || Boolean.TRUE.equals(emailVerifiedObj));
+        if (!emailVerified) {
+            throw new RuntimeException("Google account email is not verified");
+        }
+    }
+
     private User registerGoogleUser(String email, String fullName, String givenName, String familyName, String picture,
             String requestedRole) {
-        Long userId = generateNextUserId();
+        Long userId = userIdGenerator.next();
 
         // Generate a clean username from email
         String baseUsername = email.split("@")[0].replaceAll("[^a-zA-Z0-9]", "");
@@ -148,10 +166,6 @@ public class GoogleAuthService {
         return savedUser;
     }
 
-    private synchronized Long generateNextUserId() {
-        Long maxId = userRepository.findMaxUserId().orElse(100000L);
-        return Math.max(100001L, maxId + 1);
-    }
 
     private AuthenticationResponse generateAuthResponse(User user, String role, String message, String ipAddress,
             String userAgent) {
@@ -163,13 +177,7 @@ public class GoogleAuthService {
                 .disabled(!Boolean.TRUE.equals(user.getIsActive()))
                 .build();
 
-        UserSession userSession = securityService.createUserSession(user.getUsername(), ipAddress, userAgent, role);
-        String sessionId = userSession.getSessionId();
-
-        Map<String, Object> extraClaims = new HashMap<>();
-        extraClaims.put("sessionId", sessionId);
-        String accessToken = jwtService.generateToken(extraClaims, userDetails);
-        var refreshToken = refreshTokenService.createRefreshToken(user.getUsername(), role);
+        TokenIssuer.IssuedTokens tokens = tokenIssuer.startSession(userDetails, role, ipAddress, userAgent);
 
         Object userData = null;
         if (AppConstants.Roles.PATIENT.equals(role)) {
@@ -185,8 +193,8 @@ public class GoogleAuthService {
         }
 
         return AuthenticationResponse.builder()
-                .accessToken(accessToken)
-                .refreshToken(refreshToken.getToken())
+                .accessToken(tokens.accessToken())
+                .refreshToken(tokens.refreshToken())
                 .tokenType("Bearer")
                 .username(user.getUsername())
                 .role(role)

@@ -109,12 +109,13 @@ public interface IPatientService {
     List<MedicalHistory> getMedicalHistoryByDateRange(Long patientId, LocalDate startDate, LocalDate endDate);
 
     /**
-     * Get patients by illness keyword
-     * 
+     * Get patients by illness keyword, searching only the given patients
+     *
      * @param illnessKeyword Illness keyword to search
+     * @param patientIds     Patients the caller may see (e.g. the doctor's own patients)
      * @return List of patients with matching illness
      */
-    List<Patient> getPatientsByIllness(String illnessKeyword);
+    List<Patient> getPatientsByIllness(String illnessKeyword, java.util.Collection<Long> patientIds);
 
     /**
      * Update patient illness details

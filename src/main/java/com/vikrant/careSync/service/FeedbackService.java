@@ -132,6 +132,10 @@ public class FeedbackService implements IFeedbackService {
         Appointment appointment = appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
 
+        if (appointment.getStatus() != Appointment.Status.COMPLETED) {
+            throw new IllegalStateException("Feedback can only be submitted for completed appointments");
+        }
+
         // If doctorId is provided, validate it matches the appointment's doctor
         if (doctorId != null && !appointment.getDoctor().getId().equals(doctorId)) {
             throw new RuntimeException("Doctor ID does not match the appointment's doctor");
@@ -198,7 +202,4 @@ public class FeedbackService implements IFeedbackService {
         return feedbackRepository.countByDoctorIdAndRating(doctorId, rating);
     }
 
-    public List<Feedback> getAllFeedback() {
-        return feedbackRepository.findAll();
-    }
 }

@@ -20,8 +20,21 @@ public interface MedicalHistoryRepository extends JpaRepository<MedicalHistory, 
     @Query("SELECT mh FROM MedicalHistory mh WHERE mh.patient.id = :patientId ORDER BY mh.visitDate DESC")
     List<MedicalHistory> findByPatientIdOrderByVisitDateDesc(@Param("patientId") Long patientId);
 
+    // Filtering and limiting in SQL: each loaded row decrypts up to 11 fields
+    @Query("SELECT mh FROM MedicalHistory mh WHERE mh.patient.id = :patientId "
+            + "AND (mh.isDraft IS NULL OR mh.isDraft = false)")
+    List<MedicalHistory> findFinalisedByPatientId(@Param("patientId") Long patientId);
+
+    @Query("SELECT mh FROM MedicalHistory mh WHERE mh.patient.id = :patientId ORDER BY mh.visitDate DESC")
+    List<MedicalHistory> findRecentByPatientId(@Param("patientId") Long patientId,
+            org.springframework.data.domain.Pageable pageable);
+
     @Override
     Optional<MedicalHistory> findById(Long id);
+
+    // Access-control lookup (AccessGuard): owning patient id only
+    @Query("SELECT p.id FROM MedicalHistory mh JOIN mh.patient p WHERE mh.id = :id")
+    Optional<Long> findPatientIdById(@Param("id") Long id);
 
     @Override
     <S extends MedicalHistory> S save(S entity);

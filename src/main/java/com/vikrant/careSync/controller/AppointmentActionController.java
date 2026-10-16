@@ -1,5 +1,6 @@
 package com.vikrant.careSync.controller;
 
+import com.vikrant.careSync.exception.ClientErrorMessages;
 import com.vikrant.careSync.dto.AllowedActionDto;
 import com.vikrant.careSync.dto.AppointmentResponse;
 import com.vikrant.careSync.entity.Appointment;
@@ -69,9 +70,7 @@ public class AppointmentActionController {
             List<AllowedActionDto> actions = stateMachineService.getAllowedActions(id, currentUser);
             return ResponseEntity.ok(actions);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorAndMessageBody(e)); // "message" is read by the frontend alert
         }
     }
 
@@ -86,17 +85,11 @@ public class AppointmentActionController {
             Appointment updated = stateMachineService.executeAction(id, action, currentUser, payload);
             return ResponseEntity.ok(new AppointmentResponse(updated));
         } catch (IllegalStateException e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.status(409).body(errorResponse); // 409 Conflict for invalid state transitions
+            return ResponseEntity.status(409).body(ClientErrorMessages.errorAndMessageBody(e)); // "message" is read by the frontend alert // 409 Conflict for invalid state transitions
         } catch (SecurityException e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.status(403).body(errorResponse); // 403 Forbidden for unauthorized role/ownership
+            return ResponseEntity.status(403).body(ClientErrorMessages.errorAndMessageBody(e)); // "message" is read by the frontend alert // 403 Forbidden for unauthorized role/ownership
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorAndMessageBody(e)); // "message" is read by the frontend alert
         }
     }
 }

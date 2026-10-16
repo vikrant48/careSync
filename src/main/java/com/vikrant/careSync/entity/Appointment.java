@@ -39,7 +39,8 @@ public class Appointment {
     @Column(nullable = false, length = 20)
     private Status status;
 
-    @Column(length = 500)
+    @Convert(converter = com.vikrant.careSync.security.crypto.EncryptedTextConverter.class)
+    @Column(columnDefinition = "TEXT")
     private String reason;
 
     @Enumerated(EnumType.STRING)
@@ -95,7 +96,8 @@ public class Appointment {
     @Builder.Default
     private Boolean patientReady = false;
 
-    @Column(name = "cancellation_reason", length = 500)
+    @Convert(converter = com.vikrant.careSync.security.crypto.EncryptedTextConverter.class)
+    @Column(name = "cancellation_reason", columnDefinition = "TEXT")
     private String cancellationReason;
 
     @Column(name = "visit_started_at")

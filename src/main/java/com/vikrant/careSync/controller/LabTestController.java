@@ -1,5 +1,6 @@
 package com.vikrant.careSync.controller;
 
+import com.vikrant.careSync.exception.ClientErrorMessages;
 import com.vikrant.careSync.dto.CreateLabTestRequest;
 import com.vikrant.careSync.dto.LabTestDto;
 import com.vikrant.careSync.service.LabTestService;
@@ -81,9 +82,7 @@ public class LabTestController {
             LabTestDto createdLabTest = labTestService.createLabTest(request);
             return ResponseEntity.status(HttpStatus.CREATED).body(createdLabTest);
         } catch (RuntimeException e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while creating the lab test");
@@ -102,9 +101,7 @@ public class LabTestController {
             LabTestDto updatedLabTest = labTestService.updateLabTest(id, request);
             return ResponseEntity.ok(updatedLabTest);
         } catch (RuntimeException e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while updating the lab test");
@@ -125,9 +122,7 @@ public class LabTestController {
             response.put("message", "Lab test deleted successfully");
             return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while deleting the lab test");
@@ -168,9 +163,7 @@ public class LabTestController {
             response.put("testCount", testIds.size());
             return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while calculating the total price");

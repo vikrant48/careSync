@@ -4,7 +4,9 @@ import com.vikrant.careSync.security.entity.RefreshToken;
 import com.vikrant.careSync.security.repository.RefreshTokenRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -19,10 +21,11 @@ public class RefreshTokenService {
     @Value("${app.jwt.refresh-expiration}")
     private Long refreshTokenDurationMs;
 
-    public RefreshToken createRefreshToken(String username, String userType) {
+    public RefreshToken createRefreshToken(String username, String userType, String sessionId) {
         RefreshToken refreshToken = RefreshToken.builder()
                 .username(username)
                 .userType(userType)
+                .sessionId(sessionId)
                 .expiryDate(Instant.now().plusMillis(refreshTokenDurationMs))
                 .token(UUID.randomUUID().toString())
                 .build();
@@ -49,5 +52,18 @@ public class RefreshTokenService {
     public void deleteRefreshToken(String token) {
         refreshTokenRepository.findByToken(token)
                 .ifPresent(refreshTokenRepository::delete);
+    }
+
+    @Transactional
+    public void deleteBySessionId(String sessionId) {
+        if (sessionId != null) {
+            refreshTokenRepository.deleteBySessionId(sessionId);
+        }
+    }
+
+    @Scheduled(cron = "0 20 * * * *")
+    @Transactional
+    public void deleteExpiredTokens() {
+        refreshTokenRepository.deleteExpired(Instant.now());
     }
 } 

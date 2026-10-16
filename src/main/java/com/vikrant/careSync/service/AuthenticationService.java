@@ -9,8 +9,10 @@ import com.vikrant.careSync.repository.PatientRepository;
 import com.vikrant.careSync.repository.UserRepository;
 import com.vikrant.careSync.security.JwtService;
 import com.vikrant.careSync.security.dto.*;
+import com.vikrant.careSync.security.service.OtpAttemptLimiter;
 import com.vikrant.careSync.security.service.RefreshTokenService;
 import com.vikrant.careSync.security.service.SecurityService;
+import com.vikrant.careSync.security.service.TokenIssuer;
 import com.vikrant.careSync.security.entity.PasswordResetToken;
 import com.vikrant.careSync.security.entity.PasswordResetOtp;
 import com.vikrant.careSync.security.entity.UserSession;
@@ -27,6 +29,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import lombok.extern.slf4j.Slf4j;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Instant;
@@ -43,7 +48,7 @@ public class AuthenticationService implements IAuthenticationService {
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JwtService jwtService;
+    private final TokenIssuer tokenIssuer;
     private final AuthenticationManager authenticationManager;
     private final RefreshTokenService refreshTokenService;
     private final SecurityService securityService;
@@ -51,19 +56,29 @@ public class AuthenticationService implements IAuthenticationService {
     private final PasswordResetOtpRepository passwordResetOtpRepository;
     private final EmailService emailService;
     private final EmailVerificationService emailVerificationService;
+    private final OtpAttemptLimiter otpAttemptLimiter;
+    private final UserIdGenerator userIdGenerator;
+
+    static final String OTP_PURPOSE_PASSWORD_RESET = "pwd_reset";
+    static final String TOO_MANY_OTP_ATTEMPTS =
+            "Too many incorrect codes. Please wait 15 minutes and request a new code.";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     public AuthenticationService(UserRepository userRepository, DoctorRepository doctorRepository,
             PatientRepository patientRepository,
-            PasswordEncoder passwordEncoder, JwtService jwtService, AuthenticationManager authenticationManager,
+            PasswordEncoder passwordEncoder, TokenIssuer tokenIssuer, AuthenticationManager authenticationManager,
             RefreshTokenService refreshTokenService, SecurityService securityService,
             PasswordResetTokenRepository passwordResetTokenRepository,
             PasswordResetOtpRepository passwordResetOtpRepository, EmailService emailService,
-            EmailVerificationService emailVerificationService) {
+            EmailVerificationService emailVerificationService, OtpAttemptLimiter otpAttemptLimiter,
+            UserIdGenerator userIdGenerator) {
+        this.otpAttemptLimiter = otpAttemptLimiter;
+        this.userIdGenerator = userIdGenerator;
         this.userRepository = userRepository;
         this.doctorRepository = doctorRepository;
         this.patientRepository = patientRepository;
         this.passwordEncoder = passwordEncoder;
-        this.jwtService = jwtService;
+        this.tokenIssuer = tokenIssuer;
         this.authenticationManager = authenticationManager;
         this.refreshTokenService = refreshTokenService;
         this.securityService = securityService;
@@ -73,10 +88,6 @@ public class AuthenticationService implements IAuthenticationService {
         this.emailVerificationService = emailVerificationService;
     }
 
-    private synchronized Long generateNextUserId() {
-        Long maxId = userRepository.findMaxUserId().orElse(100000L);
-        return Math.max(100001L, maxId + 1);
-    }
 
     @CacheEvict(value = "doctorListing", allEntries = true)
     public AuthenticationResponse register(RegisterRequest request) {
@@ -90,10 +101,13 @@ public class AuthenticationService implements IAuthenticationService {
             throw new RuntimeException("Email already exists");
         }
 
-        // Enforce email verification unless skipEmailVerification is true
-        if (!Boolean.TRUE.equals(request.getSkipEmailVerification())
-                && !emailVerificationService.isVerified(request.getEmail())) {
-            throw new RuntimeException("Email not verified");
+        // Patients may skip email verification; doctors must always verify their email
+        boolean isDoctor = AppConstants.Roles.DOCTOR.equalsIgnoreCase(request.getRole());
+        boolean skipAllowed = !isDoctor && Boolean.TRUE.equals(request.getSkipEmailVerification());
+        if (!skipAllowed && !emailVerificationService.isVerified(request.getEmail())) {
+            throw new RuntimeException(isDoctor
+                    ? "Email verification is required for doctor registration. Please verify your email."
+                    : "Email not verified");
         }
 
         if (AppConstants.Roles.DOCTOR.equalsIgnoreCase(request.getRole())) {
@@ -125,7 +139,7 @@ public class AuthenticationService implements IAuthenticationService {
     }
 
     private AuthenticationResponse registerDoctor(RegisterRequest request) {
-        Long userId = generateNextUserId();
+        Long userId = userIdGenerator.next();
 
         User user = User.builder()
                 .id(userId)
@@ -165,7 +179,7 @@ public class AuthenticationService implements IAuthenticationService {
     }
 
     private AuthenticationResponse registerPatient(RegisterRequest request) {
-        Long userId = generateNextUserId();
+        Long userId = userIdGenerator.next();
 
         User user = User.builder()
                 .id(userId)
@@ -213,16 +227,10 @@ public class AuthenticationService implements IAuthenticationService {
             throw new RuntimeException("Access denied: IP address is blocked");
         }
 
-        // Check if an account is locked
-        if (securityService.isAccountLocked(request.getUsername())) {
+        // Locked per username + client IP (see SecurityService), so others cannot lock this user out
+        if (securityService.isAccountLocked(request.getUsername(), ipAddress)) {
             securityService.recordLoginAttempt(request.getUsername(), ipAddress, false, userAgent);
             throw new RuntimeException("Account is temporarily locked due to too many failed attempts");
-        }
-
-        User account = userRepository.findByUsername(request.getUsername()).orElse(null);
-        if (account != null && !Boolean.TRUE.equals(account.getIsActive())) {
-            securityService.recordLoginAttempt(request.getUsername(), ipAddress, false, userAgent);
-            throw new RuntimeException("Your account is inactive. Please contact an administrator.");
         }
 
         try {
@@ -246,7 +254,13 @@ public class AuthenticationService implements IAuthenticationService {
 
         } catch (org.springframework.security.authentication.DisabledException e) {
             securityService.recordLoginAttempt(request.getUsername(), ipAddress, false, userAgent);
-            throw new RuntimeException("Your account is inactive. Please contact an administrator.");
+            // Spring checks "disabled" before the password; only reveal the account state to the real owner
+            boolean passwordMatches = userRepository.findByUsername(request.getUsername())
+                    .map(u -> passwordEncoder.matches(request.getPassword(), u.getPassword()))
+                    .orElse(false);
+            throw new RuntimeException(passwordMatches
+                    ? "Your account is inactive. Please contact an administrator."
+                    : "Invalid username or password");
         } catch (Exception e) {
             // Record failed login attempt
             securityService.recordLoginAttempt(request.getUsername(), ipAddress, false, userAgent);
@@ -303,7 +317,7 @@ public class AuthenticationService implements IAuthenticationService {
 
         passwordResetTokenRepository.save(resetToken);
 
-        log.info("Password reset token for {}: {}", request.getEmail(), token);
+        log.info("Password reset token issued (user id {})", user.getId());
     }
 
     // ===================== OTP-based Reset Password Flow =====================
@@ -338,8 +352,8 @@ public class AuthenticationService implements IAuthenticationService {
             }
         }
 
-        // Delete expired OTPs for this email
-        passwordResetOtpRepository.deleteExpiredForEmail(request.getEmail(), Instant.now());
+        // Only the newest code is ever valid: remove all earlier codes for this email
+        passwordResetOtpRepository.deleteAllForEmail(request.getEmail());
 
         // Generate new OTP
         String otp = generateSixDigitOtp();
@@ -364,16 +378,7 @@ public class AuthenticationService implements IAuthenticationService {
 
     @Transactional
     public void verifyOtp(com.vikrant.careSync.security.dto.VerifyOtpRequest request) {
-
-        PasswordResetOtp otpRecord = passwordResetOtpRepository.findByEmailAndOtp(request.getEmail(), request.getOtp())
-                .orElseThrow(() -> new RuntimeException("Invalid OTP"));
-
-        if (otpRecord.isUsed()) {
-            throw new RuntimeException("OTP has already been used");
-        }
-        if (otpRecord.getExpiryDate().isBefore(Instant.now())) {
-            throw new RuntimeException("OTP has expired");
-        }
+        PasswordResetOtp otpRecord = findValidResetOtp(request.getEmail(), request.getOtp());
 
         // Mark verified for this record to allow reset step
         otpRecord.setVerified(true);
@@ -387,17 +392,9 @@ public class AuthenticationService implements IAuthenticationService {
             throw new RuntimeException("New password and confirm password do not match");
         }
 
-        PasswordResetOtp otpRecord = passwordResetOtpRepository.findByEmailAndOtp(request.getEmail(), request.getOtp())
-                .orElseThrow(() -> new RuntimeException("Invalid OTP"));
-
-        if (otpRecord.isUsed()) {
-            throw new RuntimeException("OTP has already been used");
-        }
+        PasswordResetOtp otpRecord = findValidResetOtp(request.getEmail(), request.getOtp());
         if (!otpRecord.isVerified()) {
             throw new RuntimeException("OTP not verified");
-        }
-        if (otpRecord.getExpiryDate().isBefore(Instant.now())) {
-            throw new RuntimeException("OTP has expired");
         }
 
         User user = userRepository.findByEmail(request.getEmail())
@@ -408,13 +405,46 @@ public class AuthenticationService implements IAuthenticationService {
 
         otpRecord.setUsed(true);
         passwordResetOtpRepository.save(otpRecord);
+        otpAttemptLimiter.reset(OTP_PURPOSE_PASSWORD_RESET, request.getEmail());
+
+        // Whoever held the old password must not keep a session
+        revokeAllSessions(user.getUsername());
+    }
+
+    /**
+     * Checks a password-reset code against the newest code for the email. Every wrong, expired or used
+     * code counts toward OtpAttemptLimiter; after MAX_FAILED_ATTEMPTS the email is blocked for longer than
+     * a code lives, so a 6-digit code cannot be brute-forced (the counter is per email, not per IP).
+     */
+    private PasswordResetOtp findValidResetOtp(String email, String otp) {
+        if (otpAttemptLimiter.isBlocked(OTP_PURPOSE_PASSWORD_RESET, email)) {
+            throw new RuntimeException(TOO_MANY_OTP_ATTEMPTS);
+        }
+        PasswordResetOtp otpRecord = passwordResetOtpRepository.findTopByEmailOrderByCreatedAtDesc(email)
+                .orElse(null);
+        boolean valid = otpRecord != null
+                && !otpRecord.isUsed()
+                && otpRecord.getExpiryDate().isAfter(Instant.now())
+                && otp != null
+                && MessageDigest.isEqual(otpRecord.getOtp().getBytes(StandardCharsets.UTF_8),
+                        otp.getBytes(StandardCharsets.UTF_8));
+        if (!valid) {
+            otpAttemptLimiter.recordFailure(OTP_PURPOSE_PASSWORD_RESET, email);
+            throw new RuntimeException("Invalid or expired OTP");
+        }
+        return otpRecord;
+    }
+
+    private void revokeAllSessions(String username) {
+        securityService.deactivateAllUserSessions(username);
+        refreshTokenService.deleteByUsername(username);
     }
 
     private String generateSixDigitOtp() {
-        int code = (int) (Math.random() * 900000) + 100000; // 100000–999999
-        return String.valueOf(code);
+        return String.format("%06d", SECURE_RANDOM.nextInt(1_000_000)); // 000000–999999
     }
 
+    @Transactional
     public void resetPassword(ResetPasswordRequest request) {
         if (!request.getNewPassword().equals(request.getConfirmPassword())) {
             throw new RuntimeException("New password and confirm password do not match");
@@ -441,29 +471,23 @@ public class AuthenticationService implements IAuthenticationService {
         // Mark token as used
         resetToken.setUsed(true);
         passwordResetTokenRepository.save(resetToken);
+
+        revokeAllSessions(user.getUsername());
     }
 
     private AuthenticationResponse generateAuthResponse(String username, String role, String message, String ipAddress,
             String userAgent) {
         UserDetails userDetails = loadUserDetails(username);
 
-        // Create user session and get sessionId
-        UserSession userSession = securityService.createUserSession(username, ipAddress, userAgent, role);
-        String sessionId = userSession.getSessionId();
-
-        // Create JWT token with sessionId in claims
-        Map<String, Object> extraClaims = new HashMap<>();
-        extraClaims.put("sessionId", sessionId);
-        String accessToken = jwtService.generateToken(extraClaims, userDetails);
-
-        var refreshToken = refreshTokenService.createRefreshToken(username, role);
+        // New server-side session with its access and refresh tokens
+        TokenIssuer.IssuedTokens tokens = tokenIssuer.startSession(userDetails, role, ipAddress, userAgent);
 
         // Get complete user data
         Object userData = getUserData(username, role);
 
         return AuthenticationResponse.builder()
-                .accessToken(accessToken)
-                .refreshToken(refreshToken.getToken())
+                .accessToken(tokens.accessToken())
+                .refreshToken(tokens.refreshToken())
                 .tokenType("Bearer")
                 .username(username)
                 .role(role)

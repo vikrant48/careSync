@@ -30,6 +30,10 @@ public class AnalyticsService {
         private final PatientService patientService;
         private final FeedbackService feedbackService;
         private final com.vikrant.careSync.repository.PaymentRepository paymentRepository;
+        private final com.vikrant.careSync.repository.AppointmentRepository appointmentRepository;
+        private final com.vikrant.careSync.repository.DoctorRepository doctorRepository;
+        private final com.vikrant.careSync.repository.PatientRepository patientRepository;
+        private final com.vikrant.careSync.repository.FeedbackRepository feedbackRepository;
 
         // Peak Hours Analysis
         public Map<String, Object> getPeakHoursAnalysis(Long doctorId, LocalDate startDate, LocalDate endDate) {
@@ -317,23 +321,7 @@ public class AnalyticsService {
         }
 
         private String getAgeGroup(LocalDate dateOfBirth) {
-                if (dateOfBirth == null) {
-                        return "Unknown";
-                }
-                long age = java.time.temporal.ChronoUnit.YEARS.between(dateOfBirth, LocalDate.now());
-
-                if (age < 18)
-                        return "Under 18";
-                else if (age < 30)
-                        return "18-29";
-                else if (age < 45)
-                        return "30-44";
-                else if (age < 60)
-                        return "45-59";
-                else if (age < 75)
-                        return "60-74";
-                else
-                        return "75+";
+                return com.vikrant.careSync.util.AgeGroups.of(dateOfBirth);
         }
 
         private String getCancellationTiming(LocalDateTime appointmentTime) {
@@ -354,62 +342,44 @@ public class AnalyticsService {
         @Cacheable(value = "ANALYTICS:OVERALL", key = "'overall_' + #startDate + '_' + #endDate")
         public OverallAnalyticsDto getOverallAnalytics(LocalDate startDate, LocalDate endDate) {
                 try {
-                        // Get all appointments in date range
-                        List<Appointment> allAppointments = appointmentService.getAllAppointmentsByDateRange(
-                                        startDate.atStartOfDay(), endDate.atTime(23, 59, 59));
+                        // Counted by the database instead of loading (and decrypting) every row
+                        LocalDateTime start = startDate.atStartOfDay();
+                        LocalDateTime end = endDate.plusDays(1).atStartOfDay();
 
-                        // Get all doctors and patients
-                        List<Doctor> allDoctors = doctorService.getAllDoctors();
-                        List<Patient> allPatients = patientService.getAllPatients();
+                        Map<String, Long> statusDistribution = new java.util.HashMap<>();
+                        long totalAppointments = 0;
+                        for (Object[] row : appointmentRepository.countByStatusBetween(start, end)) {
+                                long count = ((Number) row[1]).longValue();
+                                statusDistribution.put(String.valueOf(row[0]), count);
+                                totalAppointments += count;
+                        }
 
-                        // Active users (users with appointments in date range)
-                        long activeDoctors = allAppointments.stream()
-                                        .map(appointment -> appointment.getDoctor().getId())
-                                        .distinct()
-                                        .count();
+                        Map<String, Long> dailyTrends = new java.util.LinkedHashMap<>();
+                        for (Object[] row : appointmentRepository.countPerDayBetween(start, end)) {
+                                dailyTrends.put(String.valueOf(row[0]), ((Number) row[1]).longValue());
+                        }
 
-                        long activePatients = allAppointments.stream()
-                                        .map(appointment -> appointment.getPatient().getId())
-                                        .distinct()
-                                        .count();
+                        Object[] active = appointmentRepository.countActiveDoctorsAndPatientsBetween(start, end).get(0);
+                        long activeDoctors = ((Number) active[0]).longValue();
+                        long activePatients = ((Number) active[1]).longValue();
+                        long totalDoctors = doctorRepository.count();
+                        long totalPatients = patientRepository.count();
 
                         // Revenue calculation (assuming a base fee per appointment)
                         double baseAppointmentFee = 100.0; // Default fee
-                        double totalRevenue = allAppointments.size() * baseAppointmentFee;
+                        double totalRevenue = totalAppointments * baseAppointmentFee;
 
                         // Average rating from feedback
-                        double avgRating = 4.5;
-                        try {
-                                List<Feedback> allFeedback = feedbackService.getAllFeedback();
-                                avgRating = allFeedback.stream()
-                                                .mapToDouble(Feedback::getRating)
-                                                .average()
-                                                .orElse(0.0);
-                                avgRating = Math.round(avgRating * 100.0) / 100.0;
-                        } catch (Exception e) {
-                                // Keep default
-                        }
-
-                        // Appointment status distribution
-                        Map<String, Long> statusDistribution = allAppointments.stream()
-                                        .collect(Collectors.groupingBy(
-                                                        appointment -> appointment.getStatus().toString(),
-                                                        Collectors.counting()));
-
-                        // Daily appointment trends
-                        Map<String, Long> dailyTrends = allAppointments.stream()
-                                        .collect(Collectors.groupingBy(
-                                                        appointment -> appointment.getAppointmentDateTime()
-                                                                        .toLocalDate().toString(),
-                                                        Collectors.counting()));
+                        Double average = feedbackRepository.averageRatingOverall();
+                        double avgRating = average == null ? 0.0 : Math.round(average * 100.0) / 100.0;
 
                         return OverallAnalyticsDto.builder()
-                                        .totalAppointments(allAppointments.size())
-                                        .totalDoctors(allDoctors.size())
-                                        .totalPatients(allPatients.size())
+                                        .totalAppointments(totalAppointments)
+                                        .totalDoctors(totalDoctors)
+                                        .totalPatients(totalPatients)
                                         .activeDoctors(activeDoctors)
                                         .activePatients(activePatients)
-                                        .totalUsers(allDoctors.size() + allPatients.size())
+                                        .totalUsers(totalDoctors + totalPatients)
                                         .activeUsers(activeDoctors + activePatients)
                                         .totalRevenue(totalRevenue)
                                         .avgRating(avgRating)

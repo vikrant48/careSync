@@ -23,114 +23,114 @@ public class MasterDataService {
 
     private static final Long DEFAULT_ORG_ID = 91L;
 
+    /** One master table: how to list, add and delete its values for an organisation. */
+    private record MasterTable(java.util.function.Function<Long, List<String>> list,
+            java.util.function.BiConsumer<Long, String> add,
+            java.util.function.BiConsumer<Long, String> delete) {
+    }
+
+    /** Every master type with the names the API accepts for it (same aliases as before). */
+    private java.util.Map<String, MasterTable> tables;
+
+    private synchronized java.util.Map<String, MasterTable> tables() {
+        if (tables == null) {
+            java.util.Map<String, MasterTable> map = new java.util.HashMap<>();
+            register(map, table(genderRepo::findByOrgId, GenderMaster::getValue,
+                    (org, v) -> genderRepo.save(GenderMaster.builder().orgId(org).value(v).build()),
+                    genderRepo::deleteByOrgIdAndValue), "genders", "gender");
+            register(map, table(specRepo::findByOrgId, SpecializationMaster::getValue,
+                    (org, v) -> specRepo.save(SpecializationMaster.builder().orgId(org).value(v).build()),
+                    specRepo::deleteByOrgIdAndValue), "specializations", "specialization");
+            register(map, table(statusRepo::findByOrgId, StatusMaster::getValue,
+                    (org, v) -> statusRepo.save(StatusMaster.builder().orgId(org).value(v).build()),
+                    statusRepo::deleteByOrgIdAndValue), "statuses", "status");
+            register(map, table(bloodRepo::findByOrgId, BloodGroupMaster::getValue,
+                    (org, v) -> bloodRepo.save(BloodGroupMaster.builder().orgId(org).value(v).build()),
+                    bloodRepo::deleteByOrgIdAndValue), "bloodgroups", "blood-groups", "bloodgroup");
+            register(map, table(languageRepo::findByOrgId, LanguageMaster::getValue,
+                    (org, v) -> languageRepo.save(LanguageMaster.builder().orgId(org).value(v).build()),
+                    languageRepo::deleteByOrgIdAndValue), "languages", "language");
+            register(map, table(degreeRepo::findByOrgId, DegreeMaster::getValue,
+                    (org, v) -> degreeRepo.save(DegreeMaster.builder().orgId(org).value(v).build()),
+                    degreeRepo::deleteByOrgIdAndValue), "degrees", "degree");
+            register(map, table(institutionRepo::findByOrgId, InstitutionMaster::getValue,
+                    (org, v) -> institutionRepo.save(InstitutionMaster.builder().orgId(org).value(v).build()),
+                    institutionRepo::deleteByOrgIdAndValue), "institutions", "institution");
+            register(map, table(hospitalRepo::findByOrgId, HospitalMaster::getValue,
+                    (org, v) -> hospitalRepo.save(HospitalMaster.builder().orgId(org).value(v).build()),
+                    hospitalRepo::deleteByOrgIdAndValue), "hospitals", "hospital");
+            register(map, table(positionRepo::findByOrgId, PositionMaster::getValue,
+                    (org, v) -> positionRepo.save(PositionMaster.builder().orgId(org).value(v).build()),
+                    positionRepo::deleteByOrgIdAndValue), "positions", "position");
+            tables = map;
+        }
+        return tables;
+    }
+
+    private static <E> MasterTable table(java.util.function.Function<Long, List<E>> find,
+            java.util.function.Function<E, String> value, java.util.function.BiConsumer<Long, String> add,
+            java.util.function.BiConsumer<Long, String> delete) {
+        return new MasterTable(org -> find.apply(org).stream().map(value).collect(Collectors.toList()), add, delete);
+    }
+
+    private static void register(java.util.Map<String, MasterTable> map, MasterTable table, String... names) {
+        for (String name : names) {
+            map.put(name, table);
+        }
+    }
+
+    private MasterTable table(String masterType) {
+        MasterTable table = masterType == null ? null : tables().get(masterType.toLowerCase());
+        if (table == null) {
+            throw new IllegalArgumentException("Unknown master data type: " + masterType);
+        }
+        return table;
+    }
+
+    private List<String> values(String masterType, Long orgId) {
+        return table(masterType).list().apply(orgId != null ? orgId : DEFAULT_ORG_ID);
+    }
+
     public List<String> getGenders(Long orgId) {
-        return genderRepo.findByOrgId(orgId != null ? orgId : DEFAULT_ORG_ID)
-                .stream().map(GenderMaster::getValue).collect(Collectors.toList());
+        return values("genders", orgId);
     }
 
     public List<String> getSpecializations(Long orgId) {
-        return specRepo.findByOrgId(orgId != null ? orgId : DEFAULT_ORG_ID)
-                .stream().map(SpecializationMaster::getValue).collect(Collectors.toList());
+        return values("specializations", orgId);
     }
 
     public List<String> getStatuses(Long orgId) {
-        return statusRepo.findByOrgId(orgId != null ? orgId : DEFAULT_ORG_ID)
-                .stream().map(StatusMaster::getValue).collect(Collectors.toList());
+        return values("statuses", orgId);
     }
 
     public List<String> getBloodGroups(Long orgId) {
-        return bloodRepo.findByOrgId(orgId != null ? orgId : DEFAULT_ORG_ID)
-                .stream().map(BloodGroupMaster::getValue).collect(Collectors.toList());
+        return values("bloodgroups", orgId);
     }
 
     public List<String> getLanguages(Long orgId) {
-        return languageRepo.findByOrgId(orgId != null ? orgId : DEFAULT_ORG_ID)
-                .stream().map(LanguageMaster::getValue).collect(Collectors.toList());
+        return values("languages", orgId);
     }
 
     public List<String> getDegrees(Long orgId) {
-        return degreeRepo.findByOrgId(orgId != null ? orgId : DEFAULT_ORG_ID)
-                .stream().map(DegreeMaster::getValue).collect(Collectors.toList());
+        return values("degrees", orgId);
     }
 
     public List<String> getInstitutions(Long orgId) {
-        return institutionRepo.findByOrgId(orgId != null ? orgId : DEFAULT_ORG_ID)
-                .stream().map(InstitutionMaster::getValue).collect(Collectors.toList());
+        return values("institutions", orgId);
     }
 
     public List<String> getHospitals(Long orgId) {
-        return hospitalRepo.findByOrgId(orgId != null ? orgId : DEFAULT_ORG_ID)
-                .stream().map(HospitalMaster::getValue).collect(Collectors.toList());
+        return values("hospitals", orgId);
     }
 
     public List<String> getPositions(Long orgId) {
-        return positionRepo.findByOrgId(orgId != null ? orgId : DEFAULT_ORG_ID)
-                .stream().map(PositionMaster::getValue).collect(Collectors.toList());
+        return values("positions", orgId);
     }
 
     public String addMasterData(String masterType, CreateMasterDataRequest request) {
         Long orgId = request.getOrgId() != null ? request.getOrgId() : DEFAULT_ORG_ID;
         String val = request.getValue().trim();
-
-        switch (masterType.toLowerCase()) {
-            case "genders":
-            case "gender": {
-                GenderMaster gm = GenderMaster.builder().orgId(orgId).value(val).build();
-                genderRepo.save(gm);
-                break;
-            }
-            case "specializations":
-            case "specialization": {
-                SpecializationMaster sm = SpecializationMaster.builder().orgId(orgId).value(val).build();
-                specRepo.save(sm);
-                break;
-            }
-            case "statuses":
-            case "status": {
-                StatusMaster stm = StatusMaster.builder().orgId(orgId).value(val).build();
-                statusRepo.save(stm);
-                break;
-            }
-            case "bloodgroups":
-            case "blood-groups":
-            case "bloodgroup": {
-                BloodGroupMaster bgm = BloodGroupMaster.builder().orgId(orgId).value(val).build();
-                bloodRepo.save(bgm);
-                break;
-            }
-            case "languages":
-            case "language": {
-                LanguageMaster lm = LanguageMaster.builder().orgId(orgId).value(val).build();
-                languageRepo.save(lm);
-                break;
-            }
-            case "degrees":
-            case "degree": {
-                DegreeMaster dm = DegreeMaster.builder().orgId(orgId).value(val).build();
-                degreeRepo.save(dm);
-                break;
-            }
-            case "institutions":
-            case "institution": {
-                InstitutionMaster im = InstitutionMaster.builder().orgId(orgId).value(val).build();
-                institutionRepo.save(im);
-                break;
-            }
-            case "hospitals":
-            case "hospital": {
-                HospitalMaster hm = HospitalMaster.builder().orgId(orgId).value(val).build();
-                hospitalRepo.save(hm);
-                break;
-            }
-            case "positions":
-            case "position": {
-                PositionMaster pm = PositionMaster.builder().orgId(orgId).value(val).build();
-                positionRepo.save(pm);
-                break;
-            }
-            default:
-                throw new IllegalArgumentException("Unknown master data type: " + masterType);
-        }
+        table(masterType).add().accept(orgId, val);
         return "Added '" + val + "' to " + masterType;
     }
 
@@ -142,47 +142,7 @@ public class MasterDataService {
             throw new IllegalArgumentException("Value cannot be empty for master data deletion");
         }
 
-        switch (masterType.toLowerCase()) {
-            case "genders":
-            case "gender":
-                genderRepo.deleteByOrgIdAndValue(targetOrgId, val);
-                break;
-            case "specializations":
-            case "specialization":
-                specRepo.deleteByOrgIdAndValue(targetOrgId, val);
-                break;
-            case "statuses":
-            case "status":
-                statusRepo.deleteByOrgIdAndValue(targetOrgId, val);
-                break;
-            case "bloodgroups":
-            case "blood-groups":
-            case "bloodgroup":
-                bloodRepo.deleteByOrgIdAndValue(targetOrgId, val);
-                break;
-            case "languages":
-            case "language":
-                languageRepo.deleteByOrgIdAndValue(targetOrgId, val);
-                break;
-            case "degrees":
-            case "degree":
-                degreeRepo.deleteByOrgIdAndValue(targetOrgId, val);
-                break;
-            case "institutions":
-            case "institution":
-                institutionRepo.deleteByOrgIdAndValue(targetOrgId, val);
-                break;
-            case "hospitals":
-            case "hospital":
-                hospitalRepo.deleteByOrgIdAndValue(targetOrgId, val);
-                break;
-            case "positions":
-            case "position":
-                positionRepo.deleteByOrgIdAndValue(targetOrgId, val);
-                break;
-            default:
-                throw new IllegalArgumentException("Unknown master data type: " + masterType);
-        }
+        table(masterType).delete().accept(targetOrgId, val);
         return "Deleted '" + val + "' from " + masterType;
     }
 }

@@ -1,5 +1,6 @@
 package com.vikrant.careSync.controller;
 
+import com.vikrant.careSync.exception.ClientErrorMessages;
 import com.vikrant.careSync.entity.Appointment;
 import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Patient;
@@ -130,9 +131,7 @@ public class VideoConsultationController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("Error generating video token for appointment {}: {}", id, e.getMessage(), e);
-            Map<String, String> err = new HashMap<>();
-            err.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(err);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -141,7 +140,7 @@ public class VideoConsultationController {
      */
     @Operation(summary = "Check doctor presence in video room", description = "Allows patient waiting screen to poll doctor room status")
     @GetMapping("/{id}/video/status")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("@access.canAccessAppointment(#id)")
     public ResponseEntity<?> getVideoStatus(@PathVariable Long id) {
         try {
             Appointment appointment = appointmentRepository.findById(id)
@@ -161,9 +160,7 @@ public class VideoConsultationController {
 
             return ResponseEntity.ok(resp);
         } catch (Exception e) {
-            Map<String, String> err = new HashMap<>();
-            err.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(err);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -201,9 +198,7 @@ public class VideoConsultationController {
             resp.put("message", "Consultation session ended. Appointment status remains IN_PROGRESS.");
             return ResponseEntity.ok(resp);
         } catch (Exception e) {
-            Map<String, String> err = new HashMap<>();
-            err.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(err);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 }

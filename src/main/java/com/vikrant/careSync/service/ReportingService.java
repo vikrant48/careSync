@@ -21,6 +21,10 @@ public class ReportingService {
     private final DoctorService doctorService;
     private final PatientService patientService;
     private final FeedbackService feedbackService;
+    private final com.vikrant.careSync.repository.AppointmentRepository appointmentRepository;
+    private final com.vikrant.careSync.repository.DoctorRepository doctorRepository;
+    private final com.vikrant.careSync.repository.PatientRepository patientRepository;
+    private final com.vikrant.careSync.repository.FeedbackRepository feedbackRepository;
 
     // Doctor Performance Reports
     public Map<String, Object> getDoctorPerformanceReport(Long doctorId, LocalDate startDate, LocalDate endDate) {
@@ -92,33 +96,31 @@ public class ReportingService {
     public Map<String, Object> getClinicOverviewReport(LocalDate startDate, LocalDate endDate) {
         Map<String, Object> report = new HashMap<>();
 
-        List<Doctor> doctors = doctorService.getAllDoctors();
-        List<Patient> patients = patientService.getAllPatients();
+        long doctorCount = doctorRepository.count();
+        long patientCount = patientRepository.count();
 
         long totalAppointments = 0;
         long totalCompletedAppointments = 0;
         long totalCancelledAppointments = 0;
         double totalRevenue = 0; // This would be calculated based on your pricing model
 
-        for (Doctor doctor : doctors) {
-            List<Appointment> doctorAppointments = appointmentService.getAppointmentsByDateRange(
-                    doctor.getId(), startDate.atStartOfDay(), endDate.atTime(23, 59, 59));
-
-            totalAppointments += doctorAppointments.size();
-            totalCompletedAppointments += doctorAppointments.stream()
-                    .filter(a -> a.getStatus() == Appointment.Status.COMPLETED).count();
-            totalCancelledAppointments += doctorAppointments.stream()
-                    .filter(a -> a.getStatus() == Appointment.Status.CANCELLED).count();
+        for (Object[] row : appointmentRepository.countByStatusBetween(startDate.atStartOfDay(),
+                endDate.plusDays(1).atStartOfDay())) {
+            long count = ((Number) row[1]).longValue();
+            totalAppointments += count;
+            if (row[0] == Appointment.Status.COMPLETED) {
+                totalCompletedAppointments += count;
+            } else if (row[0] == Appointment.Status.CANCELLED) {
+                totalCancelledAppointments += count;
+            }
         }
 
-        // Calculate average ratings
-        double averageClinicRating = doctors.stream()
-                .mapToDouble(d -> feedbackService.getAverageRatingByDoctor(d.getId()))
-                .average()
-                .orElse(0.0);
+        // Average over all doctors of each doctor's average rating (0 for a doctor without feedback, as before)
+        double ratingSum = averageRatingPerDoctor().values().stream().mapToDouble(Double::doubleValue).sum();
+        double averageClinicRating = doctorCount > 0 ? ratingSum / doctorCount : 0.0;
 
-        report.put("totalDoctors", doctors.size());
-        report.put("totalPatients", patients.size());
+        report.put("totalDoctors", doctorCount);
+        report.put("totalPatients", patientCount);
         report.put("totalAppointments", totalAppointments);
         report.put("totalCompletedAppointments", totalCompletedAppointments);
         report.put("totalCancelledAppointments", totalCancelledAppointments);
@@ -142,17 +144,10 @@ public class ReportingService {
         Map<String, Long> weeklyAppointments = new LinkedHashMap<>();
         Map<String, Long> monthlyAppointments = new LinkedHashMap<>();
 
-        List<Doctor> doctors = doctorService.getAllDoctors();
-
-        for (Doctor doctor : doctors) {
-            List<Appointment> appointments = appointmentService.getAppointmentsByDateRange(
-                    doctor.getId(), startDate.atStartOfDay(), endDate.atTime(23, 59, 59));
-
-            // Daily trends
-            appointments.forEach(appointment -> {
-                String date = appointment.getAppointmentDateTime().toLocalDate().toString();
-                dailyAppointments.merge(date, 1L, Long::sum);
-            });
+        // Daily counts from one grouped query (was one query per doctor)
+        for (Object[] row : appointmentRepository.countPerDayBetween(startDate.atStartOfDay(),
+                endDate.plusDays(1).atStartOfDay())) {
+            dailyAppointments.put(String.valueOf(row[0]), ((Number) row[1]).longValue());
         }
 
         // Calculate weekly and monthly trends
@@ -178,28 +173,37 @@ public class ReportingService {
     public Map<String, Object> getSpecializationAnalysis() {
         Map<String, Object> analysis = new HashMap<>();
 
-        List<Doctor> doctors = doctorService.getAllDoctors();
+        // Three grouped queries instead of loading every doctor and, per doctor, all appointments and feedback
+        List<Object[]> doctorRows = doctorRepository.findSpecializationRows();
+        Map<Long, Double> ratingByDoctor = averageRatingPerDoctor();
+        Map<Long, Long> appointmentsByDoctor = new HashMap<>();
+        for (Object[] row : appointmentRepository.countPerDoctor()) {
+            appointmentsByDoctor.put((Long) row[0], ((Number) row[1]).longValue());
+        }
 
-        Map<String, Long> specializationCount = doctors.stream()
-                .collect(Collectors.groupingBy(
-                        Doctor::getSpecialization,
-                        Collectors.counting()));
+        Map<String, Long> specializationCount = new HashMap<>();
+        for (Object[] row : doctorRows) {
+            String specialization = row[1] != null ? (String) row[1] : "Unspecified";
+            specializationCount.merge(specialization, 1L, Long::sum);
+        }
 
         Map<String, Double> specializationRatings = new HashMap<>();
         Map<String, Long> specializationAppointments = new HashMap<>();
 
         for (String specialization : specializationCount.keySet()) {
-            List<Doctor> specDoctors = doctorService.getDoctorsBySpecialization(specialization);
+            // As before: active doctors whose specialization matches, ignoring case
+            List<Long> specDoctorIds = doctorRows.stream()
+                    .filter(row -> Boolean.TRUE.equals(row[2]) && row[1] != null
+                            && ((String) row[1]).equalsIgnoreCase(specialization))
+                    .map(row -> (Long) row[0])
+                    .toList();
 
-            // Calculate average rating for specialization
-            double avgRating = specDoctors.stream()
-                    .mapToDouble(d -> feedbackService.getAverageRatingByDoctor(d.getId()))
+            double avgRating = specDoctorIds.stream()
+                    .mapToDouble(id -> ratingByDoctor.getOrDefault(id, 0.0))
                     .average()
                     .orElse(0.0);
-
-            // Calculate total appointments for specialization
-            long totalAppointments = specDoctors.stream()
-                    .mapToLong(d -> appointmentService.getAppointmentsByDoctor(d.getId()).size())
+            long totalAppointments = specDoctorIds.stream()
+                    .mapToLong(id -> appointmentsByDoctor.getOrDefault(id, 0L))
                     .sum();
 
             specializationRatings.put(specialization, Math.round(avgRating * 100.0) / 100.0);
@@ -234,9 +238,28 @@ public class ReportingService {
 
         report.put("totalPatients", patients.size());
         report.put("ageGroups", ageGroups);
-        report.put("illnessDistribution", illnessDistribution);
+        report.put("illnessDistribution", suppressSmallGroups(illnessDistribution));
 
         return report;
+    }
+
+    // Groups this small can point to a single patient; they are reported together as "Other"
+    static final int MIN_GROUP_SIZE = 5;
+
+    static Map<String, Long> suppressSmallGroups(Map<String, Long> counts) {
+        Map<String, Long> result = new HashMap<>();
+        long other = 0;
+        for (Map.Entry<String, Long> entry : counts.entrySet()) {
+            if (entry.getValue() >= MIN_GROUP_SIZE) {
+                result.put(entry.getKey(), entry.getValue());
+            } else {
+                other += entry.getValue();
+            }
+        }
+        if (other > 0) {
+            result.put("Other (groups under " + MIN_GROUP_SIZE + ")", other);
+        }
+        return result;
     }
 
     // Revenue Analysis (if pricing is implemented)
@@ -280,22 +303,14 @@ public class ReportingService {
     }
 
     private String getAgeGroup(LocalDate dateOfBirth) {
-        if (dateOfBirth == null) {
-            return "Unknown";
-        }
-        long age = java.time.temporal.ChronoUnit.YEARS.between(dateOfBirth, LocalDate.now());
+        return com.vikrant.careSync.util.AgeGroups.of(dateOfBirth);
+    }
 
-        if (age < 18)
-            return "Under 18";
-        else if (age < 30)
-            return "18-29";
-        else if (age < 45)
-            return "30-44";
-        else if (age < 60)
-            return "45-59";
-        else if (age < 75)
-            return "60-74";
-        else
-            return "75+";
+    private Map<Long, Double> averageRatingPerDoctor() {
+        Map<Long, Double> averages = new HashMap<>();
+        for (Object[] row : feedbackRepository.averageRatingPerDoctor()) {
+            averages.put((Long) row[0], ((Number) row[1]).doubleValue());
+        }
+        return averages;
     }
 }

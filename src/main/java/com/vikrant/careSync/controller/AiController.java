@@ -67,7 +67,7 @@ public class AiController {
     }
 
     @GetMapping("/summarize/{patientId}")
-    @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN') and @access.canAccessPatient(#patientId)")
     public ResponseEntity<MedicalSummaryResponse> summarize(@PathVariable Long patientId) {
         return ResponseEntity.ok(aiService.summarizePatientHistory(patientId));
     }

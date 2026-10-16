@@ -1,65 +1,50 @@
 package com.vikrant.careSync.security;
 
+import com.vikrant.careSync.security.crypto.FieldCipher;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
-import org.springframework.beans.factory.annotation.Value;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import javax.crypto.Cipher;
-import javax.crypto.spec.SecretKeySpec;
-import java.util.Base64;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * Encrypts columns that have always been encrypted. Writes AES-256-GCM ("v2:"); reads that, the old AES/ECB
+ * format, and plaintext left by direct SQL seeding, until FieldReencryptionService has rewritten every row.
+ */
 @Converter
 @Component
+@Slf4j
 public class EncryptionConverter implements AttributeConverter<String, String> {
 
-    private static final String ALGORITHM = "AES/ECB/PKCS5Padding";
-    private final SecretKeySpec secretKey;
+    private static final AtomicBoolean PLAINTEXT_REPORTED = new AtomicBoolean();
 
-    public EncryptionConverter(@Value("${app.security.encryption-key}") String key) {
-        try {
-            if (key == null || key.isEmpty()) {
-                throw new RuntimeException("Encryption key is missing!");
-            }
-            byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
-            MessageDigest sha = MessageDigest.getInstance("SHA-256");
-            keyBytes = sha.digest(keyBytes);
-            keyBytes = Arrays.copyOf(keyBytes, 32);
-            this.secretKey = new SecretKeySpec(keyBytes, "AES");
-            System.out.println("HIPAA EncryptionConverter initialized successfully with SHA-256 key.");
-        } catch (Exception e) {
-            throw new RuntimeException("Error initializing encryption key", e);
-        }
+    private final FieldCipher cipher;
+
+    public EncryptionConverter(FieldCipher cipher) {
+        this.cipher = cipher;
     }
 
     @Override
     public String convertToDatabaseColumn(String attribute) {
-        if (attribute == null)
-            return null;
-        try {
-            Cipher cipher = Cipher.getInstance(ALGORITHM);
-            cipher.init(Cipher.ENCRYPT_MODE, secretKey);
-            return Base64.getEncoder().encodeToString(cipher.doFinal(attribute.getBytes(StandardCharsets.UTF_8)));
-        } catch (Exception e) {
-            throw new RuntimeException("Error encrypting field", e);
-        }
+        return cipher.encrypt(attribute);
     }
 
     @Override
     public String convertToEntityAttribute(String dbData) {
-        if (dbData == null)
+        if (dbData == null) {
             return null;
-        try {
-            Cipher cipher = Cipher.getInstance(ALGORITHM);
-            cipher.init(Cipher.DECRYPT_MODE, secretKey);
-            return new String(cipher.doFinal(Base64.getDecoder().decode(dbData)), StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            // Fallback: If data was inserted unencrypted (e.g. via direct SQL seeding) or
-            // key mismatch, return raw dbData
-            return dbData;
         }
+        if (cipher.isCurrent(dbData)) {
+            return cipher.decryptCurrent(dbData);
+        }
+        cipher.requireLegacyAccepted();
+        return cipher.decryptLegacyEcb(dbData).orElseGet(() -> {
+            // Inserted without encryption (e.g. direct SQL seeding); the re-encryption job fixes it
+            if (PLAINTEXT_REPORTED.compareAndSet(false, true)) {
+                log.warn("Unencrypted value found in an encrypted column; run the field re-encryption job");
+            }
+            return dbData;
+        });
     }
 }

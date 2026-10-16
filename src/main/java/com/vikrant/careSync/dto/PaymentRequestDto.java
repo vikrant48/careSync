@@ -1,10 +1,12 @@
 package com.vikrant.careSync.dto;
 
 import com.vikrant.careSync.entity.Payment;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 import java.math.BigDecimal;
 
@@ -44,6 +46,7 @@ public class PaymentRequestDto {
     private String upiId;
 
     // Card specific fields
+    @Valid
     private CardDetailsDto cardDetails;
 
     @Data
@@ -51,15 +54,20 @@ public class PaymentRequestDto {
     @AllArgsConstructor
     public static class CardDetailsDto {
 
+        // Card number, expiry and CVV are read once to derive the last four digits and brand, then discarded
+        @ToString.Exclude
         @Pattern(regexp = "^[0-9]{13,19}$", message = "Invalid card number")
         private String cardNumber;
 
+        @ToString.Exclude
         @Pattern(regexp = "^(0[1-9]|1[0-2])$", message = "Invalid expiry month")
         private String expiryMonth;
 
+        @ToString.Exclude
         @Pattern(regexp = "^[0-9]{2}$", message = "Invalid expiry year")
         private String expiryYear;
 
+        @ToString.Exclude
         @Pattern(regexp = "^[0-9]{3,4}$", message = "Invalid CVV")
         private String cvv;
 

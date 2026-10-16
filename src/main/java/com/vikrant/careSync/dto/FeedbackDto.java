@@ -40,4 +40,14 @@ public class FeedbackDto {
         this.anonymous = feedback.getAnonymous();
         this.createdAt = feedback.getCreatedAt();
     }
+
+    /** Anonymous feedback names nobody, except to the patient who wrote it. Returns this DTO. */
+    public FeedbackDto forViewer(Long viewerPatientId) {
+        boolean author = viewerPatientId != null && viewerPatientId.equals(patientId);
+        if (Boolean.TRUE.equals(anonymous) && !author) {
+            this.patientId = null;
+            this.patientName = "Anonymous";
+        }
+        return this;
+    }
 }

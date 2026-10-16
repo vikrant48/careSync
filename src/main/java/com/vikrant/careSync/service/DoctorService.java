@@ -1,5 +1,6 @@
 package com.vikrant.careSync.service;
 
+import com.vikrant.careSync.util.ProfileCompletion;
 import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.Experience;
 import com.vikrant.careSync.entity.Education;
@@ -37,6 +38,8 @@ public class DoctorService {
     private final CertificateRepository certificateRepository;
     private final FeedbackRepository feedbackRepository;
     private final CacheManager cacheManager;
+    private final PageCache pageCache;
+    private final AccountEmailService accountEmailService;
 
     public AdminDoctorPagedResponse getAdminDoctorList(int page, int size, String search, Boolean isVerified) {
         int pageNumber = Math.max(0, page);
@@ -46,12 +49,6 @@ public class DoctorService {
         long totalVerifiedCount = doctorRepository.countByIsVerified(true);
         long totalPendingCount = doctorRepository.countByIsVerified(false);
         return AdminDoctorPagedResponse.fromPage(pagedList, totalVerifiedCount, totalPendingCount);
-    }
-
-    @Cacheable(value = "DOCTOR:PROFILE", key = "'all'")
-    public List<DoctorDto> getAllDoctorsDto() {
-        List<Doctor> doctors = doctorRepository.findAllWithUser();
-        return convertDoctorsToDtosWithStats(doctors);
     }
 
     public List<DoctorDto> convertDoctorsToDtosWithStats(List<Doctor> doctors) {
@@ -123,45 +120,21 @@ public class DoctorService {
     }
 
     private int calculateCompletionPercentageFast(Doctor doctor, boolean hasExperience, boolean hasEducation) {
-        int percentage = 0;
-
-        // Basic Info (20%)
-        if (doctor.getFirstName() != null && !doctor.getFirstName().isEmpty() &&
-                doctor.getLastName() != null && !doctor.getLastName().isEmpty() &&
-                doctor.getEmail() != null && !doctor.getEmail().isEmpty() &&
-                doctor.getContactInfo() != null && !doctor.getContactInfo().isEmpty() &&
-                doctor.getGender() != null && !doctor.getGender().isEmpty()) {
-            percentage += 20;
-        }
-
-        // Professional Details (20%)
-        if (doctor.getSpecialization() != null && !doctor.getSpecialization().isEmpty() &&
-                doctor.getConsultationFees() != null &&
-                doctor.getLanguages() != null && !doctor.getLanguages().isEmpty()) {
-            percentage += 20;
-        }
-
-        // Address & Bio (10%)
-        if (doctor.getAddress() != null && !doctor.getAddress().isEmpty()) {
-            percentage += 10;
-        }
-
-        // Profile Image (10%)
-        if (doctor.getProfileImageUrl() != null && !doctor.getProfileImageUrl().isEmpty()) {
-            percentage += 10;
-        }
-
-        // Experience (20%)
-        if (hasExperience) {
-            percentage += 20;
-        }
-
-        // Education (20%)
-        if (hasEducation) {
-            percentage += 20;
-        }
-
-        return percentage;
+        return new ProfileCompletion()
+                // Basic Info (20%)
+                .section(20, ProfileCompletion.filled(doctor.getFirstName(), doctor.getLastName(),
+                        doctor.getEmail(), doctor.getContactInfo(), doctor.getGender()))
+                // Professional Details (20%)
+                .section(20, doctor.getConsultationFees() != null
+                        && ProfileCompletion.filled(doctor.getSpecialization(), doctor.getLanguages()))
+                // Address (10%)
+                .section(10, ProfileCompletion.filled(doctor.getAddress()))
+                // Profile Image (10%)
+                .section(10, ProfileCompletion.filled(doctor.getProfileImageUrl()))
+                // Experience (20%) and Education (20%)
+                .section(20, hasExperience)
+                .section(20, hasEducation)
+                .total();
     }
 
     public List<Doctor> getAllDoctors() {
@@ -214,10 +187,10 @@ public class DoctorService {
             doctor.setContactInfo(blankToNull(request.getContactInfo()));
         if (request.getAlternateContactInfo() != null)
             doctor.setAlternateContactInfo(blankToNull(request.getAlternateContactInfo()));
-        if (request.getEmail() != null)
-            doctor.setEmail(request.getEmail());
-        if (request.getIsActive() != null)
-            doctor.setIsActive(request.getIsActive());
+        String newEmail = accountEmailService.validateEmailChange(doctor.getEmail(), request.getEmail());
+        if (newEmail != null)
+            doctor.setEmail(newEmail);
+        // isActive is not taken from a profile edit: only admins activate or block accounts (AccountStatusService)
         if (request.getGender() != null)
             doctor.setGender(blankToNull(request.getGender()));
         if (request.getDateOfBirth() != null)
@@ -240,18 +213,16 @@ public class DoctorService {
 
     @CacheEvict(value = "DOCTOR:PROFILE", allEntries = true)
     public Doctor updateProfileImage(Long doctorId, String imageUrl) {
-        Doctor doctor = doctorRepository.findById(doctorId)
-                .orElseThrow(() -> new RuntimeException("Doctor not found"));
-
-        doctor.setProfileImageUrl(imageUrl);
-        return doctorRepository.save(doctor);
+        return setProfileImage(doctorRepository.findById(doctorId), imageUrl);
     }
 
     @CacheEvict(value = "DOCTOR:PROFILE", allEntries = true)
     public Doctor updateProfileImageByUsername(String username, String imageUrl) {
-        Doctor doctor = doctorRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("Doctor not found"));
+        return setProfileImage(doctorRepository.findByUsername(username), imageUrl);
+    }
 
+    private Doctor setProfileImage(Optional<Doctor> found, String imageUrl) {
+        Doctor doctor = found.orElseThrow(() -> new RuntimeException("Doctor not found"));
         doctor.setProfileImageUrl(imageUrl);
         doctor.setUpdatedAt(LocalDateTime.now());
         return doctorRepository.save(doctor);
@@ -444,48 +415,17 @@ public class DoctorService {
         int size = searchDto != null && searchDto.getSize() != null ? Math.min(Math.max(1, searchDto.getSize()), 100)
                 : 50;
 
-        String queryKey = (searchDto != null ? Objects.toString(searchDto.getQuery(), "") : "") + "_" +
-                (searchDto != null ? Objects.toString(searchDto.getSpecialization(), "") : "") + "_" +
-                (searchDto != null ? Objects.toString(searchDto.getLocation(), "") : "");
-
-        Cache cache = null;
-        try {
-            cache = cacheManager.getCache("DOCTOR:PAGINATED_LIST");
-        } catch (Exception e) {
-            log.warn("Redis CacheManager error for doctors: {}", e.getMessage());
-        }
-
-        String cacheKey = "query_" + queryKey + "_page_" + page + "_size_" + size;
-
-        if (cache != null) {
-            try {
-                Cache.ValueWrapper wrapper = cache.get(cacheKey);
-                if (wrapper != null && wrapper.get() instanceof List<?> rawList) {
-                    @SuppressWarnings("unchecked")
-                    List<DoctorDto> cachedList = (List<DoctorDto>) rawList;
-                    log.info("Redis HIT for paginated doctors key [{}]", cacheKey);
-                    prefetchDoctorWindowPages(searchDto, page, size, cache, queryKey);
-                    return cachedList;
-                }
-            } catch (Exception e) {
-                log.warn("Redis error reading doctor cache key [{}]: {}. Falling back to DB.", cacheKey,
-                        e.getMessage());
-            }
-        }
-
-        log.info("Redis MISS for paginated doctors key [{}]. Fetching from DB...", cacheKey);
-        List<DoctorDto> dtos = fetchDoctorPageFromDb(searchDto, page, size);
-
-        if (cache != null) {
-            try {
-                cache.put(cacheKey, dtos);
-            } catch (Exception e) {
-                log.warn("Redis error writing doctor cache key [{}]: {}", cacheKey, e.getMessage());
-            }
-        }
-
-        prefetchDoctorWindowPages(searchDto, page, size, cache, queryKey);
-        return dtos;
+        // Every search field is part of the key (gender and sort order were missing, so two searches differing only
+        // in those returned the same cached page)
+        String cacheKey = "query_" + (searchDto == null ? "" : String.join("_",
+                Objects.toString(searchDto.getQuery(), ""), Objects.toString(searchDto.getSpecialization(), ""),
+                Objects.toString(searchDto.getLocation(), ""), Objects.toString(searchDto.getGender(), ""),
+                Objects.toString(searchDto.getSortBy(), ""), Objects.toString(searchDto.getSortDirection(), "")))
+                + "_page_" + page + "_size_" + size;
+        int finalPage = page;
+        int finalSize = size;
+        return pageCache.list("DOCTOR:PAGINATED_LIST", cacheKey,
+                () -> fetchDoctorPageFromDb(searchDto, finalPage, finalSize));
     }
 
     private List<DoctorDto> fetchDoctorPageFromDb(SearchRequestDto baseSearchDto, int page, int size) {
@@ -501,34 +441,6 @@ public class DoctorService {
                 .build();
         List<Doctor> doctors = doctorRepository.searchDoctorsDynamic(pageReq);
         return convertDoctorsToDtosWithStats(doctors);
-    }
-
-    private void prefetchDoctorWindowPages(SearchRequestDto searchDto, int currentPage, int pageSize, Cache cache,
-            String queryKey) {
-        if (cache == null)
-            return;
-
-        int[] windowPages = (currentPage == 0)
-                ? new int[] { 1 }
-                : new int[] { currentPage - 1, currentPage + 1 };
-
-        for (int p : windowPages) {
-            if (p < 0)
-                continue;
-            String key = "query_" + queryKey + "_page_" + p + "_size_" + pageSize;
-            try {
-                Cache.ValueWrapper wrapper = cache.get(key);
-                if (wrapper == null) {
-                    List<DoctorDto> pageDtos = fetchDoctorPageFromDb(searchDto, p, pageSize);
-                    if (!pageDtos.isEmpty()) {
-                        cache.put(key, pageDtos);
-                        log.info("Prefetched and cached doctor window page [{}] into Redis.", key);
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("Failed to prefetch doctor window page [{}]: {}", key, e.getMessage());
-            }
-        }
     }
 
     public long countDoctors(SearchRequestDto searchDto) {

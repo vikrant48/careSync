@@ -63,7 +63,9 @@ public class AppointmentResponse {
             this.patientName = appointment.getPatient().getName();
             this.patientEmail = appointment.getPatient().getEmail();
             this.patientContactInfo = appointment.getPatient().getContactInfo();
-            this.patientIllnessDetails = appointment.getPatient().getIllnessDetails();
+            // A doctor who rejected the visit, or whose visit was cancelled, is not treating this patient
+            this.patientIllnessDetails = isClosedWithoutCare(appointment) ? null
+                    : appointment.getPatient().getIllnessDetails();
             this.patientProfileImageUrl = appointment.getPatient().getProfileImageUrl();
             this.patientActive = appointment.getPatient().getIsActive();
         }
@@ -107,9 +109,14 @@ public class AppointmentResponse {
                     this.hasSignedRecord = false;
                 }
 
-                this.medicalHistory = appointment.getPatient().getMedicalHistories().stream()
-                        .map(PatientMedicalHistoryDto::new)
-                        .collect(Collectors.toList());
+                // Same rule as AccessGuard: the patient's other records only while this doctor is treating them,
+                // and never another doctor's unsigned draft
+                Long appointmentDoctorId = appointment.getDoctor() != null ? appointment.getDoctor().getId() : null;
+                this.medicalHistory = isClosedWithoutCare(appointment) ? new java.util.ArrayList<>()
+                        : appointment.getPatient().getMedicalHistories().stream()
+                                .filter(mh -> isSharedRecord(mh, appointmentDoctorId))
+                                .map(PatientMedicalHistoryDto::new)
+                                .collect(Collectors.toList());
             } else {
                 this.hasSignedRecord = false;
             }
@@ -123,6 +130,20 @@ public class AppointmentResponse {
         } catch (Exception e) {
             this.feedbackSubmitted = false;
         }
+    }
+
+    private static final java.util.Set<Appointment.Status> CLOSED_WITHOUT_CARE = java.util.EnumSet.of(
+            Appointment.Status.REJECTED, Appointment.Status.CANCELLED,
+            Appointment.Status.CANCELLED_BY_PATIENT, Appointment.Status.CANCELLED_BY_DOCTOR);
+
+    private static boolean isClosedWithoutCare(Appointment appointment) {
+        return appointment.getStatus() != null && CLOSED_WITHOUT_CARE.contains(appointment.getStatus());
+    }
+
+    private static boolean isSharedRecord(MedicalHistory record, Long appointmentDoctorId) {
+        boolean unsignedDraft = Boolean.TRUE.equals(record.getIsDraft()) && !Boolean.TRUE.equals(record.getIsSigned());
+        Long authorId = record.getDoctor() != null ? record.getDoctor().getId() : null;
+        return !unsignedDraft || (authorId != null && authorId.equals(appointmentDoctorId));
     }
 
     @Getter

@@ -1,5 +1,6 @@
 package com.vikrant.careSync.controller;
 
+import com.vikrant.careSync.exception.ClientErrorMessages;
 import com.vikrant.careSync.dto.BookingRequest;
 import com.vikrant.careSync.dto.BookingResponse;
 import com.vikrant.careSync.dto.PaymentRequestDto;
@@ -41,9 +42,7 @@ public class BookingController {
                     request.getPaymentRequest());
             return ResponseEntity.status(HttpStatus.CREATED).body(booking);
         } catch (RuntimeException e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while creating the booking with payment");
@@ -56,15 +55,13 @@ public class BookingController {
      * Only accessible by doctors
      */
     @PostMapping("/doctor")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.canAccessPatient(#request.patientId)")
     public ResponseEntity<?> createDoctorBooking(@Valid @RequestBody BookingRequest request) {
         try {
             BookingResponse booking = bookingService.createDoctorBooking(request);
             return ResponseEntity.status(HttpStatus.CREATED).body(booking);
         } catch (RuntimeException e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while creating the doctor booking");
@@ -77,15 +74,13 @@ public class BookingController {
      * Accessible by both doctors and patients
      */
     @PostMapping
-    @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT')")
+    @PreAuthorize("hasRole('PATIENT') or (hasRole('DOCTOR') and (#request.patientId == null or @access.canAccessPatient(#request.patientId)))")
     public ResponseEntity<?> createBooking(@Valid @RequestBody BookingRequest request) {
         try {
             BookingResponse booking = bookingService.createBooking(request);
             return ResponseEntity.status(HttpStatus.CREATED).body(booking);
         } catch (RuntimeException e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while creating the booking");
@@ -98,15 +93,13 @@ public class BookingController {
      * Accessible by doctors, admins, and the patient themselves
      */
     @GetMapping("/user/{userId}")
-    @PreAuthorize("hasRole('DOCTOR') or hasRole('ADMIN') or (hasRole('PATIENT') and @bookingService.isCurrentUser(#userId))")
+    @PreAuthorize("hasRole('ADMIN') or @access.canAccessPatient(#userId)")
     public ResponseEntity<?> getBookingsByUserId(@PathVariable Long userId) {
         try {
             List<BookingResponse> bookings = bookingService.getBookingsByUserId(userId);
             return ResponseEntity.ok(bookings);
         } catch (RuntimeException e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while retrieving bookings");
@@ -119,7 +112,7 @@ public class BookingController {
      * Only accessible by doctors and admins
      */
     @GetMapping
-    @PreAuthorize("hasRole('DOCTOR') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> getAllBookings() {
         try {
             List<BookingResponse> bookings = bookingService.getAllBookings();
@@ -142,9 +135,7 @@ public class BookingController {
             List<BookingResponse> bookings = bookingService.getCurrentUserBookings();
             return ResponseEntity.ok(bookings);
         } catch (RuntimeException e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while retrieving your bookings");
@@ -157,15 +148,13 @@ public class BookingController {
      * Accessible by doctors, admins, and the patient who owns the booking
      */
     @GetMapping("/{bookingId}")
-    @PreAuthorize("hasRole('DOCTOR') or hasRole('ADMIN') or (hasRole('PATIENT') and @bookingService.isBookingOwner(#bookingId))")
+    @PreAuthorize("@access.canAccessBooking(#bookingId)")
     public ResponseEntity<?> getBookingById(@PathVariable Long bookingId) {
         try {
             BookingResponse booking = bookingService.getBookingById(bookingId);
             return ResponseEntity.ok(booking);
         } catch (RuntimeException e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while retrieving the booking");
@@ -178,16 +167,14 @@ public class BookingController {
      * Only accessible by doctors and admins
      */
     @PutMapping("/{bookingId}/status")
-    @PreAuthorize("hasRole('DOCTOR') or hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN') and @access.isBookingDoctor(#bookingId)")
     public ResponseEntity<?> updateBookingStatus(@PathVariable Long bookingId,
             @RequestParam Booking.BookingStatus status) {
         try {
             BookingResponse booking = bookingService.updateBookingStatus(bookingId, status);
             return ResponseEntity.ok(booking);
         } catch (RuntimeException e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while updating the booking status");
@@ -200,7 +187,7 @@ public class BookingController {
      * Only accessible by doctors and admins
      */
     @GetMapping("/status/{status}")
-    @PreAuthorize("hasRole('DOCTOR') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> getBookingsByStatus(@PathVariable Booking.BookingStatus status) {
         try {
             List<BookingResponse> bookings = bookingService.getBookingsByStatus(status);
@@ -217,7 +204,7 @@ public class BookingController {
      * Accessible by doctors, admins, and the patient themselves
      */
     @GetMapping("/user/{userId}/count")
-    @PreAuthorize("hasRole('DOCTOR') or hasRole('ADMIN') or (hasRole('PATIENT') and @bookingService.isCurrentUser(#userId))")
+    @PreAuthorize("hasRole('ADMIN') or @access.canAccessPatient(#userId)")
     public ResponseEntity<?> getBookingsCountByUserId(@PathVariable Long userId) {
         try {
             Long count = bookingService.getBookingsCountByUserId(userId);
@@ -226,9 +213,7 @@ public class BookingController {
             response.put("bookingCount", count);
             return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while retrieving booking count");
@@ -241,7 +226,7 @@ public class BookingController {
      * Only accessible by doctors and admins
      */
     @GetMapping("/date-range")
-    @PreAuthorize("hasRole('DOCTOR') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> getBookingsByDateRange(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
@@ -275,9 +260,7 @@ public class BookingController {
             successResponse.put("booking", booking);
             return ResponseEntity.ok(successResponse);
         } catch (RuntimeException e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while cancelling the booking");

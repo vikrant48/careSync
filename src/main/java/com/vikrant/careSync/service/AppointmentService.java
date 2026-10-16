@@ -80,6 +80,7 @@ public class AppointmentService {
     private final DoctorLeaveService doctorLeaveService;
     private final ChatRepository chatRepository;
     private final CacheManager cacheManager;
+    private final PageCache pageCache;
     private final PaymentService paymentService;
     private final SlotLockService slotLockService;
     private final AppointmentStatusLogRepository appointmentStatusLogRepository;
@@ -90,6 +91,13 @@ public class AppointmentService {
     private final RecordReadinessService recordReadinessService;
     private final com.vikrant.careSync.repository.AppointmentSignatureRepository appointmentSignatureRepository;
     private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+    private final MedicalHistoryService medicalHistoryService;
+
+    /** Pre-visit statuses in which the patient may (re)submit the intake form. */
+    private static final Set<Appointment.Status> INTAKE_ALLOWED_STATUSES = EnumSet.of(
+            Appointment.Status.BOOKED, Appointment.Status.REQUESTED, Appointment.Status.CONFIRMED,
+            Appointment.Status.SCHEDULED, Appointment.Status.INTAKE, Appointment.Status.INTAKE_COMPLETED,
+            Appointment.Status.WAITING_ROOM, Appointment.Status.READY_FOR_VISIT);
 
     // Only patients can book appointments - status automatically set to BOOKED
     @Caching(evict = {
@@ -147,13 +155,8 @@ public class AppointmentService {
         Appointment saved = appointmentRepository.save(appointment);
 
         // Record initial status audit log
-        AppointmentStatusLog statusLog = AppointmentStatusLog.builder()
-                .appointmentId(saved.getId())
-                .previousStatus(null)
-                .newStatus(Appointment.Status.BOOKED)
-                .changedBy(patient.getUsername())
-                .reason("Initial Booking: " + (reason != null ? reason : "Standard"))
-                .build();
+        AppointmentStatusLog statusLog = AppointmentStatusLog.of(saved.getId(), null, Appointment.Status.BOOKED, patient.getUsername(),
+                "Initial Booking: " + (reason != null ? reason : "Standard"));
         appointmentStatusLogRepository.save(statusLog);
 
         // Release slot lock upon successful booking
@@ -263,10 +266,6 @@ public class AppointmentService {
                 feedbackRepository.findByDoctorId(doctorId));
     }
 
-    public Optional<Appointment> getAppointmentByIdOptional(Long appointmentId) {
-        return appointmentRepository.findById(appointmentId);
-    }
-
     // Get appointments for doctors with enhanced patient information including
     // illness details
     public List<Appointment> getAppointmentsByDoctor(Long doctorId) {
@@ -278,16 +277,6 @@ public class AppointmentService {
         return appointmentRepository.findByPatientIdWithPatientAndDoctorDetails(patientId);
     }
 
-    // Get appointments for doctors with patient illness details
-    public List<Appointment> getAppointmentsByDoctorWithPatientDetails(Long doctorId) {
-        return appointmentRepository.findByDoctorIdWithPatientAndDoctorDetails(doctorId);
-    }
-
-    // Get appointments for patients with doctor details
-    public List<Appointment> getAppointmentsByPatientWithDoctorDetails(Long patientId) {
-        return appointmentRepository.findByPatientIdWithPatientAndDoctorDetails(patientId);
-    }
-
     @Cacheable(value = "DOCTOR:APPOINTMENTS", key = "'upcoming_appointments_' + #doctorId")
     public List<Appointment> getUpcomingAppointmentsByDoctor(Long doctorId) {
         return appointmentRepository.findUpcomingAppointmentsByDoctorWithDetails(doctorId, LocalDateTime.now());
@@ -296,16 +285,6 @@ public class AppointmentService {
     @Cacheable(value = "PATIENT:APPOINTMENTS", key = "'upcoming_appointments_' + #patientId")
     public List<Appointment> getUpcomingAppointmentsByPatient(Long patientId) {
         return appointmentRepository.findUpcomingAppointmentsByPatientWithDetails(patientId, LocalDateTime.now());
-    }
-
-    public List<Appointment> getDoctorAppointmentsByDate(Long doctorId, LocalDateTime date) {
-        LocalDateTime startOfDay = date.toLocalDate().atStartOfDay();
-        LocalDateTime nextDayStart = startOfDay.plusDays(1);
-        return appointmentRepository.findByDoctorIdAndAppointmentDateTimeBetween(doctorId, startOfDay, nextDayStart);
-    }
-
-    public List<Appointment> getUpcomingAppointments(Long doctorId) {
-        return getUpcomingAppointmentsByDoctor(doctorId);
     }
 
     public List<Appointment> getUpcomingPatientAppointments(Long patientId) {
@@ -405,6 +384,12 @@ public class AppointmentService {
             }
         }
 
+        // A visit is complete only once its medical record is signed (e-sign flow)
+        if (newStatus == Appointment.Status.COMPLETED && medicalHistoryRepository.findAllByAppointmentId(appointmentId)
+                .stream().noneMatch(mh -> Boolean.TRUE.equals(mh.getIsSigned()))) {
+            throw new RuntimeException("Sign the medical record (e-sign) before completing this visit.");
+        }
+
         Appointment.Status previousStatus = appointment.getStatus();
 
         // Change status with validation and audit trail
@@ -413,13 +398,8 @@ public class AppointmentService {
         Appointment saved = appointmentRepository.save(appointment);
 
         // Record status audit log
-        AppointmentStatusLog statusLog = AppointmentStatusLog.builder()
-                .appointmentId(saved.getId())
-                .previousStatus(previousStatus)
-                .newStatus(newStatus)
-                .changedBy(currentUser.getUsername())
-                .reason("Status update requested by " + currentUser.getRole())
-                .build();
+        AppointmentStatusLog statusLog = AppointmentStatusLog.of(saved.getId(), previousStatus, newStatus, currentUser.getUsername(),
+                "Status update requested by " + currentUser.getRole());
         appointmentStatusLogRepository.save(statusLog);
 
         if (currentUser.getRole() == User.Role.DOCTOR) {
@@ -529,9 +509,23 @@ public class AppointmentService {
                 () -> notificationService.sendAppointmentCancellation(appointment.getId()));
     }
 
+    /**
+     * Admin removal, only for an appointment that holds nothing that must be kept (a duplicate or test booking).
+     * Visits with clinical, payment or communication records are part of the medical record: cancel them instead.
+     */
     public void deleteAppointment(Long id) {
         Appointment appointment = appointmentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
+        boolean hasRecords = medicalHistoryRepository.findByAppointmentId(id).isPresent()
+                || appointmentIntakeRepository.findByAppointmentId(id).isPresent()
+                || appointmentSignatureRepository.findByAppointmentId(id).isPresent()
+                || feedbackRepository.findByAppointmentId(id).isPresent()
+                || !chatRepository.findByAppointmentIdOrderByTimestampAsc(id).isEmpty()
+                || paymentService.hasPaymentsForAppointment(id);
+        if (hasRecords) {
+            throw new IllegalStateException("This appointment has clinical, payment or chat records and cannot be "
+                    + "deleted. Cancel it instead.");
+        }
         appointmentRepository.delete(appointment);
     }
 
@@ -558,8 +552,8 @@ public class AppointmentService {
     }
 
     public List<Appointment> getTodayAppointments(Long doctorId) {
-        LocalDateTime today = LocalDateTime.now();
-        return appointmentRepository.findTodayAppointmentsByDoctorWithDetails(doctorId, today);
+        LocalDateTime dayStart = LocalDate.now().atStartOfDay();
+        return appointmentRepository.findTodayAppointmentsByDoctorWithDetails(doctorId, dayStart, dayStart.plusDays(1));
     }
 
     @Transactional(readOnly = true)
@@ -570,47 +564,51 @@ public class AppointmentService {
         LocalDate previousMonthStart = monthStart.minusMonths(1);
         LocalDateTime yesterdayEnd = yesterday.atTime(LocalTime.MAX);
 
-        List<Appointment> appointments = appointmentRepository.findByDoctorId(doctorId);
-        List<Long> appointmentIds = appointments.stream().map(Appointment::getId).toList();
-        Map<Long, List<AppointmentStatusLog>> logsByAppointment = appointmentIds.isEmpty()
+        // Counts come from the database; only appointments whose status changed since yesterday are loaded
+        long todayAppointments = appointmentRepository.countByDoctorIdBetween(doctorId, today.atStartOfDay(),
+                today.plusDays(1).atStartOfDay());
+        long yesterdayAppointments = appointmentRepository.countByDoctorIdBetween(doctorId, yesterday.atStartOfDay(),
+                today.atStartOfDay());
+        long pendingReports = appointmentRepository.countByDoctorIdAndStatusIn(doctorId, PENDING_REPORT_STATUSES);
+
+        // Yesterday's pending count = today's, corrected for the appointments that changed since then
+        List<Appointment> changed = appointmentRepository.findStatusChangedSince(doctorId, yesterdayEnd,
+                yesterday.atStartOfDay());
+        Map<Long, List<AppointmentStatusLog>> logsByAppointment = changed.isEmpty()
                 ? Map.of()
                 : appointmentStatusLogRepository
-                        .findByAppointmentIdInAndCreatedAtGreaterThanEqual(appointmentIds, yesterday.atStartOfDay())
+                        .findByAppointmentIdInAndCreatedAtGreaterThanEqual(
+                                changed.stream().map(Appointment::getId).toList(), yesterday.atStartOfDay())
                         .stream()
                         .collect(Collectors.groupingBy(AppointmentStatusLog::getAppointmentId));
-
-        long todayAppointments = countAppointmentsOn(appointments, today);
-        long yesterdayAppointments = countAppointmentsOn(appointments, yesterday);
-        long pendingReports = appointments.stream().filter(appointment -> isPendingReport(appointment.getStatus()))
+        long pendingNowAmongChanged = changed.stream()
+                .filter(appointment -> isPendingReport(appointment.getStatus()))
                 .count();
-        long pendingReportsYesterday = appointments.stream()
+        long pendingYesterdayAmongChanged = changed.stream()
                 .filter(appointment -> isPendingReport(
                         statusAt(appointment, logsByAppointment.get(appointment.getId()), yesterdayEnd)))
                 .count();
+        long pendingReportsYesterday = pendingReports - pendingNowAmongChanged + pendingYesterdayAmongChanged;
 
         Map<Long, LocalDate> firstVisitByPatient = new HashMap<>();
-        for (Appointment appointment : appointments) {
-            if (appointment.getPatient() == null || appointment.getPatient().getId() == null
-                    || appointment.getAppointmentDateTime() == null) {
-                continue;
+        for (Object[] row : appointmentRepository.findFirstVisitPerPatient(doctorId)) {
+            if (row[0] != null && row[1] != null) {
+                firstVisitByPatient.put((Long) row[0], ((LocalDateTime) row[1]).toLocalDate());
             }
-            LocalDate visitDate = appointment.getAppointmentDateTime().toLocalDate();
-            firstVisitByPatient.merge(appointment.getPatient().getId(), visitDate,
-                    (current, candidate) -> current.isBefore(candidate) ? current : candidate);
         }
         long newPatientsThisMonth = firstVisitByPatient.values().stream()
                 .filter(visitDate -> !visitDate.isBefore(monthStart))
                 .count();
         long patientsBeforeThisMonth = firstVisitByPatient.size() - newPatientsThisMonth;
 
-        List<Feedback> feedbacks = feedbackRepository.findByDoctorId(doctorId);
-        Double satisfactionRating = averageRating(feedbacks);
-        Double thisMonthRating = averageRating(feedbacks.stream()
-                .filter(feedback -> isOnOrAfter(feedback, monthStart))
-                .toList());
-        Double previousMonthRating = averageRating(feedbacks.stream()
-                .filter(feedback -> isWithin(feedback, previousMonthStart, monthStart))
-                .toList());
+        long reviewCount = feedbackRepository.countByDoctorIdValue(doctorId);
+        LocalDateTime farFuture = today.plusYears(100).atStartOfDay();
+        Double satisfactionRating = rounded(feedbackRepository.averageRatingBetween(doctorId,
+                LocalDateTime.of(1900, 1, 1, 0, 0), farFuture));
+        Double thisMonthRating = rounded(feedbackRepository.averageRatingBetween(doctorId,
+                monthStart.atStartOfDay(), farFuture));
+        Double previousMonthRating = rounded(feedbackRepository.averageRatingBetween(doctorId,
+                previousMonthStart.atStartOfDay(), monthStart.atStartOfDay()));
 
         DoctorDashboardMetricsResponse metrics = new DoctorDashboardMetricsResponse();
         metrics.setTodayAppointments(todayAppointments);
@@ -623,7 +621,7 @@ public class AppointmentService {
         metrics.setPendingReports(pendingReports);
         metrics.setPendingReportChangeFromYesterday(pendingReports - pendingReportsYesterday);
         metrics.setSatisfactionRating(satisfactionRating);
-        metrics.setReviewCount(feedbacks.size());
+        metrics.setReviewCount(reviewCount);
         if (thisMonthRating != null && previousMonthRating != null) {
             metrics.setSatisfactionChangeThisMonth(roundToOneDecimal(thisMonthRating - previousMonthRating));
         }
@@ -632,20 +630,6 @@ public class AppointmentService {
 
     public List<Appointment> getAppointmentsByDateRange(Long doctorId, LocalDateTime startDate, LocalDateTime endDate) {
         return appointmentRepository.findByDoctorIdAndAppointmentDateTimeBetween(doctorId, startDate, endDate);
-    }
-
-    public List<Appointment> getAppointmentsByDateRangeForPatient(Long patientId, LocalDateTime startDate,
-            LocalDateTime endDate) {
-        return appointmentRepository.findByPatientId(patientId).stream()
-                .filter(appointment -> appointment.getAppointmentDateTime().isAfter(startDate) &&
-                        appointment.getAppointmentDateTime().isBefore(endDate))
-                .toList();
-    }
-
-    // Get all appointments across all doctors within date range (for system-wide
-    // analytics)
-    public List<Appointment> getAllAppointmentsByDateRange(LocalDateTime startDate, LocalDateTime endDate) {
-        return appointmentRepository.findByAppointmentDateTimeBetweenWithDetails(startDate, endDate);
     }
 
     public SlotAvailabilityResponse getAvailableSlots(Long doctorId, String date) {
@@ -689,37 +673,67 @@ public class AppointmentService {
                 .map(dt -> String.format("%02d:%02d", dt.getHour(), dt.getMinute()))
                 .collect(Collectors.toSet());
 
-        // If the date is today, filter out past slots
-        LocalDate today = LocalDate.now();
-        LocalTime now = LocalTime.now();
-
-        // Filter out booked/confirmed slots, locked slots, and past slots if today
-        List<String> availableSlots = allSlots.stream()
-                .filter(slot -> {
-                    // Check if slot is already taken (O(1) set lookup)
-                    if (bookedTimeStrings.contains(slot)) {
-                        return false;
-                    }
-
-                    LocalDateTime slotDateTime = LocalDateTime.parse(date + "T" + slot + ":00");
-                    if (slotLockService.isSlotLocked(doctorId, slotDateTime)) {
-                        return false;
-                    }
-
-                    // If today, check if slot is in the future
-                    if (requestedLocalDate.equals(today)) {
-                        LocalTime slotTime = LocalTime.parse(slot);
-                        return slotTime.isAfter(now);
-                    }
-
-                    return true;
-                })
-                .toList();
+        // Filter out booked/confirmed slots, past slots if today, and locked slots (one Redis call)
+        List<String> availableSlots = openSlotsOn(doctorId, requestedLocalDate, allSlots, bookedTimeStrings);
 
         return SlotAvailabilityResponse.builder()
                 .availableSlots(availableSlots)
                 .isOnLeave(false)
                 .build();
+    }
+
+    /** A day and time that can be booked. */
+    public record OpenSlot(LocalDate date, String time) {
+    }
+
+    private List<String> openSlotsOn(Long doctorId, LocalDate day, List<String> allSlots, Set<String> bookedTimes) {
+        LocalDate today = LocalDate.now();
+        LocalTime now = LocalTime.now();
+        List<String> candidates = allSlots.stream()
+                .filter(slot -> !bookedTimes.contains(slot))
+                .filter(slot -> !day.equals(today) || LocalTime.parse(slot).isAfter(now))
+                .toList();
+        Set<LocalDateTime> locked = slotLockService.findLockedSlots(doctorId,
+                candidates.stream().map(slot -> day.atTime(LocalTime.parse(slot))).toList());
+        return candidates.stream()
+                .filter(slot -> !locked.contains(day.atTime(LocalTime.parse(slot))))
+                .toList();
+    }
+
+    /**
+     * The first bookable slot within the next {@code days} days, for the AI booking assistant. One query for the
+     * doctor, one for leaves and one for booked times cover the whole range (was several queries and up to 16
+     * Redis calls per day).
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<OpenSlot> findFirstAvailableSlot(Long doctorId, int days) {
+        Doctor doctor = doctorRepository.findById(doctorId).orElse(null);
+        if (doctor == null || !doctor.canAcceptAppointments()) {
+            return java.util.Optional.empty();
+        }
+        LocalDate first = LocalDate.now();
+        List<com.vikrant.careSync.entity.DoctorLeave> leaves = doctorLeaveService.getUpcomingLeaves(doctorId);
+        Map<LocalDate, Set<String>> bookedByDay = appointmentRepository
+                .findBookedSlotTimesByDoctorAndDate(doctorId, first.atStartOfDay(), first.plusDays(days).atStartOfDay())
+                .stream()
+                .collect(Collectors.groupingBy(LocalDateTime::toLocalDate,
+                        Collectors.mapping(dt -> String.format("%02d:%02d", dt.getHour(), dt.getMinute()),
+                                Collectors.toSet())));
+        List<String> allSlots = generateDoctorWorkingSlots();
+        for (int offset = 0; offset < days; offset++) {
+            LocalDate day = first.plusDays(offset);
+            boolean onLeave = leaves.stream().anyMatch(leave -> leave.getStartDate() != null
+                    && leave.getEndDate() != null && !day.isBefore(leave.getStartDate())
+                    && !day.isAfter(leave.getEndDate()));
+            if (onLeave) {
+                continue;
+            }
+            List<String> open = openSlotsOn(doctorId, day, allSlots, bookedByDay.getOrDefault(day, Set.of()));
+            if (!open.isEmpty()) {
+                return java.util.Optional.of(new OpenSlot(day, open.get(0)));
+            }
+        }
+        return java.util.Optional.empty();
     }
 
     public boolean holdSlot(Long doctorId, LocalDateTime slotTime, Long patientId) {
@@ -739,8 +753,9 @@ public class AppointmentService {
         return slotLockService.acquireSlotLock(doctorId, slotTime, patientId);
     }
 
-    public void releaseSlotHold(Long doctorId, LocalDateTime slotTime) {
-        slotLockService.releaseSlotLock(doctorId, slotTime);
+    /** Releases the patient's own hold; returns false if another patient holds the slot. */
+    public boolean releaseSlotHold(Long doctorId, LocalDateTime slotTime, Long patientId) {
+        return slotLockService.releaseSlotLockIfOwner(doctorId, slotTime, patientId);
     }
 
     private List<String> generateDoctorWorkingSlots() {
@@ -771,21 +786,6 @@ public class AppointmentService {
                 excludedAppointmentId) > 0;
     }
 
-    private boolean isSlotUnavailable(List<Appointment> appointments, String timeSlot) {
-        return appointments.stream()
-                .anyMatch(appointment -> {
-                    String appointmentTime = appointment.getAppointmentDateTime().toLocalTime().toString().substring(0,
-                            5);
-                    // Consider slots unavailable if they are BOOKED, CONFIRMED, SCHEDULED, or
-                    // IN_PROGRESS
-                    return appointmentTime.equals(timeSlot) &&
-                            (appointment.getStatus() == Appointment.Status.BOOKED ||
-                                    appointment.getStatus() == Appointment.Status.CONFIRMED ||
-                                    appointment.getStatus() == Appointment.Status.SCHEDULED ||
-                                    appointment.getStatus() == Appointment.Status.IN_PROGRESS);
-                });
-    }
-
     public List<AppointmentResponse> getDoctorAppointmentsPaginated(Long doctorId, int page, int size,
             String statusFilter, String range, String searchTerm) {
         int safePage = Math.max(0, page);
@@ -794,44 +794,10 @@ public class AppointmentService {
         String safeRange = (range != null && !range.trim().isEmpty()) ? range.trim() : "UPCOMING";
         String safeSearch = (searchTerm != null) ? searchTerm.trim().toLowerCase() : "";
 
-        Cache cache = null;
-        try {
-            cache = cacheManager.getCache("DOCTOR:APPOINTMENTS_PAGINATED");
-        } catch (Exception e) {
-            log.warn("Redis cache manager error: {}", e.getMessage());
-        }
-
         String targetKey = "doc_" + doctorId + "_page_" + safePage + "_size_" + safeSize + "_status_" + safeStatus
                 + "_range_" + safeRange + "_q_" + safeSearch;
-
-        if (cache != null) {
-            try {
-                Cache.ValueWrapper wrapper = cache.get(targetKey);
-                if (wrapper != null && wrapper.get() instanceof List<?> rawList) {
-                    @SuppressWarnings("unchecked")
-                    List<AppointmentResponse> cachedDtos = (List<AppointmentResponse>) rawList;
-                    prefetchDoctorAppointmentWindowPages(doctorId, safePage, safeSize, safeStatus, safeRange,
-                            safeSearch, cache);
-                    return cachedDtos;
-                }
-            } catch (Exception e) {
-                log.warn("Redis error reading key [{}]: {}. Falling back to DB.", targetKey, e.getMessage());
-            }
-        }
-
-        List<AppointmentResponse> pageDtos = fetchDoctorAppointmentsFromDb(doctorId, safePage, safeSize,
-                safeStatus, safeRange, safeSearch);
-
-        if (cache != null) {
-            try {
-                cache.put(targetKey, pageDtos);
-            } catch (Exception e) {
-                log.warn("Redis error writing key [{}]: {}", targetKey, e.getMessage());
-            }
-        }
-
-        prefetchDoctorAppointmentWindowPages(doctorId, safePage, safeSize, safeStatus, safeRange, safeSearch, cache);
-        return pageDtos;
+        return pageCache.list("DOCTOR:APPOINTMENTS_PAGINATED", targetKey,
+                () -> fetchDoctorAppointmentsFromDb(doctorId, safePage, safeSize, safeStatus, safeRange, safeSearch));
     }
 
     public long countDoctorAppointments(Long doctorId, String statusFilter, String range, String searchTerm) {
@@ -839,39 +805,26 @@ public class AppointmentService {
         String safeRange = (range != null && !range.trim().isEmpty()) ? range.trim() : "UPCOMING";
         String safeSearch = (searchTerm != null) ? searchTerm.trim().toLowerCase() : "";
 
-        Cache cache = null;
-        try {
-            cache = cacheManager.getCache("DOCTOR:APPOINTMENTS_PAGINATED");
-            if (cache != null) {
-                String countKey = "doc_" + doctorId + "_count_status_" + safeStatus + "_range_" + safeRange + "_q_"
-                        + safeSearch;
-                Cache.ValueWrapper wrapper = cache.get(countKey);
-                if (wrapper != null && wrapper.get() instanceof Long count) {
-                    return count;
-                }
+        String countKey = "doc_" + doctorId + "_count_status_" + safeStatus + "_range_" + safeRange + "_q_"
+                + safeSearch;
+        return pageCache.count("DOCTOR:APPOINTMENTS_PAGINATED", countKey, () -> {
+            if (safeSearch.isEmpty()) {
+                return doctorAppointmentPage(doctorId, 0, 1, safeStatus, safeRange).getTotalElements();
             }
-        } catch (Exception e) {
-            log.warn("Redis error reading doctor appointment count: {}", e.getMessage());
-        }
-
-        List<Appointment> allDocAppts = appointmentRepository.findByDoctorIdWithPatientAndDoctorDetails(doctorId);
-        long count = filterAppointmentsByCriteria(allDocAppts, safeStatus, safeRange, safeSearch).size();
-
-        if (cache != null) {
-            try {
-                String countKey = "doc_" + doctorId + "_count_status_" + safeStatus + "_range_" + safeRange + "_q_"
-                        + safeSearch;
-                cache.put(countKey, count);
-            } catch (Exception e) {
-                log.warn("Redis error writing doctor appointment count: {}", e.getMessage());
-            }
-        }
-
-        return count;
+            // Patient names are encrypted: a name search is matched after decryption
+            List<Appointment> allDocAppts = appointmentRepository.findByDoctorIdWithPatientAndDoctorDetails(doctorId);
+            return (long) filterAppointmentsByCriteria(allDocAppts, safeStatus, safeRange, safeSearch).size();
+        });
     }
 
     private List<AppointmentResponse> fetchDoctorAppointmentsFromDb(Long doctorId, int page, int size,
             String statusFilter, String range, String searchTerm) {
+        if (searchTerm == null || searchTerm.isEmpty()) {
+            // Patient names are encrypted, so only a name search still needs the in-memory path below
+            return doctorAppointmentPage(doctorId, page, size, statusFilter, range).getContent().stream()
+                    .map(AppointmentResponse::new)
+                    .toList();
+        }
         List<Appointment> allDocAppts = appointmentRepository.findByDoctorIdWithPatientAndDoctorDetails(doctorId);
         List<Appointment> filtered = filterAppointmentsByCriteria(allDocAppts, statusFilter, range, searchTerm);
 
@@ -895,6 +848,40 @@ public class AppointmentService {
         return sorted.subList(fromIndex, toIndex).stream()
                 .map(AppointmentResponse::new)
                 .toList();
+    }
+
+    /** Same status and range rules as filterAppointmentsByCriteria, evaluated by the database. */
+    private org.springframework.data.domain.Page<Appointment> doctorAppointmentPage(Long doctorId, int page, int size,
+            String statusFilter, String range) {
+        boolean allStatuses = "ALL".equalsIgnoreCase(statusFilter);
+        Set<Appointment.Status> statuses;
+        if (allStatuses) {
+            statuses = EnumSet.of(Appointment.Status.BOOKED); // unused, but IN () needs a value
+        } else if ("PENDING".equalsIgnoreCase(statusFilter)) {
+            statuses = EnumSet.of(Appointment.Status.BOOKED, Appointment.Status.SCHEDULED);
+        } else {
+            Appointment.Status single = java.util.Arrays.stream(Appointment.Status.values())
+                    .filter(s -> s.name().equalsIgnoreCase(statusFilter))
+                    .findFirst()
+                    .orElse(null);
+            if (single == null) {
+                return org.springframework.data.domain.Page.empty();
+            }
+            statuses = EnumSet.of(single);
+        }
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime from = LocalDateTime.of(1900, 1, 1, 0, 0);
+        LocalDateTime to = LocalDateTime.of(9999, 1, 1, 0, 0);
+        if ("TODAY".equalsIgnoreCase(range)) {
+            from = now.toLocalDate().atStartOfDay();
+            to = from.plusDays(1);
+        } else if ("UPCOMING".equalsIgnoreCase(range)) {
+            from = now;
+        } else if ("PAST".equalsIgnoreCase(range)) {
+            to = now;
+        }
+        return appointmentRepository.findDoctorAppointmentPage(doctorId, allStatuses, statuses, from, to, now,
+                org.springframework.data.domain.PageRequest.of(page, size));
     }
 
     private List<Appointment> filterAppointmentsByCriteria(List<Appointment> items, String statusFilter, String range,
@@ -942,31 +929,6 @@ public class AppointmentService {
         }).toList();
     }
 
-    private void prefetchDoctorAppointmentWindowPages(Long doctorId, int currentPage, int pageSize, String statusFilter,
-            String range, String searchTerm, Cache cache) {
-        if (cache == null)
-            return;
-        int[] windowPages = (currentPage == 0) ? new int[] { 1 } : new int[] { currentPage - 1, currentPage + 1 };
-        for (int p : windowPages) {
-            if (p < 0)
-                continue;
-            String key = "doc_" + doctorId + "_page_" + p + "_size_" + pageSize + "_status_" + statusFilter + "_range_"
-                    + range + "_q_" + searchTerm;
-            try {
-                Cache.ValueWrapper wrapper = cache.get(key);
-                if (wrapper == null) {
-                    List<AppointmentResponse> pageDtos = fetchDoctorAppointmentsFromDb(doctorId, p, pageSize,
-                            statusFilter, range, searchTerm);
-                    if (!pageDtos.isEmpty()) {
-                        cache.put(key, pageDtos);
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("Failed to prefetch doctor appointment page [{}]: {}", key, e.getMessage());
-            }
-        }
-    }
-
     public PreVisitIntakeResponse submitPreVisitIntake(Long appointmentId, PreVisitIntakeRequest request,
             Long patientId) {
         Appointment appointment = appointmentRepository.findById(appointmentId)
@@ -974,6 +936,9 @@ public class AppointmentService {
 
         if (!appointment.getPatient().getId().equals(patientId)) {
             throw new RuntimeException("Unauthorized: Intake can only be submitted by the booked patient");
+        }
+        if (!INTAKE_ALLOWED_STATUSES.contains(appointment.getStatus())) {
+            throw new IllegalStateException("Intake can no longer be changed once the consultation has started");
         }
 
         Appointment.Status previousStatus = appointment.getStatus();
@@ -1022,13 +987,8 @@ public class AppointmentService {
         Appointment savedApt = appointmentRepository.save(appointment);
 
         // Record status log
-        appointmentStatusLogRepository.save(AppointmentStatusLog.builder()
-                .appointmentId(savedApt.getId())
-                .previousStatus(previousStatus)
-                .newStatus(savedApt.getStatus())
-                .changedBy("PATIENT")
-                .reason("Pre-visit digital intake submitted - Patient moved to Waiting Room")
-                .build());
+        appointmentStatusLogRepository.record(savedApt.getId(), previousStatus, savedApt.getStatus(), "PATIENT",
+                "Pre-visit digital intake submitted - Patient moved to Waiting Room");
 
         return PreVisitIntakeResponse.builder()
                 .appointmentId(savedApt.getId())
@@ -1145,10 +1105,12 @@ public class AppointmentService {
         Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found with ID: " + appointmentId));
 
-        SoapReportDto draftDto = aiClinicalService.generateSoapDraft(appointment, liveTranscript);
-
         MedicalHistory mh = medicalHistoryRepository.findByAppointmentId(appointmentId)
                 .orElse(new MedicalHistory());
+        // Never overwrite (or un-sign) a signed record; checked before the AI call
+        medicalHistoryService.assertEditable(mh);
+
+        SoapReportDto draftDto = aiClinicalService.generateSoapDraft(appointment, liveTranscript);
 
         mh.setAppointmentId(appointmentId);
         mh.setPatient(appointment.getPatient());
@@ -1179,13 +1141,8 @@ public class AppointmentService {
             appointment.changeStatus(Appointment.Status.REPORT_DRAFTED, "AI_AMBIENT_SCRIBE");
             appointmentRepository.save(appointment);
 
-            appointmentStatusLogRepository.save(AppointmentStatusLog.builder()
-                    .appointmentId(appointment.getId())
-                    .previousStatus(previousStatus)
-                    .newStatus(Appointment.Status.REPORT_DRAFTED)
-                    .changedBy("AI_SCRIBE")
-                    .reason("Automated Groq AI SOAP draft generated from pre-visit intake and consultation transcript")
-                    .build());
+            appointmentStatusLogRepository.record(appointment.getId(), previousStatus, Appointment.Status.REPORT_DRAFTED, "AI_SCRIBE",
+                "Automated Groq AI SOAP draft generated from pre-visit intake and consultation transcript");
         }
 
         return draftDto;
@@ -1242,6 +1199,7 @@ public class AppointmentService {
         if (Boolean.TRUE.equals(mh.getIsSigned())) {
             throw new RuntimeException("This medical report is signed and can no longer be edited");
         }
+        medicalHistoryService.assertEditable(mh);
         mh.setAppointmentId(appointmentId);
         mh.setPatient(appointment.getPatient());
         mh.setDoctor(appointment.getDoctor());
@@ -1278,6 +1236,8 @@ public class AppointmentService {
 
         MedicalHistory mh = medicalHistoryRepository.findByAppointmentId(appointmentId)
                 .orElse(new MedicalHistory());
+        // A signed report is final: signing again would overwrite it
+        medicalHistoryService.assertEditable(mh);
 
         mh.setAppointmentId(appointmentId);
         mh.setPatient(appointment.getPatient());
@@ -1308,13 +1268,8 @@ public class AppointmentService {
             appointment.changeStatus(Appointment.Status.COMPLETED, "DOCTOR_E_SIGN");
             appointmentRepository.save(appointment);
 
-            appointmentStatusLogRepository.save(AppointmentStatusLog.builder()
-                    .appointmentId(appointment.getId())
-                    .previousStatus(previousStatus)
-                    .newStatus(Appointment.Status.COMPLETED)
-                    .changedBy("DOCTOR")
-                    .reason("Doctor reviewed, approved, and electronically signed the medical report")
-                    .build());
+            appointmentStatusLogRepository.record(appointment.getId(), previousStatus, Appointment.Status.COMPLETED, "DOCTOR",
+                "Doctor reviewed, approved, and electronically signed the medical report");
 
             // Fire MedicalReportSignedEvent
             eventPublisher.publishEvent(new MedicalReportSignedEvent(
@@ -1356,18 +1311,15 @@ public class AppointmentService {
             Long doctorId) {
 
         List<Appointment> appointments;
+        boolean ranged = startDate != null && endDate != null;
         if (doctorId != null) {
-            appointments = appointmentRepository.findByDoctorId(doctorId);
+            appointments = ranged
+                    ? appointmentRepository.findByDoctorIdAndAppointmentDateTimeBetween(doctorId, startDate, endDate)
+                    : appointmentRepository.findByDoctorId(doctorId);
         } else {
-            appointments = appointmentRepository.findAll();
-        }
-
-        if (startDate != null && endDate != null) {
-            appointments = appointments.stream()
-                    .filter(a -> a.getAppointmentDateTime() != null
-                            && !a.getAppointmentDateTime().isBefore(startDate)
-                            && !a.getAppointmentDateTime().isAfter(endDate))
-                    .collect(java.util.stream.Collectors.toList());
+            appointments = ranged
+                    ? appointmentRepository.findByAppointmentDateTimeBetweenWithDetails(startDate, endDate)
+                    : appointmentRepository.findAll();
         }
 
         long total = appointments.size();
@@ -1538,6 +1490,8 @@ public class AppointmentService {
 
         MedicalHistory mh = medicalHistoryRepository.findByAppointmentId(appointmentId)
                 .orElseThrow(() -> new IllegalStateException("Medical History record not found for appointment"));
+        // Already signed or completed: signing again would replace the legal record and its hash
+        medicalHistoryService.assertEditable(mh);
 
         // 3. Compute SHA-256 Hash of clinical record
         String contentHash = computeClinicalRecordHash(mh);
@@ -1570,13 +1524,8 @@ public class AppointmentService {
         appointment.changeStatus(Appointment.Status.COMPLETED, "DOCTOR_E_SIGN");
         appointmentRepository.save(appointment);
 
-        appointmentStatusLogRepository.save(AppointmentStatusLog.builder()
-                .appointmentId(appointment.getId())
-                .previousStatus(previousStatus)
-                .newStatus(Appointment.Status.COMPLETED)
-                .changedBy(doctor.getUsername())
-                .reason("Visit electronically signed and completed by Dr. " + request.getDoctorNameTyped())
-                .build());
+        appointmentStatusLogRepository.record(appointment.getId(), previousStatus, Appointment.Status.COMPLETED, doctor.getUsername(),
+                "Visit electronically signed and completed by Dr. " + request.getDoctorNameTyped());
 
         // 7. Publish Event & Notifications
         eventPublisher.publishEvent(new MedicalReportSignedEvent(this, appointment.getId(), mh.getId(),
@@ -1626,13 +1575,6 @@ public class AppointmentService {
             Appointment.Status.REPORT_DRAFTED,
             Appointment.Status.READY_TO_COMPLETE);
 
-    private long countAppointmentsOn(List<Appointment> appointments, LocalDate day) {
-        return appointments.stream()
-                .filter(appointment -> appointment.getAppointmentDateTime() != null
-                        && appointment.getAppointmentDateTime().toLocalDate().equals(day))
-                .count();
-    }
-
     private boolean isPendingReport(Appointment.Status status) {
         return status != null && PENDING_REPORT_STATUSES.contains(status);
     }
@@ -1655,23 +1597,8 @@ public class AppointmentService {
         return null;
     }
 
-    private Double averageRating(List<Feedback> feedbacks) {
-        if (feedbacks == null || feedbacks.isEmpty()) {
-            return null;
-        }
-        return roundToOneDecimal(feedbacks.stream().mapToInt(Feedback::getRating).average().orElse(0));
-    }
-
-    private boolean isOnOrAfter(Feedback feedback, LocalDate start) {
-        return feedback.getCreatedAt() != null && !feedback.getCreatedAt().toLocalDate().isBefore(start);
-    }
-
-    private boolean isWithin(Feedback feedback, LocalDate startInclusive, LocalDate endExclusive) {
-        if (feedback.getCreatedAt() == null) {
-            return false;
-        }
-        LocalDate created = feedback.getCreatedAt().toLocalDate();
-        return !created.isBefore(startInclusive) && created.isBefore(endExclusive);
+    private Double rounded(Double average) {
+        return average == null ? null : roundToOneDecimal(average);
     }
 
     private double roundToOneDecimal(double value) {

@@ -36,10 +36,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         final String jwt;
         final String username;
 
-        log.debug("=== JWT FILTER DEBUG ===");
-        log.debug("Request URI: {}", request.getRequestURI());
-        log.debug("Auth Header: {}", authHeader);
-
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             log.debug("No valid auth header, skipping JWT processing");
             filterChain.doFilter(request, response);
@@ -47,7 +43,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         jwt = authHeader.substring(7);
-        log.debug("JWT Token: {}...", jwt.substring(0, Math.min(jwt.length(), 50)));
 
         try {
             username = jwtService.extractUsername(jwt);
@@ -58,7 +53,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 log.debug("Loaded user details for: {}", userDetails.getUsername());
                 log.debug("User authorities: {}", userDetails.getAuthorities());
 
-                if (userDetails.isEnabled() && jwtService.isTokenValid(jwt, userDetails)) {
+                // A valid signature is not enough: the login session must still be live (not logged out,
+                // revoked, idle too long or too old). The check also records session activity.
+                boolean sessionUsable = userDetails.isEnabled() && jwtService.isTokenValid(jwt, userDetails)
+                        && securityService.isSessionUsable(jwtService.extractSessionId(jwt));
+                if (sessionUsable) {
                     log.debug("JWT token is valid");
                     UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                             userDetails,
@@ -68,21 +67,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                     log.debug("Authentication set in SecurityContext");
-
-                    // Update session activity automatically
-                    try {
-                        String sessionId = jwtService.extractSessionId(jwt);
-                        if (sessionId != null) {
-                            securityService.updateSessionActivity(sessionId);
-                            log.debug("Session activity updated for sessionId: {}", sessionId);
-                        }
-                    } catch (Exception e) {
-                        log.warn("Error updating session activity: {}", e.getMessage());
-                    }
                 } else if (!userDetails.isEnabled()) {
                     log.warn("Inactive user attempted to use an existing token: {}", username);
                 } else {
-                    log.warn("JWT token is invalid");
+                    log.debug("JWT token rejected: invalid, expired or its session has ended");
                 }
             } else {
                 log.debug("Username is null or authentication already exists");

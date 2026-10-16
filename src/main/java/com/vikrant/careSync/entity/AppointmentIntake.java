@@ -24,9 +24,11 @@ public class AppointmentIntake {
     @JsonIgnore
     private Appointment appointment;
 
-    @Column(name = "chief_complaint", length = 500)
+    @Convert(converter = com.vikrant.careSync.security.crypto.EncryptedTextConverter.class)
+    @Column(name = "chief_complaint", columnDefinition = "TEXT")
     private String chiefComplaint;
 
+    @Convert(converter = com.vikrant.careSync.security.crypto.EncryptedTextConverter.class)
     @Column(name = "symptoms", columnDefinition = "TEXT")
     private String symptoms;
 
@@ -36,9 +38,11 @@ public class AppointmentIntake {
     @Column(name = "symptom_severity", length = 100)
     private String symptomSeverity;
 
+    @Convert(converter = com.vikrant.careSync.security.crypto.EncryptedTextConverter.class)
     @Column(name = "current_medications", columnDefinition = "TEXT")
     private String currentMedications;
 
+    @Convert(converter = com.vikrant.careSync.security.crypto.EncryptedTextConverter.class)
     @Column(name = "allergies", columnDefinition = "TEXT")
     private String allergies;
 
@@ -46,6 +50,7 @@ public class AppointmentIntake {
     @Builder.Default
     private Boolean consentGiven = false;
 
+    @Convert(converter = com.vikrant.careSync.security.crypto.EncryptedTextConverter.class)
     @Column(name = "ai_summary", columnDefinition = "TEXT")
     private String aiSummary;
 
@@ -67,9 +72,11 @@ public class AppointmentIntake {
     @Builder.Default
     private Boolean hasRedFlags = false;
 
+    @Convert(converter = com.vikrant.careSync.security.crypto.EncryptedTextConverter.class)
     @Column(name = "red_flags", columnDefinition = "TEXT")
     private String redFlags;
 
+    @Convert(converter = com.vikrant.careSync.security.crypto.EncryptedTextConverter.class)
     @Column(name = "edit_history", columnDefinition = "TEXT")
     private String editHistory;
 

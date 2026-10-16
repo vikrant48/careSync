@@ -13,6 +13,8 @@ import java.util.Optional;
 public interface BlockedIPRepository extends JpaRepository<BlockedIP, Long> {
     
     Optional<BlockedIP> findByIpAddressAndActiveTrue(String ipAddress);
+
+    Optional<BlockedIP> findByIpAddress(String ipAddress);
     
     @Query("SELECT bip FROM BlockedIP bip WHERE bip.expiresAt < :now AND bip.active = true")
     List<BlockedIP> findExpiredBlockedIPs(@org.springframework.data.repository.query.Param("now") Instant now);

@@ -21,4 +21,10 @@ public interface AppointmentStatusLogRepository extends JpaRepository<Appointmen
     List<AppointmentStatusLog> findByAppointmentIdInAndCreatedAtGreaterThanEqual(
             @Param("appointmentIds") List<Long> appointmentIds,
             @Param("since") LocalDateTime since);
+
+    /** Saves one status change (see AppointmentStatusLog.of). */
+    default AppointmentStatusLog record(Long appointmentId, com.vikrant.careSync.entity.Appointment.Status previousStatus,
+            com.vikrant.careSync.entity.Appointment.Status newStatus, String changedBy, String reason) {
+        return save(AppointmentStatusLog.of(appointmentId, previousStatus, newStatus, changedBy, reason));
+    }
 }

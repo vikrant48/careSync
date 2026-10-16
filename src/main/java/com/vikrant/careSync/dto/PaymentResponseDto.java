@@ -39,6 +39,9 @@ public class PaymentResponseDto {
     private String qrCodeData;
     private String razorpayOrderId;
 
+    // True when no money was collected (payments run in demo mode)
+    private boolean demoMode;
+
     // Constructor for basic payment info
     public PaymentResponseDto(Payment payment) {
         this.id = payment.getId();

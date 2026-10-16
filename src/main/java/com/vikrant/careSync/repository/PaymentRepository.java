@@ -19,11 +19,12 @@ import java.util.Optional;
 @Repository
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
+    // Access-control lookup (AccessGuard): paying patient id only
+    @Query("SELECT p.patient.id FROM Payment p WHERE p.transactionId = :transactionId")
+    Optional<Long> findPatientIdByTransactionId(@Param("transactionId") String transactionId);
+
         // Find by transaction ID
         Optional<Payment> findByTransactionId(String transactionId);
-
-        // Find by payment gateway transaction ID
-        Optional<Payment> findByPaymentGatewayTransactionId(String gatewayTransactionId);
 
         @Lock(LockModeType.PESSIMISTIC_WRITE)
         @Query("SELECT p FROM Payment p WHERE p.paymentGatewayTransactionId = :gatewayTransactionId")
@@ -36,12 +37,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
         // Find payments by patient with pagination
         Page<Payment> findByPatientOrderByCreatedAtDesc(Patient patient, Pageable pageable);
 
-        // Find payments by status
-        List<Payment> findByPaymentStatus(Payment.PaymentStatus status);
-
-        // Find payments by method
-        List<Payment> findByPaymentMethod(Payment.PaymentMethod method);
-
         // Find payments by booking ID
         @Query("SELECT p FROM Payment p WHERE p.bookingId = :bookingId")
         List<Payment> findByBookingId(@Param("bookingId") Long bookingId);
@@ -50,27 +45,15 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
         @Query("SELECT p FROM Payment p WHERE p.appointmentId = :appointmentId")
         List<Payment> findByAppointmentId(@Param("appointmentId") Long appointmentId);
 
-        // Find payments by booking ID or appointment ID
-        @Query("SELECT p FROM Payment p WHERE p.bookingId = :id OR p.appointmentId = :id")
-        List<Payment> findByBookingIdOrAppointmentId(@Param("id") Long id);
-
         @Query("SELECT COUNT(p) FROM Payment p WHERE (p.bookingId = :bookingId OR p.appointmentId = :bookingId) AND p.paymentStatus IN ('PENDING', 'PROCESSING', 'SUCCESS')")
         long countActivePaymentsForBooking(@Param("bookingId") Long bookingId);
 
-        // Find successful payments by patient
-        @Query("SELECT p FROM Payment p WHERE p.patient = :patient AND p.paymentStatus = :status ORDER BY p.createdAt DESC")
-        List<Payment> findSuccessfulPaymentsByPatient(@Param("patient") Patient patient,
-                        @Param("status") Payment.PaymentStatus status);
+        // Booking and appointment ids come from different sequences, so they are counted separately
+        @Query("SELECT COUNT(p) FROM Payment p WHERE p.bookingId = :bookingId AND p.paymentStatus IN ('PENDING', 'PROCESSING', 'SUCCESS')")
+        long countActivePaymentsByBookingId(@Param("bookingId") Long bookingId);
 
-        // Find payments within date range
-        @Query("SELECT p FROM Payment p WHERE p.createdAt BETWEEN :startDate AND :endDate ORDER BY p.createdAt DESC")
-        List<Payment> findPaymentsBetweenDates(@Param("startDate") LocalDateTime startDate,
-                        @Param("endDate") LocalDateTime endDate);
-
-        // Get total revenue by date range
-        @Query("SELECT COALESCE(SUM(p.amount), 0) FROM Payment p WHERE p.paymentStatus = 'SUCCESS' AND p.createdAt BETWEEN :startDate AND :endDate")
-        BigDecimal getTotalRevenueByDateRange(@Param("startDate") LocalDateTime startDate,
-                        @Param("endDate") LocalDateTime endDate);
+        @Query("SELECT COUNT(p) FROM Payment p WHERE p.appointmentId = :appointmentId AND p.paymentStatus IN ('PENDING', 'PROCESSING', 'SUCCESS')")
+        long countActivePaymentsByAppointmentId(@Param("appointmentId") Long appointmentId);
 
         // Get payment statistics by method
         @Query("SELECT p.paymentMethod, COUNT(p), SUM(p.amount) FROM Payment p WHERE p.paymentStatus = 'SUCCESS' AND p.createdAt BETWEEN :startDate AND :endDate GROUP BY p.paymentMethod")
@@ -81,15 +64,4 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
         @Query("SELECT p.paymentType, SUM(p.amount) FROM Payment p WHERE p.patient.id = :patientId AND p.paymentStatus = 'SUCCESS' GROUP BY p.paymentType")
         List<Object[]> getPatientPaymentStats(@Param("patientId") Long patientId);
 
-        // Find failed payments for retry
-        @Query("SELECT p FROM Payment p WHERE p.paymentStatus IN ('FAILED', 'CANCELLED') AND p.createdAt >= :since ORDER BY p.createdAt DESC")
-        List<Payment> findFailedPaymentsSince(@Param("since") LocalDateTime since);
-
-        // Count payments by status for dashboard
-        @Query("SELECT p.paymentStatus, COUNT(p) FROM Payment p GROUP BY p.paymentStatus")
-        List<Object[]> getPaymentCountByStatus();
-
-        // Find pending payments older than specified time
-        @Query("SELECT p FROM Payment p WHERE p.paymentStatus IN ('PENDING', 'PROCESSING') AND p.createdAt < :cutoffTime")
-        List<Payment> findStalePayments(@Param("cutoffTime") LocalDateTime cutoffTime);
 }

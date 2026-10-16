@@ -9,12 +9,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -65,7 +67,7 @@ public class SecurityConfig {
                                                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                                                 .requestMatchers("/api/doctors/public/**").permitAll()
                                                 .requestMatchers("/api/patients/public/**").permitAll()
-                                                .requestMatchers("/api/seed/public/**").permitAll()
+                                                .requestMatchers("/api/seed/**").hasRole(AppConstants.Roles.ADMIN)
                                                 .requestMatchers("/api/doctors/**")
                                                 .hasAnyRole(AppConstants.Roles.DOCTOR, AppConstants.Roles.PATIENT,
                                                                 AppConstants.Roles.ADMIN)
@@ -99,6 +101,10 @@ public class SecurityConfig {
                                                 .anyRequest().authenticated())
                                 .sessionManagement(session -> session
                                                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                                // No or expired login answers 401 (was 403), which the frontend turns into a
+                                // token refresh or a new login; 403 stays for "logged in but not allowed"
+                                .exceptionHandling(exceptions -> exceptions
+                                                .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                                 .authenticationProvider(authenticationProvider)
                                 .addFilterBefore(rateLimitingFilter, UsernamePasswordAuthenticationFilter.class)
                                 .addFilterBefore(securityFilter, UsernamePasswordAuthenticationFilter.class)

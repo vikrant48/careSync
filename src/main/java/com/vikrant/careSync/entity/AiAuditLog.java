@@ -41,9 +41,11 @@ public class AiAuditLog {
 
     private String bookingActionProduced; // SHOW_DOCTORS, SHOW_SLOTS, CONFIRM_BOOKING, NONE
 
+    @Convert(converter = com.vikrant.careSync.security.crypto.EncryptedTextConverter.class)
     @Column(columnDefinition = "TEXT")
     private String userPrompt;
 
+    @Convert(converter = com.vikrant.careSync.security.crypto.EncryptedTextConverter.class)
     @Column(columnDefinition = "TEXT")
     private String aiResponse;
 

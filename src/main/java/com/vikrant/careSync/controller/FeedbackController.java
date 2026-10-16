@@ -1,12 +1,13 @@
 package com.vikrant.careSync.controller;
 
+import com.vikrant.careSync.exception.ClientErrorMessages;
+import com.vikrant.careSync.security.access.CurrentUserService;
 import com.vikrant.careSync.entity.Feedback;
 import com.vikrant.careSync.dto.CreateFeedbackRequest;
 import com.vikrant.careSync.dto.AppointmentResponse;
 import com.vikrant.careSync.dto.FeedbackDto;
 import com.vikrant.careSync.entity.Patient;
 import com.vikrant.careSync.service.interfaces.IFeedbackService;
-import com.vikrant.careSync.repository.PatientRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,20 +28,11 @@ import java.util.stream.Collectors;
 public class FeedbackController {
 
     private final IFeedbackService feedbackService;
-    private final PatientRepository patientRepository;
+    private final CurrentUserService currentUserService;
 
-    // Helper to get current authenticated patient as a Patient
-    private Patient getCurrentPatient() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.isAuthenticated()) {
-            String username = authentication.getName();
-            return patientRepository.findByUsername(username)
-                    .orElseThrow(() -> new RuntimeException("Patient not found with username: " + username));
-        }
-        throw new RuntimeException("User not authenticated");
-    }
 
     @PostMapping
+    @PreAuthorize("hasRole('PATIENT') and @access.isAppointmentPatient(#request.appointmentId)")
     public ResponseEntity<?> createFeedback(@Valid @RequestBody CreateFeedbackRequest request) {
         try {
             Feedback createdFeedback = feedbackService.submitFeedback(
@@ -51,13 +43,9 @@ public class FeedbackController {
                     request.getAnonymous());
             return ResponseEntity.ok(new FeedbackDto(createdFeedback));
         } catch (IllegalStateException e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.status(409).body(errorResponse);
+            return ResponseEntity.status(409).body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -65,11 +53,9 @@ public class FeedbackController {
     public ResponseEntity<?> getFeedbackById(@PathVariable Long id) {
         try {
             Feedback feedback = feedbackService.getFeedbackById(id);
-            return ResponseEntity.ok(new FeedbackDto(feedback));
+            return ResponseEntity.ok(forCurrentViewer(new FeedbackDto(feedback)));
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -78,14 +64,12 @@ public class FeedbackController {
     @PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<?> getPendingFeedbackForCurrentPatient() {
         try {
-            Patient current = getCurrentPatient();
+            Patient current = currentUserService.requirePatient();
             List<AppointmentResponse> pending = feedbackService
                     .getPendingFeedbackAppointmentsForPatient(current.getId());
             return ResponseEntity.ok(pending);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -94,16 +78,16 @@ public class FeedbackController {
         try {
             List<FeedbackDto> dtos = feedbackService.getFeedbackByDoctor(doctorId).stream()
                     .map(FeedbackDto::new)
+                    .map(this::forCurrentViewer)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(dtos);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
     @GetMapping("/patient/{patientId}")
+    @PreAuthorize("@access.isSelf(#patientId) or hasRole('ADMIN')")
     public ResponseEntity<?> getFeedbackByPatient(@PathVariable Long patientId) {
         try {
             List<Feedback> feedbacks = feedbackService.getFeedbackByPatient(patientId);
@@ -112,25 +96,23 @@ public class FeedbackController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(dtos);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
     @GetMapping("/appointment/{appointmentId}")
+    @PreAuthorize("@access.canAccessAppointment(#appointmentId)")
     public ResponseEntity<?> getFeedbackByAppointment(@PathVariable Long appointmentId) {
         try {
             Feedback feedback = feedbackService.getFeedbackByAppointment(appointmentId);
-            return ResponseEntity.ok(new FeedbackDto(feedback));
+            return ResponseEntity.ok(forCurrentViewer(new FeedbackDto(feedback)));
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("@access.ownsFeedback(#id)")
     public ResponseEntity<?> updateFeedback(@PathVariable Long id, @Valid @RequestBody CreateFeedbackRequest request) {
         try {
             Feedback feedback = new Feedback();
@@ -140,13 +122,12 @@ public class FeedbackController {
             Feedback updatedFeedback = feedbackService.updateFeedback(id, feedback);
             return ResponseEntity.ok(new FeedbackDto(updatedFeedback));
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("@access.ownsFeedback(#id)")
     public ResponseEntity<?> deleteFeedback(@PathVariable Long id) {
         try {
             feedbackService.deleteFeedback(id);
@@ -154,9 +135,7 @@ public class FeedbackController {
             successResponse.put("message", "Feedback deleted successfully");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -169,9 +148,7 @@ public class FeedbackController {
             response.put("averageRating", averageRating);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -181,9 +158,17 @@ public class FeedbackController {
             Map<Integer, Long> ratingDistribution = feedbackService.getRatingDistributionByDoctor(doctorId);
             return ResponseEntity.ok(ratingDistribution);
         } catch (Exception e) {
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
+    }
+
+    // Anonymous feedback keeps its author hidden from everyone but that patient and admins
+    private FeedbackDto forCurrentViewer(FeedbackDto dto) {
+        var viewer = currentUserService.current();
+        if (viewer.isPresent() && viewer.get().role() == com.vikrant.careSync.entity.User.Role.ADMIN) {
+            return dto;
+        }
+        return dto.forViewer(viewer.filter(v -> v.role() == com.vikrant.careSync.entity.User.Role.PATIENT)
+                .map(v -> v.id()).orElse(null));
     }
 }

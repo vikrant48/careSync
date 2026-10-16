@@ -23,6 +23,7 @@ public class AppointmentCleanupScheduler {
     private final AppointmentRepository appointmentRepository;
     private final AppointmentStatusLogRepository statusLogRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final ClusterJobLock clusterJobLock;
 
     /**
      * Runs every 15 minutes to detect unstarted appointments and orphaned rooms.
@@ -30,6 +31,9 @@ public class AppointmentCleanupScheduler {
     @Scheduled(cron = "0 */15 * * * *")
     @Transactional
     public void cleanupUnstartedAndOrphanedAppointments() {
+        if (!clusterJobLock.tryAcquire("appointment-cleanup")) {
+            return;
+        }
         LocalDateTime now = LocalDateTime.now();
 
         // 1. Process unstarted past appointments (past by > 15 minutes)
@@ -43,13 +47,8 @@ public class AppointmentCleanupScheduler {
                 appointmentRepository.save(app);
 
                 // Audit log
-                statusLogRepository.save(AppointmentStatusLog.builder()
-                        .appointmentId(app.getId())
-                        .previousStatus(previousStatus)
-                        .newStatus(Appointment.Status.NO_SHOW_PATIENT)
-                        .changedBy("SYSTEM_SCHEDULER")
-                        .reason("Patient failed to check in or enter consultation within 15 minutes of scheduled time")
-                        .build());
+                statusLogRepository.record(app.getId(), previousStatus, Appointment.Status.NO_SHOW_PATIENT, "SYSTEM_SCHEDULER",
+                "Patient failed to check in or enter consultation within 15 minutes of scheduled time");
 
                 // Domain Event
                 eventPublisher.publishEvent(new AppointmentNoShowEvent(
@@ -76,13 +75,8 @@ public class AppointmentCleanupScheduler {
                 app.changeStatus(Appointment.Status.REPORT_DRAFTED, "SYSTEM_ORPHAN_CLEANUP_SCHEDULER");
                 appointmentRepository.save(app);
 
-                statusLogRepository.save(AppointmentStatusLog.builder()
-                        .appointmentId(app.getId())
-                        .previousStatus(previousStatus)
-                        .newStatus(Appointment.Status.REPORT_DRAFTED)
-                        .changedBy("SYSTEM_SCHEDULER")
-                        .reason("Video session ended or inactive for over 30 minutes. Status transitioned to REPORT_DRAFTED pending doctor sign-off.")
-                        .build());
+                statusLogRepository.record(app.getId(), previousStatus, Appointment.Status.REPORT_DRAFTED, "SYSTEM_SCHEDULER",
+                "Video session ended or inactive for over 30 minutes. Status transitioned to REPORT_DRAFTED pending doctor sign-off.");
 
                 log.info("Auto-transitioned orphaned IN_PROGRESS appointment ID [{}] to REPORT_DRAFTED", app.getId());
             } catch (Exception e) {

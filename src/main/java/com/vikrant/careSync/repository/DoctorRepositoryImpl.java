@@ -30,11 +30,12 @@ public class DoctorRepositoryImpl implements DoctorRepositoryCustom {
         if (searchDto != null) {
             // Text Query Search (First Name, Last Name, Email)
             if (searchDto.getQuery() != null && !searchDto.getQuery().trim().isEmpty()) {
-                String pattern = "%" + searchDto.getQuery().trim().toLowerCase() + "%";
-                Predicate firstNameMatch = cb.like(cb.lower(doctor.get("firstName")), pattern);
-                Predicate lastNameMatch = cb.like(cb.lower(doctor.get("lastName")), pattern);
-                Predicate emailMatch = cb.like(cb.lower(doctor.get("email")), pattern);
-                predicates.add(cb.or(firstNameMatch, lastNameMatch, emailMatch));
+                // Doctor has no email attribute: matching on it made every text search fail. Names only, so the
+                // search cannot be used to test whether an email address belongs to a doctor.
+                String pattern = "%" + escapeLike(searchDto.getQuery().trim().toLowerCase()) + "%";
+                Predicate firstNameMatch = cb.like(cb.lower(doctor.get("firstName")), pattern, '\\');
+                Predicate lastNameMatch = cb.like(cb.lower(doctor.get("lastName")), pattern, '\\');
+                predicates.add(cb.or(firstNameMatch, lastNameMatch));
             }
 
             // Specialization Filter
@@ -46,8 +47,8 @@ public class DoctorRepositoryImpl implements DoctorRepositoryCustom {
 
             // Location / Address Filter
             if (searchDto.getLocation() != null && !searchDto.getLocation().trim().isEmpty()) {
-                String locationPattern = "%" + searchDto.getLocation().trim().toLowerCase() + "%";
-                predicates.add(cb.like(cb.lower(doctor.get("address")), locationPattern));
+                String locationPattern = "%" + escapeLike(searchDto.getLocation().trim().toLowerCase()) + "%";
+                predicates.add(cb.like(cb.lower(doctor.get("address")), locationPattern, '\\'));
             }
 
             // Gender Filter
@@ -109,11 +110,12 @@ public class DoctorRepositoryImpl implements DoctorRepositoryCustom {
 
         if (searchDto != null) {
             if (searchDto.getQuery() != null && !searchDto.getQuery().trim().isEmpty()) {
-                String pattern = "%" + searchDto.getQuery().trim().toLowerCase() + "%";
-                Predicate firstNameMatch = cb.like(cb.lower(doctor.get("firstName")), pattern);
-                Predicate lastNameMatch = cb.like(cb.lower(doctor.get("lastName")), pattern);
-                Predicate emailMatch = cb.like(cb.lower(doctor.get("email")), pattern);
-                predicates.add(cb.or(firstNameMatch, lastNameMatch, emailMatch));
+                // Doctor has no email attribute: matching on it made every text search fail. Names only, so the
+                // search cannot be used to test whether an email address belongs to a doctor.
+                String pattern = "%" + escapeLike(searchDto.getQuery().trim().toLowerCase()) + "%";
+                Predicate firstNameMatch = cb.like(cb.lower(doctor.get("firstName")), pattern, '\\');
+                Predicate lastNameMatch = cb.like(cb.lower(doctor.get("lastName")), pattern, '\\');
+                predicates.add(cb.or(firstNameMatch, lastNameMatch));
             }
 
             if (searchDto.getSpecialization() != null && !searchDto.getSpecialization().trim().isEmpty()) {
@@ -123,8 +125,8 @@ public class DoctorRepositoryImpl implements DoctorRepositoryCustom {
             }
 
             if (searchDto.getLocation() != null && !searchDto.getLocation().trim().isEmpty()) {
-                String locationPattern = "%" + searchDto.getLocation().trim().toLowerCase() + "%";
-                predicates.add(cb.like(cb.lower(doctor.get("address")), locationPattern));
+                String locationPattern = "%" + escapeLike(searchDto.getLocation().trim().toLowerCase()) + "%";
+                predicates.add(cb.like(cb.lower(doctor.get("address")), locationPattern, '\\'));
             }
 
             if (searchDto.getGender() != null && !searchDto.getGender().trim().isEmpty()) {
@@ -141,5 +143,10 @@ public class DoctorRepositoryImpl implements DoctorRepositoryCustom {
         query.where(predicates.toArray(new Predicate[0]));
 
         return entityManager.createQuery(query).getSingleResult();
+    }
+
+    /** User text is matched literally: % and _ in a search box are not wildcards. */
+    private static String escapeLike(String text) {
+        return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 }

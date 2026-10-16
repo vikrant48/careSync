@@ -53,6 +53,10 @@ public class EmailService {
         }
         boolean sent = false;
         Exception sendError = null;
+        // Never persist one-time codes: the communications log is readable by anyone with DB access
+        String storedBody = model != null && model.containsKey("otp")
+                ? "[redacted: email contained a one-time code]"
+                : html;
 
         // Try Resend HTTP provider first unless mail.api.provider is explicitly set to
         // "smtp"
@@ -90,7 +94,7 @@ public class EmailService {
                             .fromEmail(sender)
                             .toEmail(to)
                             .subject(subject)
-                            .body(html)
+                            .body(storedBody)
                             .status(Communication.Status.SENT)
                             .errorMessage(null)
                             .createdAt(LocalDateTime.now())
@@ -103,7 +107,7 @@ public class EmailService {
                             .fromEmail(sender)
                             .toEmail(to)
                             .subject(subject)
-                            .body(html)
+                            .body(storedBody)
                             .status(Communication.Status.FAILED)
                             .errorMessage(truncate(err, 1000))
                             .createdAt(LocalDateTime.now())

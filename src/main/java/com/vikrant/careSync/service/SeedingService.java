@@ -29,6 +29,7 @@ public class SeedingService implements ISeedingService {
     private final PatientRepository patientRepository;
     private final DoctorRepository doctorRepository;
     private final PasswordEncoder passwordEncoder;
+    private final UserIdGenerator userIdGenerator;
 
     @PersistenceContext
     private final EntityManager entityManager;
@@ -39,8 +40,7 @@ public class SeedingService implements ISeedingService {
     public Object seedSingleUser(SeedUserRequest request) {
         Long userId = request != null ? request.getUserId() : null;
         if (userId == null) {
-            Long maxExistingId = userRepository.findMaxUserId().orElse(100000L);
-            userId = Math.max(100001L, maxExistingId + 1);
+            userId = userIdGenerator.next();
         } else if (userRepository.existsById(userId)) {
             throw new RuntimeException("User already exists with ID: " + userId);
         }
@@ -53,7 +53,10 @@ public class SeedingService implements ISeedingService {
         try {
             role = User.Role.valueOf(roleStr);
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Invalid role: " + roleStr + ". Allowed values: PATIENT, DOCTOR, ADMIN");
+            throw new IllegalArgumentException("Invalid role: " + roleStr + ". Allowed values: PATIENT, DOCTOR");
+        }
+        if (role == User.Role.ADMIN) {
+            throw new IllegalArgumentException("ADMIN accounts cannot be created through seeding");
         }
 
         String username = (request != null && request.getUsername() != null && !request.getUsername().trim().isEmpty())

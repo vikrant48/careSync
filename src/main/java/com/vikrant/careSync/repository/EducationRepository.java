@@ -10,14 +10,15 @@ import java.util.Optional;
 
 public interface EducationRepository extends JpaRepository<Education, Long> {
 
+    // Access-control lookup (AccessGuard): owning doctor id only
+    @Query("SELECT e.doctor.id FROM Education e WHERE e.id = :id")
+    Optional<Long> findDoctorIdById(@Param("id") Long id);
+
     @Query("SELECT e FROM Education e WHERE e.doctor.id = :doctorId")
     List<Education> findByDoctorId(@Param("doctorId") Long doctorId);
 
     @Query("SELECT e FROM Education e WHERE e.doctor.id IN :doctorIds")
     List<Education> findByDoctorIdIn(@Param("doctorIds") List<Long> doctorIds);
-
-    @Query("SELECT DISTINCT e.doctor.id FROM Education e WHERE e.doctor.id IN :doctorIds")
-    List<Long> findDoctorIdsWithEducationIn(@Param("doctorIds") List<Long> doctorIds);
 
     @Override
     Optional<Education> findById(Long id);

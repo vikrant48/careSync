@@ -1,5 +1,6 @@
 package com.vikrant.careSync.security.filter;
 
+import com.vikrant.careSync.security.ClientIpResolver;
 import com.vikrant.careSync.security.service.SecurityService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -19,6 +20,7 @@ import java.io.IOException;
 public class SecurityFilter extends OncePerRequestFilter {
 
     private final SecurityService securityService;
+    private final ClientIpResolver clientIpResolver;
 
     @Override
     protected void doFilterInternal(
@@ -28,28 +30,17 @@ public class SecurityFilter extends OncePerRequestFilter {
 
         String requestURI = request.getRequestURI();
 
-        // Skip IP blocking for admin and auth endpoints
+        // Skip IP blocking for admin and auth endpoints (login enforces its own IP block check)
         if (requestURI.startsWith("/api/admin/") || requestURI.startsWith("/api/auth/")) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        // Bypass IP blocking if the actual remote address is localhost (dev
-        // convenience)
-        String remoteAddr = request.getRemoteAddr();
-        if ("127.0.0.1".equals(remoteAddr) || "0:0:0:0:0:0:0:1".equals(remoteAddr) || "::1".equals(remoteAddr)) {
-            filterChain.doFilter(request, response);
-            return;
-        }
+        // Localhost clients are exempt inside SecurityService.isIPBlocked (dev convenience). The check uses the
+        // resolved client IP, not the TCP peer, so a reverse proxy on the same host does not exempt everyone.
+        String clientIP = clientIpResolver.resolve(request);
+        log.debug("SecurityFilter - clientIP={}, remoteAddr={}", clientIP, request.getRemoteAddr());
 
-        // Determine client IP, preferring proxy headers if present
-        String clientIP = getClientIPAddress(request);
-
-        // Debug log for diagnosis
-        log.debug("SecurityFilter - clientIP={}, remoteAddr={}, X-Forwarded-For={}, X-Real-IP={}",
-                clientIP, remoteAddr, request.getHeader("X-Forwarded-For"), request.getHeader("X-Real-IP"));
-
-        // Check if IP is blocked
         if (securityService.isIPBlocked(clientIP)) {
             response.setStatus(HttpStatus.FORBIDDEN.value());
             response.getWriter().write("Access denied: IP address is blocked");
@@ -57,19 +48,5 @@ public class SecurityFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
-    }
-
-    private String getClientIPAddress(HttpServletRequest request) {
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isEmpty() && !"unknown".equalsIgnoreCase(xForwardedFor)) {
-            return xForwardedFor.split(",")[0].trim();
-        }
-
-        String xRealIP = request.getHeader("X-Real-IP");
-        if (xRealIP != null && !xRealIP.isEmpty() && !"unknown".equalsIgnoreCase(xRealIP)) {
-            return xRealIP;
-        }
-
-        return request.getRemoteAddr();
     }
 }

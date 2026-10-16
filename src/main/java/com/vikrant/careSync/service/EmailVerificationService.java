@@ -2,8 +2,10 @@ package com.vikrant.careSync.service;
 
 import com.vikrant.careSync.entity.EmailVerificationOtp;
 import com.vikrant.careSync.repository.EmailVerificationOtpRepository;
+import com.vikrant.careSync.security.service.OtpAttemptLimiter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
@@ -17,10 +19,15 @@ public class EmailVerificationService {
 
     private final EmailVerificationOtpRepository otpRepository;
     private final EmailService emailService;
+    private final OtpAttemptLimiter otpAttemptLimiter;
 
+    static final String OTP_PURPOSE = "email_verify";
     private static final SecureRandom RANDOM = new SecureRandom();
 
+    @Transactional
     public void startVerification(String name, String email, String mobileNumber) {
+        // Only the newest code for an email can match
+        otpRepository.invalidateUnusedForEmail(email);
         String otp = generateOtp();
 
         EmailVerificationOtp record = EmailVerificationOtp.builder()
@@ -48,15 +55,24 @@ public class EmailVerificationService {
         );
     }
 
+    /**
+     * Wrong codes count per email (not per IP); after OtpAttemptLimiter.MAX_FAILED_ATTEMPTS the email is
+     * blocked for longer than a code lives.
+     */
     public boolean verifyOtp(String email, String otp) {
+        if (otpAttemptLimiter.isBlocked(OTP_PURPOSE, email)) {
+            throw new RuntimeException("Too many incorrect codes. Please wait 15 minutes and request a new code.");
+        }
         Optional<EmailVerificationOtp> valid = otpRepository.findValidOtp(email, otp, LocalDateTime.now());
         if (valid.isPresent()) {
             EmailVerificationOtp rec = valid.get();
             rec.setVerified(true);
             rec.setUsed(true);
             otpRepository.save(rec);
+            otpAttemptLimiter.reset(OTP_PURPOSE, email);
             return true;
         }
+        otpAttemptLimiter.recordFailure(OTP_PURPOSE, email);
         return false;
     }
 

@@ -39,10 +39,13 @@ public class CustomUserDetailsService implements UserDetailsService {
             authorities.add(new SimpleGrantedAuthority(roleName));
         }
 
-        if (doctorRepository.existsByUsername(username)) {
+        // The account's role decides its authority (one query per request). The profile lookups are only a
+        // fallback for old accounts saved without a role; they used to run on every request and could add a
+        // second role to an account that happened to have both kinds of profile.
+        if (authorities.isEmpty() && doctorRepository.existsByUsername(username)) {
             authorities.add(new SimpleGrantedAuthority(AppConstants.Roles.ROLE_DOCTOR));
         }
-        if (patientRepository.existsByUsername(username)) {
+        if (authorities.isEmpty() && patientRepository.existsByUsername(username)) {
             authorities.add(new SimpleGrantedAuthority(AppConstants.Roles.ROLE_PATIENT));
         }
 

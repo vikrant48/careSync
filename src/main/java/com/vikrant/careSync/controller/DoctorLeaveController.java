@@ -1,9 +1,10 @@
 package com.vikrant.careSync.controller;
 
+import com.vikrant.careSync.exception.ClientErrorMessages;
+import com.vikrant.careSync.security.access.CurrentUserService;
 import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.DoctorLeave;
 import com.vikrant.careSync.entity.User;
-import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.service.DoctorLeaveService;
 import com.vikrant.careSync.dto.DoctorLeaveDto;
 import lombok.RequiredArgsConstructor;
@@ -26,23 +27,14 @@ import java.util.stream.Collectors;
 public class DoctorLeaveController {
 
     private final DoctorLeaveService doctorLeaveService;
-    private final DoctorRepository doctorRepository;
+    private final CurrentUserService currentUserService;
 
-    private Doctor getCurrentDoctor() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.isAuthenticated()) {
-            String username = authentication.getName();
-            return doctorRepository.findByUsername(username)
-                    .orElseThrow(() -> new RuntimeException("Doctor not found with username: " + username));
-        }
-        throw new RuntimeException("User not authenticated");
-    }
 
     @PostMapping
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> addLeave(@RequestBody Map<String, String> request) {
         try {
-            Doctor currentDoctor = getCurrentDoctor();
+            Doctor currentDoctor = currentUserService.requireDoctor();
             LocalDate startDate = LocalDate.parse(request.get("startDate"));
             LocalDate endDate = LocalDate.parse(request.get("endDate"));
             String reason = request.get("reason");
@@ -50,9 +42,7 @@ public class DoctorLeaveController {
             DoctorLeave leave = doctorLeaveService.addLeave(currentDoctor.getId(), startDate, endDate, reason);
             return ResponseEntity.ok(new DoctorLeaveDto(leave));
         } catch (Exception e) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(error);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -60,15 +50,13 @@ public class DoctorLeaveController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> getMyLeaves() {
         try {
-            Doctor currentDoctor = getCurrentDoctor();
+            Doctor currentDoctor = currentUserService.requireDoctor();
             List<DoctorLeaveDto> leaves = doctorLeaveService.getDoctorLeaves(currentDoctor.getId()).stream()
                     .map(DoctorLeaveDto::new)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(leaves);
         } catch (Exception e) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(error);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -76,15 +64,13 @@ public class DoctorLeaveController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> getUpcomingLeaves() {
         try {
-            Doctor currentDoctor = getCurrentDoctor();
+            Doctor currentDoctor = currentUserService.requireDoctor();
             List<DoctorLeaveDto> leaves = doctorLeaveService.getUpcomingLeaves(currentDoctor.getId()).stream()
                     .map(DoctorLeaveDto::new)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(leaves);
         } catch (Exception e) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(error);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 
@@ -92,15 +78,13 @@ public class DoctorLeaveController {
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<?> deleteLeave(@PathVariable Long id) {
         try {
-            Doctor currentDoctor = getCurrentDoctor();
+            Doctor currentDoctor = currentUserService.requireDoctor();
             doctorLeaveService.deleteLeave(id, currentDoctor.getId());
             Map<String, String> response = new HashMap<>();
             response.put("message", "Leave record deleted successfully");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(error);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
 }

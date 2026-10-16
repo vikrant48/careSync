@@ -27,4 +27,8 @@ public class RefreshToken {
 
     @Column(nullable = false)
     private String userType; // DOCTOR or PATIENT
+
+    // The login session this token renews; tokens without one (issued before sessions were enforced) are refused
+    @Column(name = "session_id")
+    private String sessionId;
 } 

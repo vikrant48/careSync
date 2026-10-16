@@ -28,22 +28,22 @@ public class Patient {
     private User user;
 
     @Convert(converter = EncryptionConverter.class)
-    @Column(name = "first_name", nullable = false, length = 200) // Increased length for encrypted data
+    @Column(name = "first_name", nullable = false, columnDefinition = "TEXT") // Encrypted
     private String firstName;
 
     @Convert(converter = EncryptionConverter.class)
-    @Column(name = "last_name", nullable = false, length = 200)
+    @Column(name = "last_name", nullable = false, columnDefinition = "TEXT")
     private String lastName;
 
     @Column(name = "date_of_birth")
     private LocalDate dateOfBirth;
 
     @Convert(converter = EncryptionConverter.class)
-    @Column(name = "contact_info", length = 500)
+    @Column(name = "contact_info", columnDefinition = "TEXT")
     private String contactInfo;
 
     @Convert(converter = EncryptionConverter.class)
-    @Column(name = "illness_details", length = 2000)
+    @Column(name = "illness_details", columnDefinition = "TEXT")
     private String illnessDetails;
 
     @Column(name = "profile_image_url", length = 255)
@@ -55,15 +55,18 @@ public class Patient {
     @Column(name = "blood_group", length = 10)
     private String bloodGroup;
 
-    @OneToMany(mappedBy = "patient", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    // Clinical records outlive the account: never deleted through it (retention rules)
+    @OneToMany(mappedBy = "patient", cascade = { CascadeType.PERSIST, CascadeType.MERGE }, fetch = FetchType.LAZY)
     @JsonManagedReference
     private List<Appointment> appointments;
 
-    @OneToMany(mappedBy = "patient", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    // Clinical records outlive the account: never deleted through it (retention rules)
+    @OneToMany(mappedBy = "patient", cascade = { CascadeType.PERSIST, CascadeType.MERGE }, fetch = FetchType.LAZY)
     @JsonManagedReference
     private List<MedicalHistory> medicalHistories;
 
-    @OneToMany(mappedBy = "patient", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    // Clinical records outlive the account: never deleted through it (retention rules)
+    @OneToMany(mappedBy = "patient", cascade = { CascadeType.PERSIST, CascadeType.MERGE }, fetch = FetchType.LAZY)
     @JsonManagedReference
     private List<Document> documents;
 

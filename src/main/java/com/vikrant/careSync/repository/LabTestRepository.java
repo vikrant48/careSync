@@ -11,7 +11,6 @@ import java.util.Optional;
 @Repository
 public interface LabTestRepository extends JpaRepository<LabTest, Long> {
     
-    List<LabTest> findByIsActiveTrue();
     
     Optional<LabTest> findByTestNameIgnoreCase(String testName);
     

@@ -1,5 +1,6 @@
 package com.vikrant.careSync.service.ai;
 
+import com.vikrant.careSync.security.access.AccessGuard;
 import com.vikrant.careSync.dto.AiBookingSuggestion;
 import com.vikrant.careSync.dto.AiChatResponse;
 import com.vikrant.careSync.dto.AppointmentDto;
@@ -35,6 +36,7 @@ public class AiBookingService {
     private final AppointmentService appointmentService;
     private final DoctorLeaveService doctorLeaveService;
     private final SpecializationMasterRepository specializationMasterRepository;
+    private final AccessGuard accessGuard;
 
     private static final Long DEFAULT_ORG_ID = 91L;
 
@@ -42,8 +44,7 @@ public class AiBookingService {
         Set<String> allSpecs = specializationMasterRepository.findByOrgId(DEFAULT_ORG_ID)
                 .stream().map(SpecializationMaster::getValue).collect(Collectors.toSet());
 
-        doctorRepository.findAllWithUser().stream()
-                .map(Doctor::getSpecialization)
+        doctorRepository.findDistinctSpecializations().stream()
                 .filter(s -> s != null && !s.isBlank())
                 .forEach(allSpecs::add);
 
@@ -67,9 +68,7 @@ public class AiBookingService {
         String spec = parts[0];
         String reason = parts.length > 1 ? parts[1] : "AI Assisted Booking";
 
-        List<Doctor> doctors = doctorRepository.findAllWithUser().stream()
-                .filter(Doctor::canAcceptAppointments)
-                .filter(d -> spec.equalsIgnoreCase(d.getSpecialization()))
+        List<Doctor> doctors = doctorRepository.findBookableBySpecialization(spec).stream()
                 .limit(3)
                 .collect(Collectors.toList());
         List<AiBookingSuggestion.DoctorSuggestion> suggestions = doctors.stream()
@@ -135,6 +134,7 @@ public class AiBookingService {
 
             if (reason.startsWith("RESCHEDULE:")) {
                 Long apptId = Long.parseLong(reason.split(":")[1]);
+                requireOwnAppointment(apptId);
                 suggestionBuilder.appointmentId(apptId);
                 appointmentRepository.findById(apptId).ifPresent(appt -> {
                     suggestionBuilder.originalDate(appt.getAppointmentDateTime().toLocalDate().toString());
@@ -182,6 +182,7 @@ public class AiBookingService {
 
             if (reason.startsWith("RESCHEDULE:")) {
                 Long apptId = Long.parseLong(reason.split(":")[1]);
+                requireOwnAppointment(apptId);
                 suggestionBuilder.appointmentId(apptId);
                 appointmentRepository.findById(apptId).ifPresent(appt -> {
                     suggestionBuilder.originalDate(appt.getAppointmentDateTime().toLocalDate().toString());
@@ -203,6 +204,12 @@ public class AiBookingService {
     }
 
     // Safety Validation Guardrails
+    private void requireOwnAppointment(Long appointmentId) {
+        if (!accessGuard.isAppointmentPatient(appointmentId)) {
+            throw new IllegalStateException("You can only reschedule your own appointments.");
+        }
+    }
+
     private Patient validatePatientAuthenticated() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         if (username == null || "anonymousUser".equalsIgnoreCase(username)) {
@@ -283,10 +290,11 @@ public class AiBookingService {
                 .collect(Collectors.toList()) : List.of();
 
         if (!validSpecs.isEmpty()) {
-            List<Doctor> doctors = doctorRepository.findAllWithUser().stream()
-                    .filter(Doctor::canAcceptAppointments)
-                    .filter(d -> validSpecs.stream()
-                            .anyMatch(spec -> spec.equalsIgnoreCase(d.getSpecialization())))
+            List<Doctor> doctors = validSpecs.stream()
+                    .map(String::toLowerCase)
+                    .distinct()
+                    .flatMap(spec -> doctorRepository.findBookableBySpecialization(spec).stream())
+                    .distinct()
                     .collect(Collectors.toList());
 
             if (!doctors.isEmpty()) {
@@ -337,19 +345,6 @@ public class AiBookingService {
         return AiChatResponse.builder().response(cleanResponse).success(true).build();
     }
 
-    public AiChatResponse handleRecommendedSpecializations(String responseText, String originalUserMsg) {
-        int tagIndex = responseText.indexOf("RECOMMENDED_SPECIALIZATIONS:");
-        String specsPart = responseText.substring(tagIndex + "RECOMMENDED_SPECIALIZATIONS:".length()).trim()
-                .replace("[", "").replace("]", "").replace(".", "");
-        String cleanResponse = responseText.substring(0, tagIndex).trim();
-
-        List<String> specsList = Arrays.stream(specsPart.split(","))
-                .map(String::trim)
-                .collect(Collectors.toList());
-
-        return handleRecommendedSpecializationList(specsList, cleanResponse, originalUserMsg);
-    }
-
     public AiChatResponse handleFetchMyAppointments(String question, String cleanAiResponse) {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         Patient patient = patientRepository.findByUsername(username).orElse(null);
@@ -393,6 +388,10 @@ public class AiBookingService {
 
     public AiChatResponse handleStartReschedule(String message) {
         Long apptId = Long.parseLong(message.replace("ACTION_START_RESCHEDULE_", ""));
+        if (!accessGuard.isAppointmentPatient(apptId)) {
+            return AiChatResponse.builder().response("You can only reschedule your own appointments.")
+                    .success(false).build();
+        }
         Appointment appt = appointmentRepository.findById(apptId).orElseThrow();
 
         return AiChatResponse.builder()
@@ -412,10 +411,8 @@ public class AiBookingService {
 
     public AiBookingSuggestion.DoctorSuggestion findNextBookableDoctor(String specialization, Long preferredDoctorId,
             boolean allowPreferred) {
-        List<Doctor> doctors = doctorRepository.findAllWithUser().stream()
-                .filter(Doctor::canAcceptAppointments)
-                .filter(doctor -> specialization != null && specialization.equalsIgnoreCase(doctor.getSpecialization()))
-                .collect(Collectors.toList());
+        List<Doctor> doctors = specialization == null ? List.of()
+                : doctorRepository.findBookableBySpecialization(specialization);
         if (allowPreferred && preferredDoctorId != null) {
             for (Doctor doctor : doctors) {
                 if (doctor.getId().equals(preferredDoctorId)) {
@@ -453,19 +450,14 @@ public class AiBookingService {
 
     private AiBookingSuggestion.DoctorSuggestion mapToDoctorSuggestionWithFirstSlot(Doctor doctor) {
         AiBookingSuggestion.DoctorSuggestion suggestion = mapToDoctorSuggestion(doctor);
-        for (int dayOffset = 0; dayOffset < 14; dayOffset++) {
-            LocalDate date = LocalDate.now().plusDays(dayOffset);
-            try {
-                SlotAvailabilityResponse availability = appointmentService.getAvailableSlots(
-                        doctor.getId(), date.toString());
-                if (availability.getAvailableSlots() != null && !availability.getAvailableSlots().isEmpty()) {
-                    suggestion.setRecommendedDate(date.toString());
-                    suggestion.setRecommendedSlot(availability.getAvailableSlots().get(0));
-                    break;
-                }
-            } catch (Exception ignored) {
-                // Try the next date; inactive and leave checks are enforced by the service.
-            }
+        try {
+            // One pass over the next 14 days (inactive doctors and leave days are skipped by the service)
+            appointmentService.findFirstAvailableSlot(doctor.getId(), 14).ifPresent(slot -> {
+                suggestion.setRecommendedDate(slot.date().toString());
+                suggestion.setRecommendedSlot(slot.time());
+            });
+        } catch (Exception ignored) {
+            // No suggestion for this doctor
         }
         return suggestion;
     }

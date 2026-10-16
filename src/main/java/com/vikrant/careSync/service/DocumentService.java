@@ -11,18 +11,18 @@ import com.vikrant.careSync.repository.PatientRepository;
 import com.vikrant.careSync.repository.BookingRepository;
 import com.vikrant.careSync.constants.AppConstants;
 import com.vikrant.careSync.dto.DocumentDto;
+import com.vikrant.careSync.service.storage.FileContentValidator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.net.URL;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -107,19 +107,16 @@ public class DocumentService {
         // Determine user ID for folder organization
         Long userId = doctor != null ? doctor.getId() : (patient != null ? patient.getId() : null);
 
-        // Upload to Supabase
-        String supabaseUrl = supabaseStorageService.uploadFile(file, supabaseFileType, userId);
-
-        // Extract key from URL
-        String fileKey = supabaseStorageService.extractKey(supabaseUrl);
+        // Upload to Supabase: medical files go to the private bucket; content is checked against the extension
+        SupabaseStorageService.StoredFile stored = supabaseStorageService.store(file, supabaseFileType, userId);
 
         // Create document metadata
         Document document = Document.builder()
-                .originalFilename(file.getOriginalFilename())
-                .storedFilename(fileKey) // Store Supabase key
-                .filePath(supabaseUrl) // Store Supabase URL
+                .originalFilename(FileContentValidator.safeFilename(file.getOriginalFilename()))
+                .storedFilename(stored.key()) // Store Supabase key
+                .filePath(stored.filePath()) // Public URL, or "private:<key>" for the private bucket
                 .fileSize(file.getSize())
-                .contentType(file.getContentType())
+                .contentType(stored.contentType()) // Detected type, not the client's claim
                 .documentType(documentType)
                 .description(description)
                 .doctor(doctor)
@@ -146,13 +143,6 @@ public class DocumentService {
      */
     public Optional<Document> getDocumentById(Long id) {
         return documentRepository.findById(id);
-    }
-
-    @Cacheable(value = "DOCTOR:DOCUMENTS", key = "'docs_' + #doctorId")
-    public List<DocumentDto> getDocumentsDtoByDoctorId(Long doctorId) {
-        return documentRepository.findByDoctorId(doctorId).stream()
-                .map(doc -> new DocumentDto(doc, doc.getFilePath(), doc.getFilePath()))
-                .collect(Collectors.toList());
     }
 
     @Cacheable(value = "PATIENT:DOCUMENTS", key = "'docs_' + #patientId")
@@ -191,14 +181,11 @@ public class DocumentService {
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new RuntimeException("Document not found with id: " + documentId));
 
-        // For Supabase URLs, create a URL resource directly
-        URL supabaseUrl = new URL(document.getFilePath());
-        Resource resource = new UrlResource(supabaseUrl);
-
-        if (resource.exists() && resource.isReadable()) {
-            return resource;
-        } else {
-            throw new IOException("File not found or not readable from Supabase: " + document.getFilePath());
+        // Read through the S3 API, so files in the private bucket can be served too
+        try {
+            return new InputStreamResource(supabaseStorageService.openStream(document.getFilePath()));
+        } catch (Exception e) {
+            throw new IOException("File not found or not readable from Supabase: " + document.getStoredFilename(), e);
         }
     }
 
@@ -214,9 +201,9 @@ public class DocumentService {
         document.setIsActive(false);
         documentRepository.save(document);
 
-        // Delete file from Supabase using the stored filename (key)
+        // Delete file from whichever Supabase bucket holds it
         try {
-            supabaseStorageService.deleteFile(document.getStoredFilename());
+            supabaseStorageService.deleteStoredFile(document.getFilePath());
             log.info("File deleted from Supabase: {}", document.getStoredFilename());
         } catch (Exception e) {
             log.warn("Failed to delete file from Supabase: {}", document.getStoredFilename(), e);
@@ -283,37 +270,6 @@ public class DocumentService {
     }
 
     /**
-     * Validate uploaded file (legacy method for backward compatibility)
-     */
-    private void validateFile(MultipartFile file) {
-        if (file.isEmpty()) {
-            throw new IllegalArgumentException("File is empty");
-        }
-
-        if (file.getSize() > MAX_FILE_SIZE) {
-            throw new IllegalArgumentException("File size exceeds maximum allowed size of " +
-                    (MAX_FILE_SIZE / 1024 / 1024) + "MB");
-        }
-
-        String filename = file.getOriginalFilename();
-        if (filename == null || filename.trim().isEmpty()) {
-            throw new IllegalArgumentException("Filename is required");
-        }
-
-        String extension = getFileExtension(filename);
-        if (!isDocumentExtensionAllowed(extension)) {
-            throw new IllegalArgumentException("File type (." + extension + ") not allowed. Allowed types: " +
-                    String.join(", ", ALLOWED_DOCUMENT_EXTENSIONS));
-        }
-
-        // Additional content type validation
-        String contentType = file.getContentType();
-        if (contentType == null || !isAllowedContentType(contentType)) {
-            throw new IllegalArgumentException("Invalid file content type: " + contentType);
-        }
-    }
-
-    /**
      * Check if document extension is allowed
      */
     private boolean isDocumentExtensionAllowed(String extension) {
@@ -358,16 +314,6 @@ public class DocumentService {
     }
 
     /**
-     * Generate unique filename
-     */
-    private String generateUniqueFilename(String originalFilename) {
-        String extension = getFileExtension(originalFilename);
-        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-        String uuid = UUID.randomUUID().toString().substring(0, 8);
-        return timestamp + "_" + uuid + "." + extension;
-    }
-
-    /**
      * Get file extension
      */
     private String getFileExtension(String filename) {
@@ -392,20 +338,52 @@ public class DocumentService {
     }
 
     /**
-     * Get file URL for frontend access (Direct Supabase URL)
+     * Get file URL for frontend access (signed link for private files)
      */
     public String getFileUrl(Long documentId) {
         return documentRepository.findById(documentId)
-                .map(Document::getFilePath)
+                .map(this::viewUrl)
                 .orElse("/api/files/view/" + documentId);
     }
 
     /**
-     * Get download URL for frontend access (Direct Supabase URL)
+     * Get download URL for frontend access (signed link for private files)
      */
     public String getDownloadUrl(Long documentId) {
         return documentRepository.findById(documentId)
-                .map(Document::getFilePath)
+                .map(this::downloadUrl)
                 .orElse("/api/files/download/" + documentId);
+    }
+
+    public String viewUrl(Document document) {
+        return supabaseStorageService.accessUrl(document.getFilePath(), null);
+    }
+
+    public String downloadUrl(Document document) {
+        return supabaseStorageService.accessUrl(document.getFilePath(), document.getOriginalFilename());
+    }
+
+    /** DTO with links the browser can open now (private files get short-lived signed links). */
+    public DocumentDto toDto(Document document) {
+        return new DocumentDto(document, viewUrl(document), downloadUrl(document));
+    }
+
+    /**
+     * Cached DTOs hold the stored path, never a signed link (it would expire in the cache);
+     * sign them on the way out.
+     */
+    public List<DocumentDto> withFreshUrls(List<DocumentDto> documents) {
+        if (documents == null) {
+            return null;
+        }
+        for (DocumentDto dto : documents) {
+            String storedPath = dto.getUrl();
+            if (supabaseStorageService.isPrivate(storedPath)) {
+                dto.setUrl(supabaseStorageService.accessUrl(storedPath, null));
+                dto.setFileUrl(dto.getUrl());
+                dto.setDownloadUrl(supabaseStorageService.accessUrl(storedPath, dto.getFilename()));
+            }
+        }
+        return documents;
     }
 }

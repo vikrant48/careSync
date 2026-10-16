@@ -1,8 +1,15 @@
 package com.vikrant.careSync.controller;
 
+import com.vikrant.careSync.exception.ClientErrorMessages;
+import com.vikrant.careSync.dto.PaymentPreferenceDto;
 import com.vikrant.careSync.dto.PaymentRequestDto;
 import com.vikrant.careSync.dto.PaymentResponseDto;
+import com.vikrant.careSync.exception.GlobalExceptionHandler;
+import com.vikrant.careSync.security.access.AccessGuard;
+import com.vikrant.careSync.security.access.CurrentUserService;
+import com.vikrant.careSync.service.PaymentPreferenceService;
 import com.vikrant.careSync.service.PaymentService;
+import org.springframework.security.access.AccessDeniedException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -31,6 +38,9 @@ import java.util.Map;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final AccessGuard accessGuard;
+    private final PaymentPreferenceService paymentPreferenceService;
+    private final CurrentUserService currentUserService;
 
     @Operation(summary = "Pay for existing booking", description = "Process payment for a doctor-created booking")
     @ApiResponses(value = {
@@ -40,7 +50,7 @@ public class PaymentController {
             @ApiResponse(responseCode = "500", description = "Internal server error")
     })
     @PostMapping("/booking/{bookingId}/pay")
-    @PreAuthorize("hasRole('PATIENT')")
+    @PreAuthorize("hasRole('PATIENT') and @access.isSelf(#request.patientId)")
     public ResponseEntity<PaymentResponseDto> payForBooking(
             @Parameter(description = "Booking ID") @PathVariable Long bookingId,
             @Valid @RequestBody PaymentRequestDto request) {
@@ -67,7 +77,7 @@ public class PaymentController {
             @ApiResponse(responseCode = "500", description = "Internal server error")
     })
     @PostMapping("/initiate")
-    @PreAuthorize("hasRole('PATIENT') or hasRole('ADMIN') or hasRole('DOCTOR')")
+    @PreAuthorize("(hasRole('PATIENT') and @access.isSelf(#request.patientId)) or hasRole('ADMIN')")
     public ResponseEntity<PaymentResponseDto> initiatePayment(
             @Valid @RequestBody PaymentRequestDto request) {
 
@@ -90,7 +100,7 @@ public class PaymentController {
             @ApiResponse(responseCode = "404", description = "Payment not found")
     })
     @GetMapping("/transaction/{transactionId}")
-    @PreAuthorize("hasRole('PATIENT') or hasRole('ADMIN') or hasRole('DOCTOR')")
+    @PreAuthorize("@access.canAccessPaymentTransaction(#transactionId)")
     public ResponseEntity<PaymentResponseDto> getPaymentByTransactionId(
             @Parameter(description = "Transaction ID") @PathVariable String transactionId) {
 
@@ -112,16 +122,20 @@ public class PaymentController {
     @GetMapping("/booking/{bookingId}")
     @PreAuthorize("hasRole('PATIENT') or hasRole('ADMIN') or hasRole('DOCTOR')")
     public ResponseEntity<PaymentResponseDto> getPaymentByBookingId(
-            @Parameter(description = "Booking ID") @PathVariable Long bookingId) {
+            @Parameter(description = "Booking ID") @PathVariable Long bookingId,
+            @Parameter(description = "BOOKING or APPOINTMENT; omitted = booking first, then appointment")
+            @RequestParam(required = false) String type) {
 
+        PaymentResponseDto payment;
         try {
-            PaymentResponseDto payment = paymentService.getPaymentByBookingId(bookingId);
-            return ResponseEntity.ok(payment);
-
+            payment = paymentService.getPaymentFor(bookingId, type);
         } catch (RuntimeException e) {
             log.error("Payment not found for booking ID: {}", bookingId);
             return ResponseEntity.notFound().build();
         }
+        // The id may match a booking or an appointment, so check ownership on the payment found
+        accessGuard.requirePatientAccess(payment.getPatientId());
+        return ResponseEntity.ok(payment);
     }
 
     @Operation(summary = "Get payments by patient", description = "Retrieves all payments for a specific patient")
@@ -130,7 +144,7 @@ public class PaymentController {
             @ApiResponse(responseCode = "404", description = "Patient not found")
     })
     @GetMapping("/patient/{patientId}")
-    @PreAuthorize("hasRole('PATIENT') or hasRole('ADMIN') or hasRole('DOCTOR')")
+    @PreAuthorize("@access.canAccessPatient(#patientId)")
     public ResponseEntity<Page<PaymentResponseDto>> getPaymentsByPatient(
             @Parameter(description = "Patient ID") @PathVariable Long patientId,
             @Parameter(description = "Page number (0-based)") @RequestParam(defaultValue = "0") int page,
@@ -184,6 +198,14 @@ public class PaymentController {
 
         log.info("Razorpay webhook received");
 
+        // In demo mode nothing is charged, so there is no gateway event to accept.
+        // Before going live this needs Razorpay's webhook check (HMAC of the raw body with the webhook secret).
+        if (paymentService.isDemoMode()) {
+            log.warn("Razorpay webhook ignored: payments run in demo mode");
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("status", "error", "message", "Payment webhooks are disabled in demo mode"));
+        }
+
         try {
             // Extract payment details from webhook payload
             Map<String, Object> paymentEntity = (Map<String, Object>) payload.get("payload");
@@ -200,7 +222,7 @@ public class PaymentController {
 
         } catch (Exception e) {
             log.error("Webhook processing failed", e);
-            return ResponseEntity.badRequest().body(Map.of("status", "error", "message", e.getMessage()));
+            return ResponseEntity.badRequest().body(Map.of("status", "error", "message", ClientErrorMessages.of(e)));
         }
     }
 
@@ -210,7 +232,7 @@ public class PaymentController {
             @ApiResponse(responseCode = "404", description = "Payment not found")
     })
     @PostMapping("/verify/{transactionId}")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('DOCTOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DOCTOR') and @access.canAccessPaymentTransaction(#transactionId)")
     public ResponseEntity<PaymentResponseDto> verifyPaymentStatus(
             @Parameter(description = "Transaction ID") @PathVariable String transactionId) {
 
@@ -232,7 +254,7 @@ public class PaymentController {
             @ApiResponse(responseCode = "404", description = "Payment not found")
     })
     @PostMapping("/cancel/{transactionId}")
-    @PreAuthorize("hasRole('PATIENT') or hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('PATIENT', 'ADMIN') and @access.canAccessPaymentTransaction(#transactionId)")
     public ResponseEntity<Map<String, String>> cancelPayment(
             @Parameter(description = "Transaction ID") @PathVariable String transactionId) {
 
@@ -251,7 +273,7 @@ public class PaymentController {
             log.error("Payment cancellation failed for transaction ID: {}", transactionId, e);
             return ResponseEntity.badRequest().body(Map.of(
                     "status", "error",
-                    "message", e.getMessage()));
+                    "message", ClientErrorMessages.of(e)));
         }
     }
 
@@ -283,10 +305,39 @@ public class PaymentController {
         }
     }
 
+    @Operation(summary = "Get my saved payment method", description = "The payment method the patient used last, with safe details only")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Saved payment method"),
+            @ApiResponse(responseCode = "204", description = "No payment method saved yet")
+    })
+    @GetMapping("/preferences/me")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<PaymentPreferenceDto> getMyPaymentPreference() {
+        Long patientId = currentUserService.requirePatient().getId();
+        return paymentPreferenceService.find(patientId)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @Operation(summary = "Forget my saved payment method", description = "Deletes the saved payment method of the patient")
+    @ApiResponse(responseCode = "204", description = "Saved payment method removed")
+    @DeleteMapping("/preferences/me")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<Void> forgetMyPaymentPreference() {
+        paymentPreferenceService.forget(currentUserService.requirePatient().getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    // Must be declared here: the local Exception handler below would otherwise turn 403 into 500
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, String>> handleAccessDenied(AccessDeniedException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(GlobalExceptionHandler.forbiddenBody());
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleException(Exception e) {
         log.error("Unhandled exception in PaymentController", e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("error", "Internal server error", "message", e.getMessage()));
+                .body(Map.of("error", "Internal server error", "message", ClientErrorMessages.of(e)));
     }
 }

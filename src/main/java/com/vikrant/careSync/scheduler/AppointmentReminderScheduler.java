@@ -19,6 +19,7 @@ public class AppointmentReminderScheduler {
 
     private final AppointmentRepository appointmentRepository;
     private final NotificationService notificationService;
+    private final ClusterJobLock clusterJobLock;
 
     /**
      * Runs every 1 minute to check for upcoming appointments needing 24h, 1h, or
@@ -27,6 +28,10 @@ public class AppointmentReminderScheduler {
     @Scheduled(cron = "0 * * * * *")
     @Transactional
     public void processScheduledReminders() {
+        // With several app instances, only one sends reminders (each instance used to send its own copy)
+        if (!clusterJobLock.tryAcquire("appointment-reminders")) {
+            return;
+        }
         LocalDateTime now = LocalDateTime.now();
 
         // 1. Check 24-hour reminders (window: 23h55m to 24h05m)

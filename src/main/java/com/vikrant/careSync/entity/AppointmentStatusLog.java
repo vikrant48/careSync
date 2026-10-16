@@ -44,4 +44,16 @@ public class AppointmentStatusLog {
             createdAt = LocalDateTime.now();
         }
     }
+
+    /** One status change of an appointment (previousStatus is null for a new booking). */
+    public static AppointmentStatusLog of(Long appointmentId, Appointment.Status previousStatus,
+            Appointment.Status newStatus, String changedBy, String reason) {
+        return AppointmentStatusLog.builder()
+                .appointmentId(appointmentId)
+                .previousStatus(previousStatus)
+                .newStatus(newStatus)
+                .changedBy(changedBy)
+                .reason(reason)
+                .build();
+    }
 }

@@ -35,40 +35,20 @@ public class NotificationService {
     private final SimpMessagingTemplate messagingTemplate;
 
     public void sendDoctorNewAppointmentNotification(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
-                .orElseThrow(() -> new RuntimeException("Appointment not found"));
-
-        String doctorMessage = generateDoctorNewAppointmentMessage(appointment);
-        String patientMessage = generatePatientNewAppointmentMessage(appointment);
-        sendToDoctor(appointment, doctorMessage);
-        sendToPatient(appointment, patientMessage);
+        notifyPatientAndDoctor(appointmentId, this::generatePatientNewAppointmentMessage,
+                this::generateDoctorNewAppointmentMessage);
     }
 
     public void sendAppointmentScheduled(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
-                .orElseThrow(() -> new RuntimeException("Appointment not found"));
-        String patientMessage = generateAppointmentScheduledMessage(appointment);
-        String doctorMessage = generateDoctorAppointmentScheduledMessage(appointment);
-        sendToPatient(appointment, patientMessage);
-        sendToDoctor(appointment, doctorMessage);
+        notifyPatientAndDoctor(appointmentId, this::generateAppointmentScheduledMessage, this::generateDoctorAppointmentScheduledMessage);
     }
 
     public void sendAppointmentStarted(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
-                .orElseThrow(() -> new RuntimeException("Appointment not found"));
-        String patientMessage = generateAppointmentStartedMessage(appointment);
-        String doctorMessage = generateDoctorAppointmentStartedMessage(appointment);
-        sendToPatient(appointment, patientMessage);
-        sendToDoctor(appointment, doctorMessage);
+        notifyPatientAndDoctor(appointmentId, this::generateAppointmentStartedMessage, this::generateDoctorAppointmentStartedMessage);
     }
 
     public void sendAppointmentCompleted(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
-                .orElseThrow(() -> new RuntimeException("Appointment not found"));
-        String patientMessage = generateAppointmentCompletedMessage(appointment);
-        String doctorMessage = generateDoctorAppointmentCompletedMessage(appointment);
-        sendToPatient(appointment, patientMessage);
-        sendToDoctor(appointment, doctorMessage);
+        notifyPatientAndDoctor(appointmentId, this::generateAppointmentCompletedMessage, this::generateDoctorAppointmentCompletedMessage);
     }
 
     public void sendAppointmentReminder(Long appointmentId) {
@@ -79,7 +59,7 @@ public class NotificationService {
             String message = generateAppointmentReminderMessage(appointment);
             // In a real application, this would send actual notifications
             // For now, we'll just log the message
-            log.info("Sending appointment reminder: {}", message);
+            log.info("Appointment reminder prepared for appointment ID {}", appointmentId);
         }
     }
 
@@ -96,8 +76,8 @@ public class NotificationService {
             // In a real application, this would schedule the notification based on
             // hoursBeforeAppointment
             // and send via the specified reminderType (EMAIL, SMS, PUSH)
-            log.info("Scheduling {} reminder {} hours before appointment: {}", reminderType, hoursBeforeAppointment,
-                    message);
+            log.info("Scheduling {} reminder {} hours before appointment ID {} ({} characters)", reminderType,
+                    hoursBeforeAppointment, appointmentId, message.length());
 
             // Log the scheduled time for the reminder
             LocalDateTime reminderTime = appointment.getAppointmentDateTime().minusHours(hoursBeforeAppointment);
@@ -109,33 +89,15 @@ public class NotificationService {
     }
 
     public void sendAppointmentConfirmation(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
-                .orElseThrow(() -> new RuntimeException("Appointment not found"));
-
-        String patientMessage = generateAppointmentConfirmationMessage(appointment);
-        String doctorMessage = generateDoctorAppointmentConfirmationMessage(appointment);
-        sendToPatient(appointment, patientMessage);
-        sendToDoctor(appointment, doctorMessage);
+        notifyPatientAndDoctor(appointmentId, this::generateAppointmentConfirmationMessage, this::generateDoctorAppointmentConfirmationMessage);
     }
 
     public void sendAppointmentCancellation(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
-                .orElseThrow(() -> new RuntimeException("Appointment not found"));
-
-        String patientMessage = generateAppointmentCancellationMessage(appointment);
-        String doctorMessage = generateDoctorAppointmentCancellationMessage(appointment);
-        sendToPatient(appointment, patientMessage);
-        sendToDoctor(appointment, doctorMessage);
+        notifyPatientAndDoctor(appointmentId, this::generateAppointmentCancellationMessage, this::generateDoctorAppointmentCancellationMessage);
     }
 
     public void sendAppointmentReschedule(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
-                .orElseThrow(() -> new RuntimeException("Appointment not found"));
-
-        String patientMessage = generateAppointmentRescheduleMessage(appointment);
-        String doctorMessage = generateDoctorAppointmentRescheduleMessage(appointment);
-        sendToPatient(appointment, patientMessage);
-        sendToDoctor(appointment, doctorMessage);
+        notifyPatientAndDoctor(appointmentId, this::generateAppointmentRescheduleMessage, this::generateDoctorAppointmentRescheduleMessage);
     }
 
     public void sendDailyAppointmentReminders() {
@@ -167,7 +129,7 @@ public class NotificationService {
                 .findByDoctorIdAndAppointmentDateTimeBetween(doctorId, weekStart, weekEnd);
 
         String message = generateWeeklyScheduleMessage(doctor, weeklyAppointments);
-        log.info("Sending weekly schedule: {}", message);
+        log.info("Weekly schedule prepared ({} characters)", message.length());
     }
 
     public void sendFeedbackReminder(Long appointmentId) {
@@ -176,7 +138,7 @@ public class NotificationService {
 
         if (appointment.getStatus() == Appointment.Status.COMPLETED && appointment.getFeedback() == null) {
             String message = generateFeedbackReminderMessage(appointment);
-            log.info("Sending feedback reminder: {}", message);
+            log.info("Feedback reminder prepared ({} characters)", message.length());
         }
     }
 
@@ -274,12 +236,12 @@ public class NotificationService {
 
     public void sendSystemNotification(String message, String recipientType, Long recipientId) {
         // In a real application, this would send notifications to specific users
-        log.info("System notification to {} (ID: {}): {}", recipientType, recipientId, message);
+        log.info("System notification to {} (ID: {})", recipientType, recipientId);
     }
 
     public void sendBulkNotification(String message, List<Long> recipientIds) {
         // In a real application, this would send bulk notifications
-        log.info("Bulk notification to {} recipients: {}", recipientIds.size(), message);
+        log.info("Bulk notification to {} recipients", recipientIds.size());
     }
 
     private String generateDoctorNewAppointmentMessage(Appointment appointment) {
@@ -395,76 +357,55 @@ public class NotificationService {
                 formattedDateTime);
     }
 
+    /** Loads the appointment once and notifies its patient and its doctor, each with their own message. */
+    private void notifyPatientAndDoctor(Long appointmentId,
+            java.util.function.Function<Appointment, String> patientMessage,
+            java.util.function.Function<Appointment, String> doctorMessage) {
+        Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
+                .orElseThrow(() -> new RuntimeException("Appointment not found"));
+        sendToPatient(appointment, patientMessage.apply(appointment));
+        sendToDoctor(appointment, doctorMessage.apply(appointment));
+    }
+
     private void sendToDoctor(Appointment appointment, String message) {
         Doctor doctor = appointment.getDoctor();
-        String channel = resolveChannel(doctor.getEmail(), doctor.getContactInfo());
-        log.info("[DOCTOR][{}] {}", channel, message);
-
-        // Persist notification for doctor feed
-        Notification notif = Notification.builder()
-                .recipientType(AppConstants.Roles.DOCTOR)
-                .recipientId(doctor.getId())
-                .title("Appointment Update")
-                .message(message)
-                .type("appointment")
-                .read(false)
-                .timestamp(LocalDateTime.now())
-                .link("/doctor")
-                .build();
-        Notification savedNotif = notificationRepository.save(notif);
-
-        // Push to WebSocket
-        try {
-            // Using a user-specific destination using the doctor's ID
-            // The client will subscribe to /user/queue/notifications
-            // Spring Security User Principal Name is typically used here.
-            // If we authenticated with ID, we use ID. If email, we use email.
-            // Assuming the Principal.getName() returns the username/email used for login.
-            // For now, let's also try to send to a topic that includes the ID for
-            // simplicity if user-destinations fail
-            // But standardized way: convertToDto and send
-            NotificationDto dto = new NotificationDto(savedNotif);
-            messagingTemplate.convertAndSendToUser(
-                    doctor.getEmail(), // Assuming email is the Principal name
-                    "/queue/notifications",
-                    dto);
-        } catch (Exception e) {
-            log.error("Failed to send WebSocket notification to doctor", e);
-        }
+        deliver(AppConstants.Roles.DOCTOR, doctor.getId(), doctor.getUsername(),
+                resolveChannel(doctor.getEmail(), doctor.getContactInfo()), message, "/doctor");
     }
 
     private void sendToPatient(Appointment appointment, String message) {
         Patient patient = appointment.getPatient();
-        String channel = resolveChannel(patient.getEmail(), patient.getContactInfo());
-        log.info("[PATIENT][{}] {}", channel, message);
+        deliver(AppConstants.Roles.PATIENT, patient.getId(), patient.getUsername(),
+                resolveChannel(patient.getEmail(), patient.getContactInfo()), message, "/patient");
+    }
 
-        // Persist notification for patient feed
-        Notification notif = Notification.builder()
-                .recipientType(AppConstants.Roles.PATIENT)
-                .recipientId(patient.getId())
+    /**
+     * Saves the notification to the recipient's feed and pushes it over WebSocket to /user/queue/notifications
+     * (the STOMP principal name is the username). The log line never contains the message: it carries
+     * patient names and visit details.
+     */
+    private void deliver(String recipientType, Long recipientId, String username, String channel, String message,
+            String link) {
+        log.info("[{}][{}] appointment notification for recipient ID {}", recipientType, channel, recipientId);
+        Notification savedNotif = notificationRepository.save(Notification.builder()
+                .recipientType(recipientType)
+                .recipientId(recipientId)
                 .title("Appointment Update")
                 .message(message)
                 .type("appointment")
                 .read(false)
                 .timestamp(LocalDateTime.now())
-                .link("/patient")
-                .build();
-        Notification savedNotif = notificationRepository.save(notif);
-
-        // Push to WebSocket
+                .link(link)
+                .build());
         try {
-            NotificationDto dto = new NotificationDto(savedNotif);
-            messagingTemplate.convertAndSendToUser(
-                    patient.getEmail(), // Assuming email is the Principal name
-                    "/queue/notifications",
-                    dto);
+            messagingTemplate.convertAndSendToUser(username, "/queue/notifications", new NotificationDto(savedNotif));
         } catch (Exception e) {
-            log.error("Failed to send WebSocket notification to patient", e);
+            log.error("Failed to send WebSocket notification to {} {}", recipientType, recipientId, e);
         }
     }
 
     public List<Notification> getDoctorFeed(Long doctorId) {
-        return notificationRepository.findByRecipientTypeAndRecipientIdOrderByTimestampDesc(AppConstants.Roles.DOCTOR,
+        return notificationRepository.findTop100ByRecipientTypeAndRecipientIdOrderByTimestampDesc(AppConstants.Roles.DOCTOR,
                 doctorId);
     }
 
@@ -474,7 +415,7 @@ public class NotificationService {
     }
 
     public List<Notification> getPatientFeed(Long patientId) {
-        return notificationRepository.findByRecipientTypeAndRecipientIdOrderByTimestampDesc(AppConstants.Roles.PATIENT,
+        return notificationRepository.findTop100ByRecipientTypeAndRecipientIdOrderByTimestampDesc(AppConstants.Roles.PATIENT,
                 patientId);
     }
 

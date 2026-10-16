@@ -65,30 +65,11 @@ public class AiClinicalService {
             String userPrompt = systemPrompt + "\n\nSummarize the following patient's medical history:\n\n"
                     + fullHistoryStr;
 
-            String summary = null;
-
-            // 1. Try Groq API FIRST (Primary AI)
-            if (groqClient != null && groqClient.isConfigured()) {
-                try {
-                    log.info("Generating patient history summary using Groq AI (Primary)...");
-                    String promptText = fullHistoryStr.length() > 3000
-                            ? fullHistoryStr.substring(0, 3000) + "\n...[Truncated for AI processing]"
-                            : fullHistoryStr;
-                    summary = groqClient.callGroq(systemPrompt, "Summarize:\n" + promptText, false);
-                } catch (Exception groqEx) {
-                    log.warn("Groq summarization failed ({}), falling back to Gemini AI...", groqEx.getMessage());
-                }
-            }
-
-            // 2. Fallback to Gemini API if Groq fails or is not configured
-            if ((summary == null || summary.isBlank()) && geminiClient != null && geminiClient.isConfigured()) {
-                try {
-                    log.info("Generating patient history summary using Google Gemini AI (Fallback)...");
-                    summary = geminiClient.generateContent(userPrompt);
-                } catch (Exception geminiEx) {
-                    log.error("Gemini fallback summarization also failed: {}", geminiEx.getMessage());
-                }
-            }
+            String promptText = fullHistoryStr.length() > 3000
+                    ? fullHistoryStr.substring(0, 3000) + "\n...[Truncated for AI processing]"
+                    : fullHistoryStr;
+            String summary = askModel("patient history summary", systemPrompt, "Summarize:\n" + promptText, false,
+                    userPrompt);
 
             return MedicalSummaryResponse.builder().summary(summary).success(true).build();
 
@@ -125,28 +106,8 @@ public class AiClinicalService {
 
         String userPrompt = "Analyze symptoms: '" + cleanSymptoms + "'. Return strictly JSON differential suggestions.";
 
-        String jsonResponse = null;
-
-        // 1. Try Groq API FIRST (Primary AI)
-        if (groqClient != null && groqClient.isConfigured()) {
-            try {
-                log.info("Generating differential diagnosis suggestion using Groq AI (Primary)...");
-                jsonResponse = groqClient.callGroq(systemPrompt, userPrompt, true);
-            } catch (Exception groqEx) {
-                log.warn("Groq suggestDiagnosis failed ({}), falling back to Gemini AI...", groqEx.getMessage());
-            }
-        }
-
-        // 2. Fallback to Gemini API if Groq fails or returns empty
-        if ((jsonResponse == null || jsonResponse.isBlank()) && geminiClient != null && geminiClient.isConfigured()) {
-            try {
-                log.info("Generating differential diagnosis suggestion using Gemini AI (Fallback)...");
-                String geminiPrompt = systemPrompt + "\n\n" + userPrompt;
-                jsonResponse = geminiClient.generateContent(geminiPrompt);
-            } catch (Exception geminiEx) {
-                log.error("Gemini suggestDiagnosis fallback failed: {}", geminiEx.getMessage());
-            }
-        }
+        String jsonResponse = askModel("diagnosis suggestion", systemPrompt, userPrompt, true,
+                systemPrompt + "\n\n" + userPrompt);
 
         DiagnosisSuggestionDto dto = null;
 
@@ -169,67 +130,17 @@ public class AiClinicalService {
         }
 
         if (dto.getSuggestions() == null || dto.getSuggestions().isEmpty()) {
-            dto.setSuggestions(generateFallbackDiagnosisSuggestions(cleanSymptoms));
+            // No hard-coded diagnoses or medicines when the AI gives no answer
+            dto.setSuggestions(new java.util.ArrayList<>());
+            dto.setDisclaimer("AI suggestions are unavailable right now. Please rely on clinical assessment.");
         }
 
         return dto;
     }
 
-    private List<DiagnosisSuggestionDto.ClinicalMatch> generateFallbackDiagnosisSuggestions(String symptoms) {
-        String lower = symptoms != null ? symptoms.toLowerCase() : "";
-        List<DiagnosisSuggestionDto.ClinicalMatch> list = new java.util.ArrayList<>();
-
-        if (lower.contains("fever") || lower.contains("cold") || lower.contains("cough")
-                || lower.contains("headache")) {
-            list.add(DiagnosisSuggestionDto.ClinicalMatch.builder()
-                    .diagnosis("Acute Upper Respiratory Tract Infection (URTI) / Viral Fever")
-                    .treatment("Adequate bed rest, increased fluid intake, steam inhalation, and symptom monitoring.")
-                    .medicine("Paracetamol 500mg, Cetirizine 10mg")
-                    .dosage("Paracetamol: 1 tablet 2-3 times daily after meals. Cetirizine: 1 tablet once daily at bedtime.")
-                    .reasoning(
-                            "Classic acute presentation of fever, headache, and upper respiratory congestion/cold symptoms.")
-                    .build());
-
-            list.add(DiagnosisSuggestionDto.ClinicalMatch.builder()
-                    .diagnosis("Acute Tension-Type Headache with Viral Prodrome")
-                    .treatment(
-                            "Relaxation, neck stretch exercises, application of warm compresses, and stress reduction.")
-                    .medicine("Ibuprofen 400mg / Acetaminophen 500mg")
-                    .dosage("1 tablet every 6-8 hours as needed after food (Max 3 days).")
-                    .reasoning("Frontal/temporal headache secondary to acute systemic viral inflammatory response.")
-                    .build());
-        } else if (lower.contains("stomach") || lower.contains("abdominal") || lower.contains("pain")
-                || lower.contains("nausea") || lower.contains("vomit")) {
-            list.add(DiagnosisSuggestionDto.ClinicalMatch.builder()
-                    .diagnosis("Acute Gastroenteritis / Dyspepsia")
-                    .treatment(
-                            "Oral rehydration solution (ORS), light bland diet (BRAT diet), avoidance of spicy foods.")
-                    .medicine("Dicyclomine 10mg + Paracetamol 325mg, Ondansetron 4mg")
-                    .dosage("1 tablet twice daily before meals as needed.")
-                    .reasoning("Abdominal discomfort and gastrointestinal irritation.")
-                    .build());
-        } else {
-            list.add(DiagnosisSuggestionDto.ClinicalMatch.builder()
-                    .diagnosis("Acute Symptomatic Presentation")
-                    .treatment("General supportive care, adequate hydration, rest, and clinical physical evaluation.")
-                    .medicine("Symptomatic OTC management as clinically indicated")
-                    .dosage("As directed by prescribing physician.")
-                    .reasoning("Reported symptoms warrant routine physician evaluation and physical examination.")
-                    .build());
-        }
-
-        return list;
-    }
 
     private String extractJson(String text) {
-        if (text == null)
-            return "{}";
-        int start = text.indexOf("{");
-        int end = text.lastIndexOf("}");
-        if (start != -1 && end != -1 && end > start) {
-            return text.substring(start, end + 1);
-        }
-        return text.trim();
+        return AiJson.extractObject(text);
     }
 
     public AiIntakeDraftResponse draftIntakeFromNarrative(String narrative) {
@@ -255,21 +166,8 @@ public class AiClinicalService {
                 + "Return strict JSON: {\"chiefComplaint\":\"\",\"symptoms\":[],\"duration\":\"\",\"severity\":\"\","
                 + "\"currentMedications\":\"\",\"allergies\":\"\",\"redFlags\":[]}.";
 
-        String raw = null;
-        if (groqClient != null && groqClient.isConfigured()) {
-            try {
-                raw = groqClient.callGroq(systemPrompt, cleanNarrative, true);
-            } catch (Exception e) {
-                log.warn("Groq intake drafting failed: {}", e.getMessage());
-            }
-        }
-        if ((raw == null || raw.isBlank()) && geminiClient != null && geminiClient.isConfigured()) {
-            try {
-                raw = geminiClient.generateContent(systemPrompt + "\n\nPatient narrative:\n" + cleanNarrative);
-            } catch (Exception e) {
-                log.warn("Gemini intake drafting failed: {}", e.getMessage());
-            }
-        }
+        String raw = askModel("intake drafting", systemPrompt, cleanNarrative, true,
+                systemPrompt + "\n\nPatient narrative:\n" + cleanNarrative);
 
         AiIntakeDraftResponse.AiIntakeDraftResponseBuilder response = AiIntakeDraftResponse.builder()
                 .chiefComplaint(cleanNarrative)
@@ -342,21 +240,8 @@ public class AiClinicalService {
         String systemPrompt = "Rewrite the recorded visit facts in plain language for the patient. "
                 + "Use only the supplied facts. Do not add a diagnosis, medicine, dose, or instruction that is not recorded. "
                 + "If a field says Not recorded, say that it was not recorded. Keep it under 160 words.";
-        String generated = null;
-        if (groqClient != null && groqClient.isConfigured()) {
-            try {
-                generated = groqClient.callGroq(systemPrompt, recordedFacts, false);
-            } catch (Exception e) {
-                log.warn("Groq visit summary failed: {}", e.getMessage());
-            }
-        }
-        if ((generated == null || generated.isBlank()) && geminiClient != null && geminiClient.isConfigured()) {
-            try {
-                generated = geminiClient.generateContent(systemPrompt + "\n\n" + recordedFacts);
-            } catch (Exception e) {
-                log.warn("Gemini visit summary failed: {}", e.getMessage());
-            }
-        }
+        String generated = askModel("visit summary", systemPrompt, recordedFacts, false,
+                systemPrompt + "\n\n" + recordedFacts);
         return generated == null || generated.isBlank() ? fallback : generated.trim();
     }
 
@@ -398,29 +283,13 @@ public class AiClinicalService {
                 medications != null ? medications : "None",
                 allergies != null ? allergies : "None");
 
-        String rawSummaryText = null;
-
-        if (groqClient != null && groqClient.isConfigured()) {
-            try {
-                rawSummaryText = groqClient.callGroq(systemPrompt, userPrompt, true);
-            } catch (Exception e) {
-                log.warn("Groq pre-visit intake summary failed: {}", e.getMessage());
-            }
-        }
-
-        if ((rawSummaryText == null || rawSummaryText.isBlank()) && geminiClient != null
-                && geminiClient.isConfigured()) {
-            try {
-                rawSummaryText = geminiClient.generateContent(systemPrompt + "\n\n" + userPrompt);
-            } catch (Exception e) {
-                log.warn("Gemini pre-visit intake summary failed: {}", e.getMessage());
-            }
-        }
+        String rawSummaryText = askModel("pre-visit intake summary", systemPrompt, userPrompt, true,
+                systemPrompt + "\n\n" + userPrompt);
 
         String summaryText = "• **Chief Complaint:** " + (chiefComplaint != null ? chiefComplaint : "N/A") + " ("
                 + (duration != null ? duration : "N/A") + ")\n"
                 + "• **Symptoms & Severity:** " + (symptoms != null ? symptoms : "N/A") + " [Severity: "
-                + (severity != null ? severity : "Mild") + "]\n"
+                + (severity != null ? severity : "Not specified") + "]\n"
                 + "• **Medications & Allergies:** Meds: " + (medications != null ? medications : "None")
                 + " | Allergies: " + (allergies != null ? allergies : "None");
 
@@ -449,12 +318,6 @@ public class AiClinicalService {
                         : null)
                 .summaryText(summaryText)
                 .build();
-    }
-
-    public String generatePreVisitSummary(String chiefComplaint, String symptoms, String duration, String medications,
-            String allergies) {
-        return generateStructuredIntakeSummary(chiefComplaint, symptoms, duration, "N/A", medications, allergies)
-                .getSummaryText();
     }
 
     public SoapReportDto generateSoapDraft(Appointment appointment, String liveTranscript) {
@@ -500,7 +363,9 @@ public class AiClinicalService {
 
         String systemPrompt = "You are CareSync AI Clinical Ambient Scribe. "
                 + "Generate a complete clinical SOAP note (Subjective, Objective, Assessment, Plan) and recommended prescriptions based on patient intake and consultation transcript.\n"
-                + "CRITICAL REQUIREMENT: You MUST provide meaningful, realistic clinical values for ALL 10 fields in JSON. Do NOT return null or empty values for any field.\n"
+                + "STRICT RULES: Use only facts stated in the intake or the transcript. Do NOT invent vital signs, "
+                + "examination findings, diagnoses, medicines or doses. For any field the sources do not support, "
+                + "return an empty string \"\". Medicines and doses only if the clinician said them in the transcript.\n"
                 + "Respond STRICTLY in JSON matching this exact schema:\n"
                 + "{\n"
                 + "  \"subjective\": \"Detailed patient symptoms, onset, history, and chief complaint\",\n"
@@ -528,25 +393,8 @@ public class AiClinicalService {
                 liveTranscript != null && !liveTranscript.isBlank() ? liveTranscript
                         : "No additional live transcript.");
 
-        String jsonResponse = null;
-
-        if (groqClient != null && groqClient.isConfigured()) {
-            try {
-                log.info("Generating SOAP draft report using Groq AI (Primary Ambient Scribe)...");
-                jsonResponse = groqClient.callGroq(systemPrompt, userPrompt, true);
-            } catch (Exception e) {
-                log.warn("Groq SOAP draft generation failed: {}", e.getMessage());
-            }
-        }
-
-        if ((jsonResponse == null || jsonResponse.isBlank()) && geminiClient != null && geminiClient.isConfigured()) {
-            try {
-                log.info("Generating SOAP draft report using Gemini AI (Fallback)...");
-                jsonResponse = geminiClient.generateContent(systemPrompt + "\n\n" + userPrompt);
-            } catch (Exception e) {
-                log.error("Gemini SOAP draft generation fallback failed: {}", e.getMessage());
-            }
-        }
+        String jsonResponse = askModel("SOAP draft", systemPrompt, userPrompt, true,
+                systemPrompt + "\n\n" + userPrompt);
 
         SoapReportDto dto = SoapReportDto.builder()
                 .appointmentId(appointment.getId())
@@ -593,59 +441,73 @@ public class AiClinicalService {
         }
 
         // Smart Fallbacks to guarantee NO null fields!
-        String effectiveComplaint = !chiefComplaint.isBlank() ? chiefComplaint
-                : (liveTranscript != null && !liveTranscript.isBlank() ? liveTranscript : "General consultation");
+        // Never invent clinical content. Fields the AI did not ground in the intake or transcript stay empty,
+        // so the doctor must write them (record readiness requires subjective, assessment, plan and diagnosis).
+        dto.setSubjective(groundedOrNull(dto.getSubjective()));
+        dto.setObjective(groundedOrNull(dto.getObjective()));
+        dto.setAssessment(groundedOrNull(dto.getAssessment()));
+        dto.setPlan(groundedOrNull(dto.getPlan()));
+        dto.setSymptoms(groundedOrNull(dto.getSymptoms()));
+        dto.setDiagnosis(groundedOrNull(dto.getDiagnosis()));
+        dto.setTreatment(groundedOrNull(dto.getTreatment()));
+        dto.setMedicine(groundedOrNull(dto.getMedicine()));
+        dto.setDoses(groundedOrNull(dto.getDoses()));
+        dto.setNotes(groundedOrNull(dto.getNotes()));
 
-        if (dto.getSubjective() == null || dto.getSubjective().isBlank()) {
-            dto.setSubjective("Patient reports " + effectiveComplaint + ". Duration: "
-                    + (!preVisitDuration.isBlank() ? preVisitDuration : "Noted during visit") + ".");
+        // Patient-reported facts may prefill the subjective section and symptoms
+        if (dto.getSubjective() == null && !chiefComplaint.isBlank()) {
+            dto.setSubjective("Patient reports: " + chiefComplaint
+                    + (!preVisitDuration.isBlank() ? ". Duration: " + preVisitDuration + "." : "."));
         }
-        if (dto.getSymptoms() == null || dto.getSymptoms().isBlank()) {
-            dto.setSymptoms(!preVisitSymptoms.isBlank() ? preVisitSymptoms : effectiveComplaint);
+        if (dto.getSymptoms() == null && !preVisitSymptoms.isBlank()) {
+            dto.setSymptoms(preVisitSymptoms);
         }
-        if (dto.getObjective() == null || dto.getObjective().isBlank()) {
-            dto.setObjective(
-                    "Vitals stable. BP: 120/80 mmHg, HR: 72 bpm, Temp: 98.6°F. Physical exam consistent with reported symptoms.");
-        }
-        if (dto.getAssessment() == null || dto.getAssessment().isBlank()) {
-            dto.setAssessment("Acute symptomatic presentation (" + effectiveComplaint
-                    + "). Rule out viral infection or acute tension headache.");
-        }
-        if (dto.getDiagnosis() == null || dto.getDiagnosis().isBlank()) {
-            dto.setDiagnosis(deriveProvisionalDiagnosis(effectiveComplaint));
-        }
-        if (dto.getTreatment() == null || dto.getTreatment().isBlank()) {
-            dto.setTreatment("Adequate hydration, proper rest, steam inhalation, and symptom monitoring.");
-        }
-        if (dto.getMedicine() == null || dto.getMedicine().isBlank()) {
-            dto.setMedicine("Paracetamol 500mg, Cetirizine 10mg");
-        }
-        if (dto.getDoses() == null || dto.getDoses().isBlank()) {
-            dto.setDoses(
-                    "Paracetamol 500mg (1 tab TDS after meals for 3 days), Cetirizine 10mg (1 tab OD at bedtime for 3 days)");
-        }
-        if (dto.getPlan() == null || dto.getPlan().isBlank()) {
-            dto.setPlan(
-                    "Complete medication course as prescribed. Return for follow-up if symptoms persist beyond 5 days or if high fever occurs.");
-        }
-        if (dto.getNotes() == null || dto.getNotes().isBlank()) {
-            dto.setNotes(
-                    "Generated via CareSync AI Clinical Assistant. Doctor review required prior to electronic signature.");
-        }
+
+        String reviewNote = jsonResponse == null || jsonResponse.isBlank()
+                ? "AI draft unavailable. Please complete the clinical sections manually."
+                : "AI-generated draft. Verify every section before signing; fields left empty were not documented.";
+        dto.setNotes(dto.getNotes() == null ? reviewNote : dto.getNotes() + "\n\n" + reviewNote);
 
         return dto;
     }
 
-    private String deriveProvisionalDiagnosis(String symptomsText) {
-        String lower = symptomsText.toLowerCase();
-        if (lower.contains("fever") || lower.contains("cold") || lower.contains("flu")) {
-            return "Acute Upper Respiratory Tract Infection / Viral Fever";
-        } else if (lower.contains("headache")) {
-            return "Tension Headache / Acute Cephalgia";
-        } else if (lower.contains("stomach") || lower.contains("pain") || lower.contains("vomit")) {
-            return "Acute Gastroenteritis / Dyspepsia";
+    /**
+     * Groq first; Gemini when Groq is not configured, fails or answers empty. Null when neither answers.
+     * Groq takes a system and a user prompt; Gemini takes one combined prompt.
+     */
+    private String askModel(String task, String groqSystemPrompt, String groqUserPrompt, boolean jsonMode,
+            String geminiPrompt) {
+        String answer = null;
+        if (groqClient != null && groqClient.isConfigured()) {
+            try {
+                answer = groqClient.callGroq(groqSystemPrompt, groqUserPrompt, jsonMode);
+            } catch (Exception e) {
+                log.warn("Groq {} failed: {}", task, e.getMessage());
+            }
         }
-        return "Acute Symptomatic Consultation";
+        if ((answer == null || answer.isBlank()) && geminiClient != null && geminiClient.isConfigured()) {
+            try {
+                answer = geminiClient.generateContent(geminiPrompt);
+            } catch (Exception e) {
+                log.warn("Gemini {} failed: {}", task, e.getMessage());
+            }
+        }
+        return answer;
+    }
+
+    /** Empty or placeholder answers ("Not recorded", "N/A") are treated as not documented. */
+    private static String groundedOrNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        String lower = trimmed.toLowerCase();
+        if (trimmed.isEmpty() || lower.equals("not recorded") || lower.equals("not documented")
+                || lower.equals("not stated") || lower.equals("not specified") || lower.equals("n/a")
+                || lower.equals("null")) {
+            return null;
+        }
+        return trimmed;
     }
 
     private String extractValueFromText(String text, String label) {

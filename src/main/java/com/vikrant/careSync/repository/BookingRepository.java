@@ -2,6 +2,7 @@ package com.vikrant.careSync.repository;
 
 import com.vikrant.careSync.entity.Booking;
 import com.vikrant.careSync.entity.Patient;
+import com.vikrant.careSync.repository.projection.BookingOwners;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -15,6 +16,10 @@ import java.util.Optional;
 
 @Repository
 public interface BookingRepository extends JpaRepository<Booking, Long> {
+
+    // Access-control lookups (AccessGuard): owner ids only
+    @Query("SELECT new com.vikrant.careSync.repository.projection.BookingOwners(p.id, d.id) FROM Booking b JOIN b.patient p LEFT JOIN b.doctor d WHERE b.id = :id")
+    Optional<BookingOwners> findOwnersById(@Param("id") Long id);
 
     @Query("SELECT DISTINCT b FROM Booking b LEFT JOIN FETCH b.patient p LEFT JOIN FETCH p.user LEFT JOIN FETCH b.selectedTests ORDER BY b.bookingDate DESC")
     List<Booking> findAllWithDetails();
@@ -35,9 +40,6 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
     @Query("SELECT COUNT(b) FROM Booking b WHERE b.patient.id = :patientId")
     Long countByPatientId(@Param("patientId") Long patientId);
-
-    @Query("SELECT b FROM Booking b JOIN FETCH b.selectedTests WHERE b.id = :bookingId")
-    Booking findByIdWithTests(@Param("bookingId") Long bookingId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT b FROM Booking b JOIN FETCH b.patient WHERE b.id = :bookingId")

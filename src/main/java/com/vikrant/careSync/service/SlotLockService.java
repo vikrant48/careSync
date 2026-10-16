@@ -32,7 +32,7 @@ public class SlotLockService {
      */
     public boolean acquireSlotLock(Long doctorId, LocalDateTime slotTime, Long patientId) {
         String key = buildLockKey(doctorId, slotTime);
-        String lockValue = "patient_" + patientId + "_" + System.currentTimeMillis();
+        String lockValue = lockOwnerPrefix(patientId) + System.currentTimeMillis();
 
         try {
             Boolean success = redisTemplate.opsForValue().setIfAbsent(
@@ -50,6 +50,48 @@ public class SlotLockService {
             log.warn("Redis unavailable for slot lock [{}]: {}. Falling back to in-memory guard.", key, e.getMessage());
             return acquireMemoryFallbackLock(key);
         }
+    }
+
+    /**
+     * The slots among slotTimes that are locked: one Redis MGET for all of them instead of one call per slot.
+     */
+    public java.util.Set<LocalDateTime> findLockedSlots(Long doctorId, java.util.Collection<LocalDateTime> slotTimes) {
+        java.util.List<LocalDateTime> slots = new java.util.ArrayList<>(slotTimes);
+        java.util.Set<LocalDateTime> locked = new java.util.HashSet<>();
+        if (slots.isEmpty()) {
+            return locked;
+        }
+        java.util.List<String> keys = slots.stream().map(slot -> buildLockKey(doctorId, slot)).toList();
+        try {
+            java.util.List<String> values = redisTemplate.opsForValue().multiGet(keys);
+            if (values != null) {
+                for (int i = 0; i < values.size() && i < slots.size(); i++) {
+                    if (values.get(i) != null) {
+                        locked.add(slots.get(i));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Redis check failed for {} slot locks: {}", keys.size(), e.getMessage());
+        }
+        for (int i = 0; i < slots.size(); i++) {
+            if (isMemoryLocked(keys.get(i))) {
+                locked.add(slots.get(i));
+            }
+        }
+        return locked;
+    }
+
+    private boolean isMemoryLocked(String key) {
+        LocalDateTime expireTime = memoryLockMap.get(key);
+        if (expireTime == null) {
+            return false;
+        }
+        if (LocalDateTime.now().isBefore(expireTime)) {
+            return true;
+        }
+        memoryLockMap.remove(key);
+        return false;
     }
 
     /**
@@ -90,6 +132,33 @@ public class SlotLockService {
             log.warn("Failed to delete Redis slot lock [{}]: {}", key, e.getMessage());
         }
         memoryLockMap.remove(key);
+    }
+
+    /**
+     * Releases a hold only if it belongs to this patient. Returns false when another patient holds it.
+     * The in-memory fallback does not record owners, so it is released as before when Redis is down.
+     */
+    public boolean releaseSlotLockIfOwner(Long doctorId, LocalDateTime slotTime, Long patientId) {
+        String key = buildLockKey(doctorId, slotTime);
+        try {
+            String holder = redisTemplate.opsForValue().get(key);
+            if (holder != null && !holder.startsWith(lockOwnerPrefix(patientId))) {
+                log.warn("Patient [{}] tried to release slot lock [{}] held by someone else", patientId, key);
+                return false;
+            }
+            if (holder != null) {
+                redisTemplate.delete(key);
+                log.info("Released slot lock key [{}]", key);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to release Redis slot lock [{}]: {}", key, e.getMessage());
+        }
+        memoryLockMap.remove(key);
+        return true;
+    }
+
+    private String lockOwnerPrefix(Long patientId) {
+        return "patient_" + patientId + "_";
     }
 
     private synchronized boolean acquireMemoryFallbackLock(String key) {

@@ -13,7 +13,7 @@ import java.math.*;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
+@Builder(toBuilder = true)
 public class DoctorDto {
     private Long id;
     private String username;
@@ -43,6 +43,8 @@ public class DoctorDto {
     private int completionPercentage;
     private LocalDateTime createdAt;
     private LocalDateTime lastLogin;
+    // Shown instead of the date of birth to anyone but the doctor and admins
+    private Integer age;
 
     public DoctorDto(Doctor doctor) {
         this(doctor, true);
@@ -94,5 +96,29 @@ public class DoctorDto {
                         .collect(Collectors.toList());
             }
         }
+    }
+
+    /**
+     * The profile as a viewer may see it. Admins and the doctor themselves get everything; everyone else gets
+     * an age instead of the date of birth and no last-login time; contact details only for logged-in patients.
+     * Returns a copy, so cached profiles are never changed.
+     */
+    public DoctorDto forViewer(boolean fullProfile, boolean showContact) {
+        DoctorDto view = toBuilder().age(ageFrom(dateOfBirth)).build();
+        if (fullProfile) {
+            return view;
+        }
+        view.setDateOfBirth(null);
+        view.setLastLogin(null);
+        if (!showContact) {
+            view.setEmail(null);
+            view.setContactInfo(null);
+            view.setAlternateContactInfo(null);
+        }
+        return view;
+    }
+
+    private static Integer ageFrom(LocalDate dateOfBirth) {
+        return dateOfBirth == null ? null : java.time.Period.between(dateOfBirth, LocalDate.now()).getYears();
     }
 }

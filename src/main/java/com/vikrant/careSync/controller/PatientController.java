@@ -1,5 +1,6 @@
 package com.vikrant.careSync.controller;
 
+import com.vikrant.careSync.exception.ClientErrorMessages;
 import com.vikrant.careSync.entity.Patient;
 import com.vikrant.careSync.entity.User;
 import com.vikrant.careSync.entity.MedicalHistory;
@@ -10,6 +11,7 @@ import com.vikrant.careSync.dto.CreateMedicalHistoryRequest;
 import com.vikrant.careSync.dto.PatientDto;
 import com.vikrant.careSync.dto.MedicalHistoryDto;
 import com.vikrant.careSync.dto.DocumentDto;
+import com.vikrant.careSync.security.access.AccessGuard;
 import com.vikrant.careSync.service.interfaces.IPatientService;
 import com.vikrant.careSync.service.interfaces.IMedicalHistoryService;
 import com.vikrant.careSync.service.DocumentService;
@@ -47,12 +49,16 @@ public class PatientController {
     private final IPatientService patientService;
     private final IMedicalHistoryService medicalHistoryService;
     private final DocumentService documentService;
+    private final com.vikrant.careSync.controller.support.DocumentUploads documentUploads;
     private final UserService userService;
     private final CacheManager cacheManager;
+    private final AccessGuard accessGuard;
+    private final com.vikrant.careSync.security.access.CurrentUserService currentUserService;
+    private final com.vikrant.careSync.service.PatientDataExportService patientDataExportService;
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Get paginated patients", description = "Retrieves a paginated list of registered patients with windowed Redis caching (Doctor/Admin only)")
     @GetMapping
-    @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<PatientDto>> getAllPatients(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
@@ -62,13 +68,24 @@ public class PatientController {
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Get total patient count", description = "Retrieves total count of registered patients with Redis caching")
     @GetMapping("/count")
-    @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Long> getPatientCount() {
         return ResponseEntity.ok(patientService.getPatientCount());
     }
 
+    /** The patient's own data as one JSON file (right of access). Recorded in the audit trail like any read. */
+    @GetMapping("/me/export")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<Map<String, Object>> exportMyData() {
+        Patient patient = currentUserService.requirePatient();
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"caresync-my-data-" + java.time.LocalDate.now() + ".json\"")
+                .body(patientDataExportService.export(patient));
+    }
+
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT')")
+    @PreAuthorize("@access.canAccessPatient(#id)")
     public ResponseEntity<PatientDto> getPatientById(@PathVariable Long id) {
         Optional<PatientDto> patient = patientService.getPatientById(id)
                 .map(PatientDto::new);
@@ -77,7 +94,7 @@ public class PatientController {
     }
 
     @GetMapping("/username/{username}")
-    @PreAuthorize("hasRole('DOCTOR') or hasRole('ADMIN') or #username == authentication.name")
+    @PreAuthorize("@access.canAccessPatientByUsername(#username)")
     public ResponseEntity<PatientDto> getPatientByUsername(@PathVariable String username) {
         Optional<PatientDto> patient = patientService.getPatientByUsername(username)
                 .map(PatientDto::new);
@@ -87,7 +104,7 @@ public class PatientController {
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Get patient profile", description = "Retrieves a patient's profile by username")
     @GetMapping("/profile/{username}")
-    @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR') or hasRole('ADMIN')")
+    @PreAuthorize("@access.canAccessPatientByUsername(#username)")
     public ResponseEntity<PatientDto> getPatientProfile(@PathVariable String username) {
         log.info("Fetching profile for username: {} by authenticated user", username);
         Authentication auth = SecurityContextHolder
@@ -103,7 +120,7 @@ public class PatientController {
     }
 
     @GetMapping("/{patientId}/complete-data")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN') and @access.canAccessPatient(#patientId)")
     public ResponseEntity<Map<String, Object>> getCompletePatientData(@PathVariable Long patientId) {
         try {
             Cache cache = cacheManager.getCache("PATIENT:COMPLETE_DATA");
@@ -158,17 +175,23 @@ public class PatientController {
                 log.info("Cache hit for complete patient data for id: {} in Redis.", patientId);
             }
 
-            return ResponseEntity.ok(completeData);
+            // Cached data holds stored paths; private files get fresh signed links per response
+            Map<String, Object> response = new HashMap<>(completeData);
+            Object documents = completeData.get("documents");
+            if (documents instanceof List<?> list) {
+                @SuppressWarnings("unchecked")
+                List<DocumentDto> documentDtos = (List<DocumentDto>) list;
+                response.put("documents", documentService.withFreshUrls(new java.util.ArrayList<>(documentDtos)));
+            }
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBodyObject(e));
         }
     }
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Update patient profile", description = "Updates basic profile information for a patient")
     @PutMapping("/{id}/profile")
-    @PreAuthorize("hasRole('PATIENT')")
+    @PreAuthorize("hasRole('PATIENT') and @access.isSelf(#id)")
     public ResponseEntity<PatientDto> updatePatientProfile(@PathVariable Long id,
             @RequestBody UpdatePatientRequest request) {
         log.info("Updating profile for patient id: {}", id);
@@ -194,14 +217,15 @@ public class PatientController {
     @GetMapping("/illness/{illnessKeyword}")
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<List<PatientDto>> getPatientsByIllness(@PathVariable String illnessKeyword) {
-        List<PatientDto> patients = patientService.getPatientsByIllness(illnessKeyword).stream()
+        List<PatientDto> patients = patientService.getPatientsByIllness(illnessKeyword, accessGuard.treatedPatientIds())
+                .stream()
                 .map(PatientDto::new)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(patients);
     }
 
     @PutMapping("/{id}/illness-details")
-    @PreAuthorize("hasRole('PATIENT')")
+    @PreAuthorize("hasRole('PATIENT') and @access.isSelf(#id)")
     public ResponseEntity<PatientDto> updateIllnessDetails(@PathVariable Long id, @RequestParam String illnessDetails) {
         try {
             Patient patient = patientService.getPatientById(id)
@@ -215,7 +239,7 @@ public class PatientController {
     }
 
     @PutMapping("/{id}/contact-info")
-    @PreAuthorize("hasRole('PATIENT')")
+    @PreAuthorize("hasRole('PATIENT') and @access.isSelf(#id)")
     public ResponseEntity<PatientDto> updateContactInfo(@PathVariable Long id, @RequestParam String contactInfo) {
         try {
             Patient patient = patientService.getPatientById(id)
@@ -229,7 +253,7 @@ public class PatientController {
     }
 
     @PutMapping("/{id}/profile-image")
-    @PreAuthorize("hasRole('PATIENT')")
+    @PreAuthorize("hasRole('PATIENT') and @access.isSelf(#id)")
     public ResponseEntity<PatientDto> updateProfileImage(@PathVariable Long id, @RequestParam String imageUrl) {
         try {
             Patient patient = patientService.updateProfileImage(id, imageUrl);
@@ -240,7 +264,7 @@ public class PatientController {
     }
 
     @PutMapping("/profile/{username}/image")
-    @PreAuthorize("hasRole('PATIENT')")
+    @PreAuthorize("hasRole('PATIENT') and @access.isSelfUsername(#username)")
     public ResponseEntity<PatientDto> updateProfileImageByUsername(@PathVariable String username,
             @RequestParam String imageUrl) {
         try {
@@ -253,7 +277,7 @@ public class PatientController {
 
     // Medical History Management
     @PostMapping("/{patientId}/medical-history")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.canAccessPatient(#patientId)")
     public ResponseEntity<MedicalHistoryDto> addMedicalHistory(@PathVariable Long patientId,
             @RequestBody CreateMedicalHistoryRequest request) {
         try {
@@ -274,7 +298,7 @@ public class PatientController {
     }
 
     @GetMapping("/{patientId}/medical-history")
-    @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT')")
+    @PreAuthorize("@access.canAccessPatient(#patientId)")
     public ResponseEntity<List<MedicalHistoryDto>> getPatientMedicalHistory(@PathVariable Long patientId) {
         List<MedicalHistoryDto> medicalHistories = medicalHistoryService.getMedicalHistoryByPatient(patientId).stream()
                 .map(MedicalHistoryDto::new)
@@ -283,7 +307,7 @@ public class PatientController {
     }
 
     @GetMapping("/{patientId}/medical-history/date-range")
-    @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT')")
+    @PreAuthorize("@access.canAccessPatient(#patientId)")
     public ResponseEntity<List<MedicalHistoryDto>> getMedicalHistoryByDateRange(
             @PathVariable Long patientId,
             @RequestParam String startDate,
@@ -302,7 +326,7 @@ public class PatientController {
     }
 
     @PutMapping("/medical-history/{historyId}")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.canAccessMedicalHistory(#historyId)")
     public ResponseEntity<MedicalHistoryDto> updateMedicalHistory(@PathVariable Long historyId,
             @RequestBody CreateMedicalHistoryRequest request) {
         try {
@@ -323,7 +347,7 @@ public class PatientController {
     }
 
     @DeleteMapping("/medical-history/{historyId}")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.canAccessMedicalHistory(#historyId)")
     public ResponseEntity<?> deleteMedicalHistory(@PathVariable Long historyId) {
         try {
             medicalHistoryService.deleteMedicalHistory(historyId);
@@ -339,189 +363,134 @@ public class PatientController {
      * Upload profile image for patient
      */
     @PostMapping("/{patientId}/upload/profile-image")
-    @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('PATIENT') and @access.isSelf(#patientId)")
     public ResponseEntity<?> uploadProfileImage(
             @PathVariable Long patientId,
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "description", required = false) String description,
             Authentication authentication) {
-        try {
-            UserDto userDto = userService.getUserByUsername(authentication.getName());
-            String username = authentication.getName();
-            String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
+        return documentUploads.handle(authentication, "profile image", "Invalid file",
+                (username, userType) -> {
+                    Document document = documentService.uploadDocumentForPatient(
+                            file, patientId, Document.DocumentType.PROFILE_IMAGE, description, username, userType);
 
-            Document document = documentService.uploadDocumentForPatient(
-                    file, patientId, Document.DocumentType.PROFILE_IMAGE, description, username, userType);
-
-            Map<String, Object> response = createDocumentResponse(document);
-            return ResponseEntity.ok(response);
-        } catch (IOException e) {
-            return ResponseEntity.badRequest().body("Failed to upload profile image: " + e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body("Invalid file: " + e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
-        }
+                    Map<String, Object> response = createDocumentResponse(document);
+                    return response;
+                });
     }
 
     /**
      * Upload medical document for patient
      */
     @PostMapping("/{patientId}/upload/medical-document")
-    @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR')")
+    @PreAuthorize("hasAnyRole('PATIENT', 'DOCTOR') and @access.canAccessPatient(#patientId)")
     public ResponseEntity<?> uploadMedicalDocument(
             @PathVariable Long patientId,
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "documentType", defaultValue = "MEDICAL_DOCUMENT") String documentType,
             @RequestParam(value = "description", required = false) String description,
             Authentication authentication) {
-        try {
-            UserDto userDto = userService.getUserByUsername(authentication.getName());
-            String username = authentication.getName();
-            String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
+        return documentUploads.handle(authentication, "medical document", "Invalid file or document type",
+                (username, userType) -> {
+                    Document.DocumentType type = Document.DocumentType.valueOf(documentType.toUpperCase());
+                    Document document = documentService.uploadDocumentForPatient(
+                            file, patientId, type, description, username, userType);
 
-            Document.DocumentType type = Document.DocumentType.valueOf(documentType.toUpperCase());
-            Document document = documentService.uploadDocumentForPatient(
-                    file, patientId, type, description, username, userType);
-
-            Map<String, Object> response = createDocumentResponse(document);
-            response.put("documentType", document.getDocumentType());
-            return ResponseEntity.ok(response);
-        } catch (IOException e) {
-            return ResponseEntity.badRequest().body("Failed to upload medical document: " + e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body("Invalid file or document type: " + e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
-        }
+                    Map<String, Object> response = createDocumentResponse(document);
+                    response.put("documentType", document.getDocumentType());
+                    return response;
+                });
     }
 
     /**
      * Upload prescription for patient
      */
     @PostMapping("/{patientId}/upload/prescription")
-    @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR')")
+    @PreAuthorize("hasAnyRole('PATIENT', 'DOCTOR') and @access.canAccessPatient(#patientId)")
     public ResponseEntity<?> uploadPrescription(
             @PathVariable Long patientId,
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "description", required = false) String description,
             Authentication authentication) {
-        try {
-            UserDto userDto = userService.getUserByUsername(authentication.getName());
-            String username = authentication.getName();
-            String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
+        return documentUploads.handle(authentication, "prescription", "Invalid file",
+                (username, userType) -> {
+                    Document document = documentService.uploadDocumentForPatient(
+                            file, patientId, Document.DocumentType.PRESCRIPTION, description, username, userType);
 
-            Document document = documentService.uploadDocumentForPatient(
-                    file, patientId, Document.DocumentType.PRESCRIPTION, description, username, userType);
-
-            Map<String, Object> response = createDocumentResponse(document);
-            return ResponseEntity.ok(response);
-        } catch (IOException e) {
-            return ResponseEntity.badRequest().body("Failed to upload prescription: " + e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body("Invalid file: " + e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
-        }
+                    Map<String, Object> response = createDocumentResponse(document);
+                    return response;
+                });
     }
 
     /**
      * Upload lab report for patient
      */
     @PostMapping("/{patientId}/upload/lab-report")
-    @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR')")
+    @PreAuthorize("hasAnyRole('PATIENT', 'DOCTOR') and @access.canAccessPatient(#patientId)")
     public ResponseEntity<?> uploadLabReport(
             @PathVariable Long patientId,
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "description", required = false) String description,
             Authentication authentication) {
-        try {
-            UserDto userDto = userService.getUserByUsername(authentication.getName());
-            String username = authentication.getName();
-            String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
+        return documentUploads.handle(authentication, "lab report", "Invalid file",
+                (username, userType) -> {
+                    Document document = documentService.uploadDocumentForPatient(
+                            file, patientId, Document.DocumentType.LAB_REPORT, description, username, userType);
 
-            Document document = documentService.uploadDocumentForPatient(
-                    file, patientId, Document.DocumentType.LAB_REPORT, description, username, userType);
-
-            Map<String, Object> response = createDocumentResponse(document);
-            return ResponseEntity.ok(response);
-        } catch (IOException e) {
-            return ResponseEntity.badRequest().body("Failed to upload lab report: " + e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body("Invalid file: " + e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
-        }
+                    Map<String, Object> response = createDocumentResponse(document);
+                    return response;
+                });
     }
 
     /**
      * Upload insurance document for patient
      */
     @PostMapping("/{patientId}/upload/insurance")
-    @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR')")
+    @PreAuthorize("hasAnyRole('PATIENT', 'DOCTOR') and @access.canAccessPatient(#patientId)")
     public ResponseEntity<?> uploadInsuranceDocument(
             @PathVariable Long patientId,
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "description", required = false) String description,
             Authentication authentication) {
-        try {
-            UserDto userDto = userService.getUserByUsername(authentication.getName());
-            String username = authentication.getName();
-            String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
+        return documentUploads.handle(authentication, "insurance document", "Invalid file",
+                (username, userType) -> {
+                    Document document = documentService.uploadDocumentForPatient(
+                            file, patientId, Document.DocumentType.INSURANCE_DOCUMENT, description, username, userType);
 
-            Document document = documentService.uploadDocumentForPatient(
-                    file, patientId, Document.DocumentType.INSURANCE_DOCUMENT, description, username, userType);
-
-            Map<String, Object> response = createDocumentResponse(document);
-            return ResponseEntity.ok(response);
-        } catch (IOException e) {
-            return ResponseEntity.badRequest().body("Failed to upload insurance document: " + e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body("Invalid file: " + e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
-        }
+                    Map<String, Object> response = createDocumentResponse(document);
+                    return response;
+                });
     }
 
     /**
      * Upload identification document for patient
      */
     @PostMapping("/{patientId}/upload/identification")
-    @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR')")
+    @PreAuthorize("hasAnyRole('PATIENT', 'DOCTOR') and @access.canAccessPatient(#patientId)")
     public ResponseEntity<?> uploadIdentificationDocument(
             @PathVariable Long patientId,
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "description", required = false) String description,
             Authentication authentication) {
-        try {
-            UserDto userDto = userService.getUserByUsername(authentication.getName());
-            String username = authentication.getName();
-            String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
+        return documentUploads.handle(authentication, "identification document", "Invalid file",
+                (username, userType) -> {
+                    Document document = documentService.uploadDocumentForPatient(
+                            file, patientId, Document.DocumentType.IDENTIFICATION, description, username, userType);
 
-            Document document = documentService.uploadDocumentForPatient(
-                    file, patientId, Document.DocumentType.IDENTIFICATION, description, username, userType);
-
-            Map<String, Object> response = createDocumentResponse(document);
-            return ResponseEntity.ok(response);
-        } catch (IOException e) {
-            return ResponseEntity.badRequest().body("Failed to upload identification document: " + e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body("Invalid file: " + e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
-        }
+                    Map<String, Object> response = createDocumentResponse(document);
+                    return response;
+                });
     }
 
     /**
      * Get all documents for a patient
      */
     @GetMapping("/{patientId}/documents")
-    @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR')")
+    @PreAuthorize("@access.canAccessPatient(#patientId)")
     public ResponseEntity<List<DocumentDto>> getPatientDocuments(@PathVariable Long patientId) {
         try {
             List<DocumentDto> documents = documentService.getDocumentsByPatientId(patientId).stream()
-                    .map(doc -> new DocumentDto(doc, documentService.getFileUrl(doc.getId()),
-                            documentService.getDownloadUrl(doc.getId())))
+                    .map(doc -> documentService.toDto(doc))
                     .collect(Collectors.toList());
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
@@ -533,15 +502,14 @@ public class PatientController {
      * Get documents by type for a patient
      */
     @GetMapping("/{patientId}/documents/type/{documentType}")
-    @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR')")
+    @PreAuthorize("@access.canAccessPatient(#patientId)")
     public ResponseEntity<List<DocumentDto>> getPatientDocumentsByType(
             @PathVariable Long patientId,
             @PathVariable String documentType) {
         try {
             Document.DocumentType type = Document.DocumentType.valueOf(documentType.toUpperCase());
             List<DocumentDto> documents = documentService.getDocumentsByPatientIdAndType(patientId, type).stream()
-                    .map(doc -> new DocumentDto(doc, documentService.getFileUrl(doc.getId()),
-                            documentService.getDownloadUrl(doc.getId())))
+                    .map(doc -> documentService.toDto(doc))
                     .collect(Collectors.toList());
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
@@ -553,13 +521,12 @@ public class PatientController {
      * Get patient profile image
      */
     @GetMapping("/{patientId}/profile-image")
-    @PreAuthorize("hasRole('PATIENT') or hasRole('DOCTOR')")
+    @PreAuthorize("@access.canAccessPatient(#patientId)")
     public ResponseEntity<List<DocumentDto>> getPatientProfileImage(@PathVariable Long patientId) {
         try {
             List<DocumentDto> documents = documentService.getDocumentsByPatientIdAndType(
                     patientId, Document.DocumentType.PROFILE_IMAGE).stream()
-                    .map(doc -> new DocumentDto(doc, documentService.getFileUrl(doc.getId()),
-                            documentService.getDownloadUrl(doc.getId())))
+                    .map(doc -> documentService.toDto(doc))
                     .collect(Collectors.toList());
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
@@ -574,9 +541,9 @@ public class PatientController {
         Map<String, Object> response = new HashMap<>();
         response.put("id", document.getId());
         response.put("filename", document.getOriginalFilename());
-        response.put("url", document.getFilePath());
-        response.put("downloadUrl", document.getFilePath());
-        response.put("fileUrl", document.getFilePath()); // Direct Supabase URL
+        response.put("url", documentService.viewUrl(document));
+        response.put("downloadUrl", documentService.downloadUrl(document));
+        response.put("fileUrl", documentService.viewUrl(document)); // Signed link for private files
         response.put("size", document.getFileSize());
         response.put("uploadDate", document.getUploadDate());
         response.put("description", document.getDescription());

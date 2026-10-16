@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class AppointmentDeactivationTask {
 
     private final AppointmentRepository appointmentRepository;
+    private final com.vikrant.careSync.scheduler.ClusterJobLock clusterJobLock;
     private final AtomicBoolean cleanupRunning = new AtomicBoolean(false);
 
     /**
@@ -26,6 +27,9 @@ public class AppointmentDeactivationTask {
     @Scheduled(cron = "0 0 0 * * *")
     @Transactional
     public void deactivateExpiredAppointments() {
+        if (!clusterJobLock.tryAcquire("appointment-deactivation")) {
+            return;
+        }
         if (!cleanupRunning.compareAndSet(false, true)) {
             log.warn("Skipping stale appointment cleanup because a previous run is still active");
             return;

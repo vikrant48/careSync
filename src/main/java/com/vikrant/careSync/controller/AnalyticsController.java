@@ -1,5 +1,6 @@
 package com.vikrant.careSync.controller;
 
+import com.vikrant.careSync.exception.ClientErrorMessages;
 import com.vikrant.careSync.service.AnalyticsService;
 import com.vikrant.careSync.dto.OverallAnalyticsDto;
 import com.vikrant.careSync.dto.PatientFinancialStatsDto;
@@ -39,7 +40,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/doctor/{doctorId}/peak-hours")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelf(#doctorId)")
     public ResponseEntity<Map<String, Object>> getPeakHoursAnalysis(
             @PathVariable Long doctorId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
@@ -53,7 +54,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/doctor/{doctorId}/day-of-week")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelf(#doctorId)")
     public ResponseEntity<Map<String, Object>> getDayOfWeekAnalysis(
             @PathVariable Long doctorId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
@@ -67,7 +68,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/doctor/{doctorId}/patient-retention")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelf(#doctorId)")
     public ResponseEntity<Map<String, Object>> getPatientRetentionAnalysis(@PathVariable Long doctorId) {
         try {
             Map<String, Object> analysis = analyticsService.getPatientRetentionAnalysis(doctorId);
@@ -78,7 +79,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/doctor/{doctorId}/appointment-duration")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelf(#doctorId)")
     public ResponseEntity<Map<String, Object>> getAppointmentDurationAnalysis(
             @PathVariable Long doctorId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
@@ -93,7 +94,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/doctor/{doctorId}/feedback-sentiment")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelf(#doctorId)")
     public ResponseEntity<Map<String, Object>> getFeedbackSentimentAnalysis(@PathVariable Long doctorId) {
         try {
             Map<String, Object> analysis = analyticsService.getFeedbackSentimentAnalysis(doctorId);
@@ -104,7 +105,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/doctor/{doctorId}/seasonal-trends")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelf(#doctorId)")
     public ResponseEntity<Map<String, Object>> getSeasonalTrendsAnalysis(
             @PathVariable Long doctorId,
             @RequestParam int year) {
@@ -117,7 +118,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/doctor/{doctorId}/patient-demographics")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelf(#doctorId)")
     public ResponseEntity<Map<String, Object>> getPatientDemographicsAnalysis(@PathVariable Long doctorId) {
         try {
             Map<String, Object> analysis = analyticsService.getPatientDemographicsAnalysis(doctorId);
@@ -128,7 +129,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/doctor/{doctorId}/cancellation-patterns")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelf(#doctorId)")
     public ResponseEntity<Map<String, Object>> getCancellationPatternAnalysis(
             @PathVariable Long doctorId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
@@ -143,7 +144,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/patient/{patientId}/financial")
-    @PreAuthorize("hasRole('PATIENT')")
+    @PreAuthorize("hasRole('PATIENT') and @access.isSelf(#patientId)")
     public ResponseEntity<?> getPatientFinancialStats(@PathVariable Long patientId) {
         try {
             PatientFinancialStatsDto analysis = analyticsService.getPatientFinancialStats(patientId);
@@ -151,7 +152,7 @@ public class AnalyticsController {
         } catch (Exception e) {
             log.error("Error in getPatientFinancialStats for patient {}: {}", patientId, e.getMessage(), e);
             java.util.Map<String, String> error = new java.util.HashMap<>();
-            error.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
+            error.put("error", ClientErrorMessages.of(e));
             return ResponseEntity.badRequest().body(error);
         }
     }

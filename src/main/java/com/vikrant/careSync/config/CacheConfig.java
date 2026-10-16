@@ -15,7 +15,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
+import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
+import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +31,27 @@ public class CacheConfig implements CachingConfigurer {
 
         private static final Logger log = LoggerFactory.getLogger(CacheConfig.class);
 
+        // Only our own types and plain JDK / Spring Data value types may be named in cached JSON. The previous
+        // "allow anything" validator let a value written to Redis instantiate arbitrary classes on read.
+        static final PolymorphicTypeValidator CACHE_TYPES = BasicPolymorphicTypeValidator.builder()
+                        .allowIfSubType("com.vikrant.careSync.")
+                        .allowIfSubType("java.util.")
+                        .allowIfSubType("java.time.")
+                        .allowIfSubType("java.math.")
+                        .allowIfSubType("java.lang.")
+                        .allowIfSubType("org.springframework.data.domain.")
+                        .allowIfSubType("org.hibernate.collection.")
+                        .build();
+
+        @Value("${app.security.encryption-key}")
+        private String encryptionKey;
+
+        @Value("${spring.data.redis.host:localhost}")
+        private String redisHost;
+
+        @Value("${spring.data.redis.ssl.enabled:false}")
+        private boolean redisSsl;
+
         @Bean
         public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory) {
                 ObjectMapper mapper = new ObjectMapper();
@@ -37,14 +60,15 @@ public class CacheConfig implements CachingConfigurer {
                 mapper.disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
                 mapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,
                                 false);
-                mapper.activateDefaultTyping(LaissezFaireSubTypeValidator.instance,
+                mapper.activateDefaultTyping(CACHE_TYPES,
                                 ObjectMapper.DefaultTyping.NON_FINAL,
                                 JsonTypeInfo.As.PROPERTY);
 
                 RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
                                 .entryTtl(Duration.ofMinutes(10))
                                 .serializeValuesWith(RedisSerializationContext.SerializationPair
-                                                .fromSerializer(new GenericJackson2JsonRedisSerializer(mapper)))
+                                                .fromSerializer(new EncryptingRedisSerializer(
+                                                                new GenericJackson2JsonRedisSerializer(mapper), encryptionKey)))
                                 .disableCachingNullValues();
 
                 RedisCacheManager manager = RedisCacheManager.builder(connectionFactory)
@@ -71,6 +95,12 @@ public class CacheConfig implements CachingConfigurer {
                                 .withCacheConfiguration("ANALYTICS:RATINGS", config.entryTtl(Duration.ofMinutes(15)))
                                 .build();
 
+                if (!redisSsl && !isLocalHost(redisHost)) {
+                        log.warn("[ServiceStatus] - Redis Cache     : TLS is OFF for a remote Redis host. Cached values "
+                                        + "are encrypted, but the Redis password and keys travel in clear text. "
+                                        + "Set REDIS_SSL=true if your Redis provider supports TLS.");
+                }
+
                 try {
                         connectionFactory.getConnection().ping();
                         log.info("[ServiceStatus] - Redis Cache     : CONNECTED ");
@@ -80,6 +110,11 @@ public class CacheConfig implements CachingConfigurer {
                 }
 
                 return manager;
+        }
+
+        private static boolean isLocalHost(String host) {
+                return host == null || host.isBlank() || host.equals("localhost") || host.equals("127.0.0.1")
+                                || host.equals("::1") || host.equals("redis");
         }
 
         @Override

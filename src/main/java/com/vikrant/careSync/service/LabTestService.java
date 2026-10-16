@@ -89,10 +89,6 @@ public class LabTestService {
         return labTestRepository.calculateTotalPriceByIds(testIds);
     }
 
-    public List<LabTest> getLabTestsByIds(List<Long> testIds) {
-        return labTestRepository.findAllById(testIds);
-    }
-
     public List<LabTestDto> searchLabTestsByName(String name) {
         return labTestRepository.findByTestNameContainingIgnoreCaseAndIsActiveTrue(name)
                 .stream()

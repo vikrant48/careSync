@@ -56,4 +56,16 @@ public interface DoctorRepository extends JpaRepository<Doctor, Long>, DoctorRep
 
     @Override
     void deleteById(Long id);
+
+    // ---- AI booking: bookable doctors of a specialization, filtered in SQL ----
+    @Query("SELECT DISTINCT d FROM Doctor d LEFT JOIN FETCH d.user WHERE d.isActive = true "
+            + "AND LOWER(d.specialization) = LOWER(:specialization)")
+    java.util.List<Doctor> findBookableBySpecialization(@org.springframework.data.repository.query.Param("specialization") String specialization);
+
+    @Query("SELECT DISTINCT d.specialization FROM Doctor d WHERE d.specialization IS NOT NULL")
+    java.util.List<String> findDistinctSpecializations();
+
+    /** [id, specialization, isActive] for every doctor (reports). */
+    @Query("SELECT d.id, d.specialization, d.isActive FROM Doctor d")
+    java.util.List<Object[]> findSpecializationRows();
 }

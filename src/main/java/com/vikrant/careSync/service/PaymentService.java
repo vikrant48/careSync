@@ -2,9 +2,11 @@ package com.vikrant.careSync.service;
 
 import com.vikrant.careSync.dto.PaymentRequestDto;
 import com.vikrant.careSync.dto.PaymentResponseDto;
+import com.vikrant.careSync.entity.Appointment;
 import com.vikrant.careSync.entity.Booking;
 import com.vikrant.careSync.entity.Payment;
 import com.vikrant.careSync.entity.Patient;
+import com.vikrant.careSync.repository.AppointmentRepository;
 import com.vikrant.careSync.repository.BookingRepository;
 import com.vikrant.careSync.repository.PaymentRepository;
 import com.vikrant.careSync.repository.PatientRepository;
@@ -16,13 +18,16 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -34,78 +39,52 @@ public class PaymentService {
     private final PatientRepository patientRepository;
     private final BookingRepository bookingRepository;
     private final RazorpayService razorpayService;
+    private final AppointmentRepository appointmentRepository;
+    private final PaymentPreferenceService paymentPreferenceService;
+    private final AfterCommitTaskDispatcher afterCommitTaskDispatcher;
     private final Semaphore paymentGatewaySemaphore = new Semaphore(10, true);
 
-    @Value("${app.payment.transaction-timeout-minutes:30}")
-    private int transactionTimeoutMinutes;
+    static final String DEMO_GATEWAY_NOTE = "DEMO MODE: no payment gateway was charged and no money was collected";
+
+    private static final Pattern UPI_ID = Pattern.compile("^[a-zA-Z0-9._%+-]{2,256}@[a-zA-Z0-9.-]{2,64}$");
+    private static final Pattern CARD_NUMBER = Pattern.compile("^[0-9]{13,19}$");
+
+    // Visits that were cancelled, rejected or closed without taking place cannot be paid for
+    private static final EnumSet<Appointment.Status> UNPAYABLE_APPOINTMENT_STATUSES = EnumSet.of(
+            Appointment.Status.CANCELLED, Appointment.Status.CANCELLED_BY_PATIENT,
+            Appointment.Status.CANCELLED_BY_DOCTOR, Appointment.Status.REJECTED, Appointment.Status.NO_SHOW,
+            Appointment.Status.NO_SHOW_PATIENT, Appointment.Status.NO_SHOW_DOCTOR, Appointment.Status.AUTO_CLOSED);
+
+    @Value("${app.payment.demo-mode:true}")
+    private boolean demoMode;
+
+    @Value("${app.payment.currency:INR}")
+    private String paymentCurrency;
+
+    public boolean isDemoMode() {
+        return demoMode;
+    }
 
     /**
      * Pay for an existing doctor-created booking
      */
     public PaymentResponseDto payForBooking(Long bookingId, PaymentRequestDto paymentRequest) {
         log.info("Processing payment for booking ID: {}", bookingId);
+        // This endpoint pays for the booking in the path only. initiatePayment runs every check (demo mode,
+        // payment details, patient owns the booking, PENDING status, exact amount, no active payment) and
+        // locks the booking row for this transaction.
+        paymentRequest.setBookingId(bookingId);
+        paymentRequest.setAppointmentId(null);
+        PaymentResponseDto response = initiatePayment(paymentRequest);
 
-        // Validate booking exists and is in PENDING status
         Booking booking = bookingRepository.findByIdForUpdate(bookingId)
                 .orElseThrow(() -> new RuntimeException("Booking not found with ID: " + bookingId));
+        booking.setStatus(Booking.BookingStatus.COMPLETED);
+        bookingRepository.save(booking);
 
-        if (booking.getStatus() != Booking.BookingStatus.PENDING) {
-            throw new RuntimeException("Booking is not in PENDING status. Current status: " + booking.getStatus());
-        }
-
-        if (hasActivePaymentForBooking(bookingId)) {
-            throw new RuntimeException("An active payment already exists for this booking");
-        }
-
-        // Validate patient exists
-        Patient patient = patientRepository.findById(paymentRequest.getPatientId())
-                .orElseThrow(() -> new RuntimeException("Patient not found with ID: " + paymentRequest.getPatientId()));
-
-        // Validate that the patient is the same as the booking's patient
-        if (!booking.getPatient().getId().equals(patient.getId())) {
-            throw new RuntimeException("Patient ID does not match the booking's patient");
-        }
-
-        // Validate payment amount matches booking total
-        if (paymentRequest.getAmount().compareTo(booking.getTotalPrice()) != 0) {
-            throw new RuntimeException("Payment amount does not match booking total");
-        }
-
-        // Create payment record directly for this booking (avoid duplicate creation)
-        Payment payment = createPaymentRecord(paymentRequest, patient, booking);
-
-        try {
-            // Process payment based on method
-            PaymentResponseDto response = new PaymentResponseDto(payment);
-
-            response = processPaymentThroughGateway(payment, paymentRequest);
-
-            // For demo purposes, mark payment as successful immediately
-            // In production, this would be handled by webhook callbacks
-            payment.setPaymentStatus(Payment.PaymentStatus.SUCCESS);
-            payment.setPaymentCompletedAt(LocalDateTime.now());
-            paymentRepository.save(payment);
-
-            // Update booking status to COMPLETED
-            booking.setStatus(Booking.BookingStatus.COMPLETED);
-            bookingRepository.save(booking);
-
-            // Update response to reflect successful status
-            response.setPaymentStatus(Payment.PaymentStatus.SUCCESS);
-            response.setPaymentCompletedAt(LocalDateTime.now());
-
-            log.info("Successfully processed payment for booking ID: {}, transaction ID: {}",
-                    bookingId, payment.getTransactionId());
-
-            return response;
-
-        } catch (Exception e) {
-            log.error("Payment failed for booking ID: {}", bookingId, e);
-            payment.setPaymentStatus(Payment.PaymentStatus.FAILED);
-            payment.setFailureReason(e.getMessage());
-            paymentRepository.save(payment);
-            throw new RuntimeException("Payment failed: " + e.getMessage());
-        }
+        log.info("Successfully processed payment for booking ID: {}, transaction ID: {}",
+                bookingId, response.getTransactionId());
+        return response;
     }
 
     /**
@@ -113,41 +92,24 @@ public class PaymentService {
      */
     public PaymentResponseDto initiatePayment(PaymentRequestDto request) {
         log.info("Initiating payment for patient ID: {}, amount: {}", request.getPatientId(), request.getAmount());
+        requireDemoMode();
+        validatePaymentDetails(request);
+        requireCurrency(request);
 
         // Validate patient exists
         Patient patient = patientRepository.findById(request.getPatientId())
                 .orElseThrow(() -> new RuntimeException("Patient not found with ID: " + request.getPatientId()));
 
-        // Validate booking if provided
-        Booking booking = null;
-        Long reqBookingId = request.getBookingId();
-        if (reqBookingId != null) {
-            booking = bookingRepository.findById(reqBookingId)
-                    .orElseThrow(() -> new RuntimeException("Booking not found with ID: " + reqBookingId));
-            if (hasActivePaymentForBooking(reqBookingId)) {
-                throw new RuntimeException("An active payment already exists for this booking");
-            }
-        }
+        // The amount must be the server's price for this patient's own appointment or booking
+        Booking booking = validatePaymentTarget(request, patient);
 
         // Create payment record
         Payment payment = createPaymentRecord(request, patient, booking);
         // Payment is already saved in createPaymentRecord method
 
-        // Process payment based on method
-        PaymentResponseDto response = new PaymentResponseDto(payment);
-
+        PaymentResponseDto response;
         try {
-            response = processPaymentThroughGateway(payment, request);
-
-            // For demo purposes, mark payment as successful immediately
-            // In production, this would be handled by webhook callbacks
-            payment.setPaymentStatus(Payment.PaymentStatus.SUCCESS);
-            payment.setPaymentCompletedAt(LocalDateTime.now());
-            paymentRepository.save(payment);
-
-            // Update response to reflect successful status
-            response.setPaymentStatus(Payment.PaymentStatus.SUCCESS);
-            response.setPaymentCompletedAt(LocalDateTime.now());
+            response = chargeInDemoMode(payment, request);
 
             log.info("Payment initiated successfully. Transaction ID: {}", payment.getTransactionId());
 
@@ -163,61 +125,6 @@ public class PaymentService {
     }
 
     /**
-     * Generic payment method for any payment type
-     */
-    public PaymentResponseDto processGenericPayment(PaymentRequestDto request) {
-        log.info("Processing generic payment for patient ID: {}, type: {}, amount: {}",
-                request.getPatientId(), request.getPaymentType(), request.getAmount());
-
-        // Validate patient exists
-        Patient patient = patientRepository.findById(request.getPatientId())
-                .orElseThrow(() -> new RuntimeException("Patient not found with ID: " + request.getPatientId()));
-
-        // Validate booking if provided
-        Booking booking = null;
-        Long genericBookingId = request.getBookingId();
-        if (genericBookingId != null) {
-            booking = bookingRepository.findById(genericBookingId)
-                    .orElseThrow(() -> new RuntimeException("Booking not found with ID: " + genericBookingId));
-            if (hasActivePaymentForBooking(genericBookingId)) {
-                throw new RuntimeException("An active payment already exists for this booking");
-            }
-        }
-
-        // Create payment record
-        Payment payment = createPaymentRecord(request, patient, booking);
-
-        // Process payment based on method
-        PaymentResponseDto response = new PaymentResponseDto(payment);
-
-        try {
-            response = processPaymentThroughGateway(payment, request);
-
-            // For demo purposes, mark payment as successful immediately
-            // In production, this would be handled by webhook callbacks
-            payment.setPaymentStatus(Payment.PaymentStatus.SUCCESS);
-            payment.setPaymentCompletedAt(LocalDateTime.now());
-            paymentRepository.save(payment);
-
-            // Update response to reflect successful status
-            response.setPaymentStatus(Payment.PaymentStatus.SUCCESS);
-            response.setPaymentCompletedAt(LocalDateTime.now());
-
-            log.info("Generic payment processed successfully. Transaction ID: {}, Type: {}",
-                    payment.getTransactionId(), payment.getPaymentType());
-
-        } catch (Exception e) {
-            log.error("Generic payment processing failed for transaction: {}", payment.getTransactionId(), e);
-            payment.setPaymentStatus(Payment.PaymentStatus.FAILED);
-            payment.setFailureReason(e.getMessage());
-            paymentRepository.save(payment);
-            throw new RuntimeException("Payment processing failed: " + e.getMessage());
-        }
-
-        return response;
-    }
-
-    /**
      * Process UPI payment
      */
     private PaymentResponseDto processUpiPayment(Payment payment, PaymentRequestDto request) {
@@ -226,7 +133,7 @@ public class PaymentService {
                 payment.getTransactionId());
 
         payment.setPaymentGatewayTransactionId(razorpayOrderId);
-        payment.setUpiId(request.getUpiId());
+        payment.setUpiId(request.getUpiId().trim());
         payment.setPaymentStatus(Payment.PaymentStatus.PENDING);
         // Don't save here - will be saved in the calling method
 
@@ -362,12 +269,32 @@ public class PaymentService {
      */
     @Transactional(readOnly = true)
     public PaymentResponseDto getPaymentByBookingId(Long bookingId) {
-        List<Payment> payments = paymentRepository.findByBookingIdOrAppointmentId(bookingId);
+        return getPaymentFor(bookingId, null);
+    }
+
+    /**
+     * Booking and appointment ids are separate sequences, so "id 5" can mean either. type BOOKING or APPOINTMENT
+     * looks in one place only; without a type, bookings are checked first (old callers), never an OR of both.
+     */
+    @Transactional(readOnly = true)
+    public PaymentResponseDto getPaymentFor(Long id, String type) {
+        List<Payment> payments = new java.util.ArrayList<>();
+        if (type == null || "BOOKING".equalsIgnoreCase(type)) {
+            payments = paymentRepository.findByBookingId(id);
+        }
+        if (payments.isEmpty() && (type == null || "APPOINTMENT".equalsIgnoreCase(type))) {
+            payments = paymentRepository.findByAppointmentId(id);
+        }
         if (!payments.isEmpty()) {
             return new PaymentResponseDto(payments.get(0));
         }
 
-        throw new RuntimeException("Payment not found for booking ID: " + bookingId);
+        throw new RuntimeException("Payment not found for booking ID: " + id);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean hasPaymentsForAppointment(Long appointmentId) {
+        return !paymentRepository.findByAppointmentId(appointmentId).isEmpty();
     }
 
     /**
@@ -395,33 +322,13 @@ public class PaymentService {
     }
 
     /**
-     * Clean up stale payments
-     */
-    @Transactional
-    public void cleanupStalePayments() {
-        LocalDateTime cutoffTime = LocalDateTime.now().minusMinutes(transactionTimeoutMinutes);
-        List<Payment> stalePayments = paymentRepository.findStalePayments(cutoffTime);
-
-        for (Payment payment : stalePayments) {
-            payment.setPaymentStatus(Payment.PaymentStatus.CANCELLED);
-            payment.setFailureReason("Transaction timeout");
-            log.info("Cancelled stale payment: {}", payment.getTransactionId());
-        }
-
-        if (!stalePayments.isEmpty()) {
-            paymentRepository.saveAll(stalePayments);
-            log.info("Cleaned up {} stale payments", stalePayments.size());
-        }
-    }
-
-    /**
      * Create payment record
      */
     private Payment createPaymentRecord(PaymentRequestDto request, Patient patient, Booking booking) {
         Payment payment = new Payment();
         payment.setTransactionId(generateTransactionId());
         payment.setAmount(request.getAmount());
-        payment.setCurrency(request.getCurrency());
+        payment.setCurrency(paymentCurrency);
         payment.setPaymentMethod(request.getPaymentMethod());
         payment.setPaymentStatus(Payment.PaymentStatus.PENDING);
         payment.setPaymentType(request.getPaymentType());
@@ -464,7 +371,152 @@ public class PaymentService {
     }
 
     private boolean hasActivePaymentForBooking(Long bookingId) {
-        return paymentRepository.countActivePaymentsForBooking(bookingId) > 0;
+        return paymentRepository.countActivePaymentsByBookingId(bookingId) > 0;
+    }
+
+    private void requireDemoMode() {
+        // Only the demo flow exists; there is no live gateway integration that could collect money
+        if (!demoMode) {
+            throw new IllegalStateException("Online payments are unavailable: no live payment gateway is configured.");
+        }
+    }
+
+    private void requireCurrency(PaymentRequestDto request) {
+        if (request.getCurrency() != null && !paymentCurrency.equalsIgnoreCase(request.getCurrency())) {
+            throw new RuntimeException("Only " + paymentCurrency + " payments are supported");
+        }
+    }
+
+    private static void validatePaymentDetails(PaymentRequestDto request) {
+        if (request.getAmount() == null || request.getAmount().signum() < 0) {
+            throw new RuntimeException("A valid payment amount is required");
+        }
+        if (request.getPaymentMethod() == null) {
+            throw new RuntimeException("Payment method is required");
+        }
+        switch (request.getPaymentMethod()) {
+            case UPI -> {
+                if (request.getUpiId() == null || !UPI_ID.matcher(request.getUpiId().trim()).matches()) {
+                    throw new RuntimeException("A valid UPI ID is required for UPI payments");
+                }
+            }
+            case CARD -> {
+                PaymentRequestDto.CardDetailsDto card = request.getCardDetails();
+                if (card == null || card.getCardNumber() == null || !CARD_NUMBER.matcher(card.getCardNumber()).matches()) {
+                    throw new RuntimeException("Valid card details are required for card payments");
+                }
+            }
+            case QR_CODE -> {
+                // No payer details needed
+            }
+            default -> throw new RuntimeException("Unsupported payment method: " + request.getPaymentMethod());
+        }
+    }
+
+    /**
+     * A payment must pay for this patient's own appointment or lab booking, at the price the server knows.
+     * Returns the booking when the payment is for one.
+     */
+    private Booking validatePaymentTarget(PaymentRequestDto request, Patient patient) {
+        Long bookingId = request.getBookingId();
+        Long appointmentId = request.getAppointmentId();
+        if (bookingId != null && appointmentId != null) {
+            throw new RuntimeException("A payment can be for an appointment or a lab booking, not both");
+        }
+
+        if (bookingId != null) {
+            Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+                    .orElseThrow(() -> new RuntimeException("Booking not found with ID: " + bookingId));
+            if (!booking.getPatient().getId().equals(patient.getId())) {
+                throw new RuntimeException("Booking does not belong to this patient");
+            }
+            if (booking.getStatus() != Booking.BookingStatus.PENDING) {
+                throw new RuntimeException("Booking is not in PENDING status. Current status: " + booking.getStatus());
+            }
+            if (request.getAmount().compareTo(booking.getTotalPrice()) != 0) {
+                throw new RuntimeException("Payment amount does not match booking total");
+            }
+            if (hasActivePaymentForBooking(bookingId)) {
+                throw new RuntimeException("An active payment already exists for this booking");
+            }
+            return booking;
+        }
+
+        if (appointmentId != null) {
+            Appointment appointment = appointmentRepository.findByIdForUpdate(appointmentId)
+                    .orElseThrow(() -> new RuntimeException("Appointment not found with ID: " + appointmentId));
+            if (!appointment.getPatient().getId().equals(patient.getId())) {
+                throw new RuntimeException("Appointment does not belong to this patient");
+            }
+            if (UNPAYABLE_APPOINTMENT_STATUSES.contains(appointment.getStatus())) {
+                throw new RuntimeException("This appointment can no longer be paid for. Current status: "
+                        + appointment.getStatus());
+            }
+            // A doctor without a fee set sees free consultations
+            BigDecimal fee = appointment.getDoctor().getConsultationFees() != null
+                    ? appointment.getDoctor().getConsultationFees()
+                    : BigDecimal.ZERO;
+            if (request.getAmount().compareTo(fee) != 0) {
+                throw new RuntimeException("Payment amount does not match the doctor's consultation fee of "
+                        + fee.toPlainString() + " " + paymentCurrency);
+            }
+            if (paymentRepository.countActivePaymentsByAppointmentId(appointmentId) > 0) {
+                throw new RuntimeException("An active payment already exists for this appointment");
+            }
+            return null;
+        }
+
+        throw new RuntimeException("A payment must be linked to an appointment or a lab booking");
+    }
+
+    /**
+     * Demo mode: the gateway is a mock, so the payment is marked paid at once and labelled as a demo.
+     * The full card number and CVV are dropped from the request whatever the outcome.
+     */
+    private PaymentResponseDto chargeInDemoMode(Payment payment, PaymentRequestDto request) {
+        try {
+            PaymentResponseDto response = processPaymentThroughGateway(payment, request);
+
+            payment.setPaymentStatus(Payment.PaymentStatus.SUCCESS);
+            payment.setPaymentCompletedAt(LocalDateTime.now());
+            payment.setGatewayResponse(DEMO_GATEWAY_NOTE);
+            paymentRepository.save(payment);
+
+            response.setPaymentStatus(Payment.PaymentStatus.SUCCESS);
+            response.setPaymentCompletedAt(payment.getPaymentCompletedAt());
+            response.setDemoMode(true);
+
+            rememberPaymentMethod(payment, request);
+            return response;
+        } finally {
+            discardSensitiveCardData(request);
+        }
+    }
+
+    /** Saves the method and its safe details once the payment has committed; a failure here never fails the payment. */
+    private void rememberPaymentMethod(Payment payment, PaymentRequestDto request) {
+        Payment.PaymentMethod method = payment.getPaymentMethod();
+        String cardholderName = method == Payment.PaymentMethod.CARD && request.getCardDetails() != null
+                ? request.getCardDetails().getCardholderName()
+                : null;
+        PaymentPreferenceService.SavedDetails details = new PaymentPreferenceService.SavedDetails(method,
+                method == Payment.PaymentMethod.UPI ? request.getUpiId() : null,
+                method == Payment.PaymentMethod.CARD ? payment.getCardLastFour() : null,
+                method == Payment.PaymentMethod.CARD ? payment.getCardType() : null,
+                cardholderName);
+        Long patientId = payment.getPatient().getId();
+        afterCommitTaskDispatcher.submitAfterCommit("save payment method for patient " + patientId,
+                () -> paymentPreferenceService.remember(patientId, details));
+    }
+
+    private static void discardSensitiveCardData(PaymentRequestDto request) {
+        PaymentRequestDto.CardDetailsDto card = request.getCardDetails();
+        if (card != null) {
+            card.setCardNumber(null);
+            card.setCvv(null);
+            card.setExpiryMonth(null);
+            card.setExpiryYear(null);
+        }
     }
 
     private <T> T callPaymentGateway(Callable<T> gatewayCall) {

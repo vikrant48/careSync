@@ -1,6 +1,7 @@
 package com.vikrant.careSync.repository;
 
 import com.vikrant.careSync.entity.Appointment;
+import com.vikrant.careSync.repository.projection.AppointmentParticipants;
 
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -48,12 +49,6 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
   List<Appointment> findByPatientIdAndStatus(@Param("patientId") Long patientId,
       @Param("status") Appointment.Status status);
 
-  @Query("SELECT a FROM Appointment a WHERE a.patient.id = :patientId AND a.appointmentDateTime BETWEEN :startDate AND :endDate")
-  List<Appointment> findByPatientIdAndAppointmentDateTimeBetween(
-      @Param("patientId") Long patientId,
-      @Param("startDate") LocalDateTime startDate,
-      @Param("endDate") LocalDateTime endDate);
-
   @Query("SELECT a FROM Appointment a JOIN FETCH a.patient p JOIN FETCH p.user JOIN FETCH a.doctor d JOIN FETCH d.user WHERE a.appointmentDateTime BETWEEN :startDate AND :endDate ORDER BY a.appointmentDateTime ASC")
   List<Appointment> findByAppointmentDateTimeBetweenWithDetails(@Param("startDate") LocalDateTime startDate,
       @Param("endDate") LocalDateTime endDate);
@@ -69,9 +64,12 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
   List<Appointment> findUpcomingAppointmentsByDoctorWithDetails(@Param("doctorId") Long doctorId,
       @Param("now") LocalDateTime now);
 
-  @Query("SELECT a FROM Appointment a JOIN FETCH a.patient p JOIN FETCH a.doctor d WHERE a.doctor.id = :doctorId AND FUNCTION('DATE', a.appointmentDateTime) = FUNCTION('DATE', :now)")
+  // A plain range on appointment_date_time can use the (doctor_id, ..., appointment_date_time) index;
+  // DATE(column) = DATE(:now) could not
+  @Query("SELECT a FROM Appointment a JOIN FETCH a.patient p JOIN FETCH a.doctor d WHERE a.doctor.id = :doctorId "
+      + "AND a.appointmentDateTime >= :dayStart AND a.appointmentDateTime < :nextDayStart")
   List<Appointment> findTodayAppointmentsByDoctorWithDetails(@Param("doctorId") Long doctorId,
-      @Param("now") LocalDateTime now);
+      @Param("dayStart") LocalDateTime dayStart, @Param("nextDayStart") LocalDateTime nextDayStart);
 
   @Query("SELECT a FROM Appointment a JOIN FETCH a.patient p JOIN FETCH a.doctor d WHERE a.patient.id = :patientId AND a.appointmentDateTime > :now AND a.status = 'BOOKED'")
   List<Appointment> findUpcomingAppointmentsByPatientWithDetails(@Param("patientId") Long patientId,
@@ -82,6 +80,19 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
 
   @Override
   Optional<Appointment> findById(Long id);
+
+  // Access-control lookups (AccessGuard): ids only, no entity loading
+  @Query("SELECT new com.vikrant.careSync.repository.projection.AppointmentParticipants(a.doctor.id, a.patient.id) FROM Appointment a WHERE a.id = :id")
+  Optional<AppointmentParticipants> findParticipantsById(@Param("id") Long id);
+
+  // A doctor "treats" a patient when they share at least one appointment that was not rejected or cancelled
+  @Query("SELECT CASE WHEN COUNT(a) > 0 THEN true ELSE false END FROM Appointment a WHERE a.doctor.id = :doctorId AND a.patient.id = :patientId"
+      + " AND a.status NOT IN ('REJECTED', 'CANCELLED', 'CANCELLED_BY_PATIENT', 'CANCELLED_BY_DOCTOR')")
+  boolean existsByDoctorIdAndPatientId(@Param("doctorId") Long doctorId, @Param("patientId") Long patientId);
+
+  @Query("SELECT DISTINCT a.patient.id FROM Appointment a WHERE a.doctor.id = :doctorId"
+      + " AND a.status NOT IN ('REJECTED', 'CANCELLED', 'CANCELLED_BY_PATIENT', 'CANCELLED_BY_DOCTOR')")
+  List<Long> findTreatedPatientIds(@Param("doctorId") Long doctorId);
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("SELECT a FROM Appointment a JOIN FETCH a.patient JOIN FETCH a.doctor WHERE a.id = :id")
@@ -130,4 +141,63 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
 
   @Query("SELECT a FROM Appointment a JOIN FETCH a.patient JOIN FETCH a.doctor WHERE a.isActive = true AND a.status = 'IN_PROGRESS' AND a.updatedAt < :cutoffTime")
   List<Appointment> findOrphanedInProgressAppointments(@Param("cutoffTime") LocalDateTime cutoffTime);
+
+  // ---- Doctor dashboard: aggregates instead of loading every appointment ----
+  @Query("SELECT COUNT(a) FROM Appointment a WHERE a.doctor.id = :doctorId "
+      + "AND a.appointmentDateTime >= :start AND a.appointmentDateTime < :end")
+  long countByDoctorIdBetween(@Param("doctorId") Long doctorId, @Param("start") LocalDateTime start,
+      @Param("end") LocalDateTime end);
+
+  @Query("SELECT COUNT(a) FROM Appointment a WHERE a.doctor.id = :doctorId AND a.status IN :statuses")
+  long countByDoctorIdAndStatusIn(@Param("doctorId") Long doctorId,
+      @Param("statuses") java.util.Collection<Appointment.Status> statuses);
+
+  /** One row per patient: [patientId, first appointment date-time]. */
+  @Query("SELECT a.patient.id, MIN(a.appointmentDateTime) FROM Appointment a WHERE a.doctor.id = :doctorId "
+      + "AND a.appointmentDateTime IS NOT NULL GROUP BY a.patient.id")
+  List<Object[]> findFirstVisitPerPatient(@Param("doctorId") Long doctorId);
+
+  /** Appointments whose status may differ from what it was at :at (changed later, or logged since :logsSince). */
+  @Query("SELECT a FROM Appointment a WHERE a.doctor.id = :doctorId AND ("
+      + "COALESCE(a.statusChangedAt, a.createdAt) > :at "
+      + "OR a.id IN (SELECT l.appointmentId FROM AppointmentStatusLog l WHERE l.createdAt >= :logsSince))")
+  List<Appointment> findStatusChangedSince(@Param("doctorId") Long doctorId, @Param("at") LocalDateTime at,
+      @Param("logsSince") LocalDateTime logsSince);
+
+  // ---- Doctor's appointment pages: filter, sort and page in SQL (no search term) ----
+  // Order matches the old in-memory sort: upcoming soonest first, then past most recent first.
+  @Query(value = "SELECT a FROM Appointment a JOIN FETCH a.patient p JOIN FETCH a.doctor d "
+      + "WHERE a.doctor.id = :doctorId AND (:allStatuses = true OR a.status IN :statuses) "
+      + "AND a.appointmentDateTime >= :from AND a.appointmentDateTime < :to "
+      + "ORDER BY CASE WHEN a.appointmentDateTime > :now THEN 0 ELSE 1 END, "
+      + "CASE WHEN a.appointmentDateTime > :now THEN a.appointmentDateTime END ASC, "
+      + "a.appointmentDateTime DESC, a.id",
+      countQuery = "SELECT COUNT(a) FROM Appointment a WHERE a.doctor.id = :doctorId "
+          + "AND (:allStatuses = true OR a.status IN :statuses) "
+          + "AND a.appointmentDateTime >= :from AND a.appointmentDateTime < :to")
+  org.springframework.data.domain.Page<Appointment> findDoctorAppointmentPage(@Param("doctorId") Long doctorId,
+      @Param("allStatuses") boolean allStatuses,
+      @Param("statuses") java.util.Collection<Appointment.Status> statuses,
+      @Param("from") LocalDateTime from, @Param("to") LocalDateTime to, @Param("now") LocalDateTime now,
+      org.springframework.data.domain.Pageable pageable);
+
+  // ---- Reports: aggregates over a date range ----
+  @Query("SELECT a.status, COUNT(a) FROM Appointment a WHERE a.appointmentDateTime >= :start "
+      + "AND a.appointmentDateTime < :end GROUP BY a.status")
+  List<Object[]> countByStatusBetween(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+  @Query("SELECT extract(date from a.appointmentDateTime), COUNT(a) FROM Appointment a "
+      + "WHERE a.appointmentDateTime >= :start AND a.appointmentDateTime < :end "
+      + "GROUP BY extract(date from a.appointmentDateTime) ORDER BY extract(date from a.appointmentDateTime)")
+  List<Object[]> countPerDayBetween(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+  /** One row: [distinct doctors, distinct patients] with appointments in the range. */
+  @Query("SELECT COUNT(DISTINCT a.doctor.id), COUNT(DISTINCT a.patient.id) FROM Appointment a "
+      + "WHERE a.appointmentDateTime >= :start AND a.appointmentDateTime < :end")
+  List<Object[]> countActiveDoctorsAndPatientsBetween(@Param("start") LocalDateTime start,
+      @Param("end") LocalDateTime end);
+
+  /** [doctorId, number of appointments] for every doctor with appointments. */
+  @Query("SELECT a.doctor.id, COUNT(a) FROM Appointment a GROUP BY a.doctor.id")
+  List<Object[]> countPerDoctor();
 }

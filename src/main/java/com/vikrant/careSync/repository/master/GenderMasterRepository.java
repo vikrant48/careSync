@@ -10,8 +10,6 @@ import java.util.List;
 public interface GenderMasterRepository extends JpaRepository<GenderMaster, Long> {
     List<GenderMaster> findByOrgId(Long orgId);
 
-    List<GenderMaster> findByOrgIdAndValue(Long orgId, String value);
-
     @Transactional
     void deleteByOrgIdAndValue(Long orgId, String value);
 }

@@ -20,6 +20,9 @@ import org.springframework.cache.CacheManager;
 import org.springframework.cache.Cache;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import com.vikrant.careSync.entity.User;
+import com.vikrant.careSync.security.access.AuthenticatedUser;
+import com.vikrant.careSync.security.access.CurrentUserService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -37,6 +40,7 @@ public class DoctorController {
 
     private final DoctorService doctorService;
     private final CacheManager cacheManager;
+    private final CurrentUserService currentUserService;
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Get all doctors", description = "Retrieves a paginated list of all registered doctors")
     @GetMapping
@@ -53,7 +57,7 @@ public class DoctorController {
                 .sortDirection(sortDirection)
                 .build();
 
-        return ResponseEntity.ok(doctorService.searchDoctors(searchDto));
+        return ResponseEntity.ok(forCurrentViewer(doctorService.searchDoctors(searchDto)));
     }
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Dynamic Doctor Search", description = "Searches doctors dynamically using optional multi-criteria filters (query, specialization, location, sorting)")
@@ -79,7 +83,7 @@ public class DoctorController {
                 .sortDirection(sortDirection)
                 .build();
 
-        return ResponseEntity.ok(doctorService.searchDoctors(searchDto));
+        return ResponseEntity.ok(forCurrentViewer(doctorService.searchDoctors(searchDto)));
     }
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Count Dynamic Doctor Search Results", description = "Calculates total doctor count matching dynamic search filters")
@@ -123,6 +127,7 @@ public class DoctorController {
     @GetMapping("/public/{username}")
     public ResponseEntity<DoctorDto> getDoctorByUsername(@PathVariable String username) {
         return doctorService.getDoctorDtoByUsername(username)
+                .map(this::forCurrentViewer)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -132,6 +137,7 @@ public class DoctorController {
     @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN')")
     public ResponseEntity<DoctorDto> getDoctorById(@PathVariable Long id) {
         return doctorService.getDoctorDtoById(id)
+                .map(this::forCurrentViewer)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -176,11 +182,11 @@ public class DoctorController {
             log.info("Cache hit for doctor profile username: {} in Redis.", username);
         }
 
-        return ResponseEntity.ok(doctorDto);
+        return ResponseEntity.ok(forCurrentViewer(doctorDto));
     }
 
     @PutMapping("/profile/{username}")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelfUsername(#username)")
     public ResponseEntity<DoctorDto> updateDoctorProfile(@PathVariable String username,
             @RequestBody UpdateDoctorRequest request) {
         try {
@@ -194,7 +200,7 @@ public class DoctorController {
     }
 
     @PutMapping("/profile/{username}/image")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelfUsername(#username)")
     public ResponseEntity<DoctorDto> updateProfileImage(@PathVariable String username, @RequestParam String imageUrl) {
         try {
             doctorService.updateProfileImageByUsername(username, imageUrl);
@@ -210,13 +216,14 @@ public class DoctorController {
     public ResponseEntity<List<DoctorDto>> getDoctorsBySpecialization(@PathVariable String specialization) {
         List<DoctorDto> doctors = doctorService.getDoctorsBySpecialization(specialization).stream()
                 .map(DoctorDto::new)
+                .map(this::forCurrentViewer)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(doctors);
     }
 
     // Experience Management
     @PostMapping("/profile/{username}/experiences")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelfUsername(#username)")
     public ResponseEntity<ExperienceDto> addExperience(@PathVariable String username,
             @RequestBody CreateExperienceRequest request) {
         try {
@@ -250,7 +257,7 @@ public class DoctorController {
     }
 
     @PutMapping("/profile/{username}/experiences/{experienceId}")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelfUsername(#username) and @access.ownsExperience(#experienceId)")
     public ResponseEntity<ExperienceDto> updateExperience(@PathVariable String username,
             @PathVariable Long experienceId,
             @RequestBody CreateExperienceRequest request) {
@@ -269,7 +276,7 @@ public class DoctorController {
     }
 
     @DeleteMapping("/profile/{username}/experiences/{experienceId}")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelfUsername(#username) and @access.ownsExperience(#experienceId)")
     public ResponseEntity<?> deleteExperience(@PathVariable String username, @PathVariable Long experienceId) {
         try {
             doctorService.deleteExperience(experienceId);
@@ -281,7 +288,7 @@ public class DoctorController {
 
     // Education Management
     @PostMapping("/profile/{username}/educations")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelfUsername(#username)")
     public ResponseEntity<EducationDto> addEducation(@PathVariable String username,
             @RequestBody CreateEducationRequest request) {
         try {
@@ -315,7 +322,7 @@ public class DoctorController {
     }
 
     @PutMapping("/profile/{username}/educations/{educationId}")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelfUsername(#username) and @access.ownsEducation(#educationId)")
     public ResponseEntity<EducationDto> updateEducation(@PathVariable String username, @PathVariable Long educationId,
             @RequestBody CreateEducationRequest request) {
         try {
@@ -333,7 +340,7 @@ public class DoctorController {
     }
 
     @DeleteMapping("/profile/{username}/educations/{educationId}")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelfUsername(#username) and @access.ownsEducation(#educationId)")
     public ResponseEntity<?> deleteEducation(@PathVariable String username, @PathVariable Long educationId) {
         try {
             doctorService.deleteEducation(educationId);
@@ -345,19 +352,19 @@ public class DoctorController {
 
     // Certificate Management
     @PostMapping("/profile/{username}/certificates")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelfUsername(#username)")
     public ResponseEntity<CertificateDto> addCertificate(@PathVariable String username,
             @RequestBody CreateCertificateRequest request) {
         try {
             Certificate certificate = new Certificate();
             certificate.setName(request.getName());
-            certificate.setUrl(request.getUrl());
+            certificate.setUrl(safeLink(request.getUrl()));
             certificate.setDetails(request.getDetails());
             certificate.setIssuingOrganization(request.getIssuingOrganization());
             certificate.setIssueDate(request.getIssueDate());
             certificate.setExpiryDate(request.getExpiryDate());
             certificate.setCredentialId(request.getCredentialId());
-            certificate.setCredentialUrl(request.getCredentialUrl());
+            certificate.setCredentialUrl(safeLink(request.getCredentialUrl()));
 
             Certificate savedCertificate = doctorService.addCertificateByUsername(username, certificate);
             return ResponseEntity.ok(new CertificateDto(savedCertificate));
@@ -383,19 +390,19 @@ public class DoctorController {
     }
 
     @PutMapping("/profile/{username}/certificates/{certificateId}")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelfUsername(#username) and @access.ownsCertificate(#certificateId)")
     public ResponseEntity<CertificateDto> updateCertificate(@PathVariable String username,
             @PathVariable Long certificateId, @RequestBody CreateCertificateRequest request) {
         try {
             Certificate certificate = new Certificate();
             certificate.setName(request.getName());
-            certificate.setUrl(request.getUrl());
+            certificate.setUrl(safeLink(request.getUrl()));
             certificate.setDetails(request.getDetails());
             certificate.setIssuingOrganization(request.getIssuingOrganization());
             certificate.setIssueDate(request.getIssueDate());
             certificate.setExpiryDate(request.getExpiryDate());
             certificate.setCredentialId(request.getCredentialId());
-            certificate.setCredentialUrl(request.getCredentialUrl());
+            certificate.setCredentialUrl(safeLink(request.getCredentialUrl()));
 
             Certificate updatedCertificate = doctorService.updateCertificate(certificateId, certificate);
             return ResponseEntity.ok(new CertificateDto(updatedCertificate));
@@ -405,7 +412,7 @@ public class DoctorController {
     }
 
     @DeleteMapping("/profile/{username}/certificates/{certificateId}")
-    @PreAuthorize("hasRole('DOCTOR')")
+    @PreAuthorize("hasRole('DOCTOR') and @access.isSelfUsername(#username) and @access.ownsCertificate(#certificateId)")
     public ResponseEntity<?> deleteCertificate(@PathVariable String username, @PathVariable Long certificateId) {
         try {
             doctorService.deleteCertificate(certificateId);
@@ -413,5 +420,35 @@ public class DoctorController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
+    }
+
+    /** Contact details for logged-in patients; full profile for admins and the doctor themselves. */
+    private DoctorDto forCurrentViewer(DoctorDto doctor) {
+        java.util.Optional<AuthenticatedUser> viewer = currentUserService.current();
+        boolean fullProfile = viewer.map(v -> v.role() == User.Role.ADMIN
+                || v.username().equals(doctor.getUsername())).orElse(false);
+        boolean showContact = viewer.map(v -> v.role() == User.Role.PATIENT).orElse(false);
+        return doctor.forViewer(fullProfile, showContact);
+    }
+
+    private List<DoctorDto> forCurrentViewer(List<DoctorDto> doctors) {
+        return doctors.stream().map(this::forCurrentViewer).collect(Collectors.toList());
+    }
+
+    /** Links shown to patients must be plain https links (no javascript:, data:, http: or internal addresses). */
+    private static String safeLink(String link) {
+        if (link == null || link.isBlank()) {
+            return link;
+        }
+        String trimmed = link.trim();
+        try {
+            java.net.URI uri = java.net.URI.create(trimmed);
+            if ("https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null && uri.getUserInfo() == null) {
+                return trimmed;
+            }
+        } catch (IllegalArgumentException ignored) {
+            // falls through to the error below
+        }
+        throw new IllegalArgumentException("Certificate links must be valid https:// addresses");
     }
 }
