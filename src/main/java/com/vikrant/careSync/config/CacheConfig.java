@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.cache.Cache;
 
 import java.time.Duration;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Configuration
 @EnableCaching
@@ -105,8 +106,7 @@ public class CacheConfig implements CachingConfigurer {
                         connectionFactory.getConnection().ping();
                         log.info("[ServiceStatus] - Redis Cache     : CONNECTED ");
                 } catch (Exception e) {
-                        log.warn("[ServiceStatus] - Redis Cache     : DISCONNECTED ⚠ (caching disabled - {})",
-                                        e.getMessage());
+                        ErrorLog.warn(e, "[ServiceStatus] - Redis Cache : DISCONNECTED ⚠ (caching disabled)");
                 }
 
                 return manager;

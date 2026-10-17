@@ -1,5 +1,6 @@
 package com.vikrant.careSync.exception;
 
+import com.vikrant.careSync.util.ErrorLog;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -25,6 +26,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Map<String, String>> handleAccessDenied(AccessDeniedException ex) {
+        ErrorLog.warn(ex, "Access denied");
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(forbiddenBody());
     }
 
@@ -42,6 +44,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, String>> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
+        ErrorLog.warn(ex, "Upload too large");
         Map<String, String> error = new HashMap<>();
         error.put("error", "File too large");
         error.put("message",
@@ -59,6 +62,7 @@ public class GlobalExceptionHandler {
         String message = ex.getMessage();
 
         if (message != null && message.toLowerCase().contains("extension")) {
+            ErrorLog.warn(ex, "Unsupported file type");
             error.put("error", "Unsupported file type");
             error.put("message", "This file type is not supported. Allowed types: JPG, JPEG, PNG, PDF, DOC, DOCX.");
             error.put("code", "UNSUPPORTED_FILE_TYPE");
@@ -76,7 +80,7 @@ public class GlobalExceptionHandler {
     /** Request body is not valid JSON or has a wrong field type; the parser text names internal classes. */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Map<String, String>> handleUnreadableBody(HttpMessageNotReadableException ex) {
-        log.debug("Unreadable request body", ex);
+        ErrorLog.debug(ex, "Unreadable request body");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(body("Invalid request", "The request body is malformed or has a field of the wrong type.",
                         "MALFORMED_REQUEST"));
@@ -85,20 +89,21 @@ public class GlobalExceptionHandler {
     /** A unique key or foreign key was violated. Database text (table, column, values) stays in the log. */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, String>> handleDataIntegrity(DataIntegrityViolationException ex) {
-        log.warn("Data integrity violation", ex);
+        ErrorLog.warn(ex, "Data integrity violation");
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(body("Request Failed", "This change conflicts with existing data.", "CONFLICT"));
     }
 
     @ExceptionHandler(DataAccessException.class)
     public ResponseEntity<Map<String, String>> handleDataAccess(DataAccessException ex) {
-        log.error("Database error", ex);
+        ErrorLog.error(ex, "Database error");
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(body("Request Failed", ClientErrorMessages.GENERIC, "INTERNAL_ERROR"));
     }
 
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<Map<String, String>> handleResponseStatus(ResponseStatusException ex) {
+        ErrorLog.log(ex);
         String reason = ex.getReason() != null && ClientErrorMessages.isSafeToShow(new RuntimeException(ex.getReason()))
                 ? ex.getReason()
                 : ClientErrorMessages.GENERIC;
@@ -123,10 +128,12 @@ public class GlobalExceptionHandler {
         return body;
     }
 
-    // The client only sees the generic text, so keep the real cause for support
+    // Every failure is logged in one line; the client only sees the generic text when the cause is internal
     private static void logIfHidden(Exception ex) {
-        if (!ClientErrorMessages.isSafeToShow(ex)) {
-            log.error("Request failed with an internal error", ex);
+        if (ClientErrorMessages.isSafeToShow(ex)) {
+            ErrorLog.warn(ex, "Request failed");
+        } else {
+            ErrorLog.error(ex, "Request failed with an internal error");
         }
     }
 }

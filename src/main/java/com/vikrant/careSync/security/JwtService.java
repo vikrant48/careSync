@@ -14,6 +14,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 public class JwtService {
@@ -28,6 +29,7 @@ public class JwtService {
         try {
             return extractClaim(token, Claims::getSubject);
         } catch (Exception e) {
+            ErrorLog.debug(e);
             throw new RuntimeException("Invalid token: " + e.getMessage());
         }
     }
@@ -36,6 +38,7 @@ public class JwtService {
         try {
             return extractClaim(token, claims -> claims.get("sessionId", String.class));
         } catch (Exception e) {
+            ErrorLog.debug(e);
             return null; // Return null if sessionId is not present in token
         }
     }
@@ -76,6 +79,7 @@ public class JwtService {
             final String username = extractUsername(token);
             return (username.equals(userDetails.getUsername())) && !isTokenExpired(token);
         } catch (Exception e) {
+            ErrorLog.debug(e);
             return false;
         }
     }
@@ -97,6 +101,7 @@ public class JwtService {
                     .parseClaimsJws(token)
                     .getBody();
         } catch (Exception e) {
+            ErrorLog.debug(e);
             throw new RuntimeException("Invalid token: " + e.getMessage());
         }
     }
@@ -106,6 +111,7 @@ public class JwtService {
             byte[] keyBytes = Decoders.BASE64.decode(secretKey);
             return Keys.hmacShaKeyFor(keyBytes);
         } catch (Exception e) {
+            ErrorLog.debug(e);
             throw new RuntimeException("Invalid JWT secret key: " + e.getMessage());
         }
     }

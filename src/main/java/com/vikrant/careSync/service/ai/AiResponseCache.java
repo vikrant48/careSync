@@ -11,6 +11,7 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.HexFormat;
 import java.util.function.Supplier;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * Remembers AI answers by what was asked: the key is a SHA-256 of the task and the exact prompt, so a changed
@@ -36,14 +37,14 @@ public class AiResponseCache {
                 return fieldCipher.decryptCurrent(stored);
             }
         } catch (Exception e) {
-            log.debug("AI answer cache unavailable: {}", e.getClass().getSimpleName());
+            ErrorLog.debug(e, "AI answer cache unavailable");
         }
         String answer = compute.get();
         if (answer != null && !answer.isBlank()) {
             try {
                 redisTemplate.opsForValue().set(key, fieldCipher.encrypt(answer), ttl);
             } catch (Exception e) {
-                log.debug("AI answer not cached: {}", e.getClass().getSimpleName());
+                ErrorLog.debug(e, "AI answer not cached");
             }
         }
         return answer;
@@ -54,6 +55,7 @@ public class AiResponseCache {
             return HexFormat.of().formatHex(
                     MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception e) {
+            ErrorLog.debug(e);
             throw new IllegalStateException("SHA-256 unavailable", e);
         }
     }

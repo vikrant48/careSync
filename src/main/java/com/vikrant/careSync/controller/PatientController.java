@@ -36,6 +36,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/patients")
@@ -136,7 +137,7 @@ public class PatientController {
                         completeData = cachedData;
                     }
                 } catch (Exception e) {
-                    log.warn("Redis unavailable during patient data cache read for {}: {}", patientId, e.getMessage());
+                    ErrorLog.warn(e, "Redis unavailable during patient data cache read for {}", patientId);
                 }
             }
 
@@ -167,8 +168,7 @@ public class PatientController {
                         cache.put(key, completeData);
                         log.info("Saved complete patient data for id: {} to Redis cache.", patientId);
                     } catch (Exception e) {
-                        log.warn("Redis unavailable during patient data cache write for {}: {}", patientId,
-                                e.getMessage());
+                        ErrorLog.warn(e, "Redis unavailable during patient data cache write for {}", patientId);
                     }
                 }
             } else {
@@ -185,6 +185,7 @@ public class PatientController {
             }
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBodyObject(e));
         }
     }
@@ -234,6 +235,7 @@ public class PatientController {
             Patient updatedPatient = patientService.updatePatientProfile(id, patient);
             return ResponseEntity.ok(new PatientDto(updatedPatient));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -248,6 +250,7 @@ public class PatientController {
             Patient updatedPatient = patientService.updatePatientProfile(id, patient);
             return ResponseEntity.ok(new PatientDto(updatedPatient));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -259,6 +262,7 @@ public class PatientController {
             Patient patient = patientService.updateProfileImage(id, imageUrl);
             return ResponseEntity.ok(new PatientDto(patient));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -271,6 +275,7 @@ public class PatientController {
             Patient patient = patientService.updateProfileImageByUsername(username, imageUrl);
             return ResponseEntity.ok(new PatientDto(patient));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -293,6 +298,7 @@ public class PatientController {
             MedicalHistory savedHistory = patientService.addMedicalHistory(patientId, medicalHistory);
             return ResponseEntity.ok(new MedicalHistoryDto(savedHistory));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -321,6 +327,7 @@ public class PatientController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(medicalHistories);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -342,6 +349,7 @@ public class PatientController {
             MedicalHistory updatedHistory = medicalHistoryService.updateMedicalHistory(historyId, medicalHistory);
             return ResponseEntity.ok(new MedicalHistoryDto(updatedHistory));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -353,6 +361,7 @@ public class PatientController {
             medicalHistoryService.deleteMedicalHistory(historyId);
             return ResponseEntity.ok().build();
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -494,6 +503,7 @@ public class PatientController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -513,6 +523,7 @@ public class PatientController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -530,6 +541,7 @@ public class PatientController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }

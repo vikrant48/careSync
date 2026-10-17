@@ -37,6 +37,7 @@ import com.vikrant.careSync.dto.AiSymptomSearchRequest;
 import com.vikrant.careSync.dto.PatientHealthBriefDto;
 import org.springframework.http.HttpStatus;
 import java.util.List;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/ai")
@@ -106,12 +107,15 @@ public class AiController {
                     send(emitter, closed, "done", response);
                     emitter.complete();
                 } catch (AiQuotaExceededException e) {
+                    ErrorLog.log(e);
                     sendErrorAndClose(emitter, e.userMessage());
                 } catch (Exception e) {
+                    ErrorLog.log(e);
                     sendErrorAndClose(emitter, "The AI assistant is unavailable right now. Please try again.");
                 }
             });
         } catch (RejectedExecutionException e) {
+            ErrorLog.log(e);
             sendErrorAndClose(emitter, "The AI assistant is busy right now. Please try again in a moment.");
         }
         return emitter;
@@ -125,6 +129,7 @@ public class AiController {
         try {
             emitter.send(SseEmitter.event().name(name).data(data, MediaType.APPLICATION_JSON));
         } catch (Exception e) {
+            ErrorLog.log(e);
             closed.set(true);
         }
     }
@@ -135,6 +140,7 @@ public class AiController {
             emitter.send(SseEmitter.event().name("error").data(Map.of("message", message), MediaType.APPLICATION_JSON));
             emitter.complete();
         } catch (Exception ignored) {
+            ErrorLog.log(ignored);
             emitter.complete();
         }
     }
@@ -174,6 +180,7 @@ public class AiController {
                     .<ResponseEntity<?>>map(ResponseEntity::ok)
                     .orElseGet(() -> ResponseEntity.noContent().build());
         } catch (IllegalArgumentException e) {
+            ErrorLog.log(e);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", e.getMessage()));
         }
     }
@@ -185,10 +192,13 @@ public class AiController {
         try {
             return ResponseEntity.ok(labReportExplainerService.explain(documentId));
         } catch (AiQuotaExceededException e) {
+            ErrorLog.log(e);
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of("message", e.userMessage()));
         } catch (IllegalArgumentException e) {
+            ErrorLog.log(e);
             return ResponseEntity.unprocessableEntity().body(Map.of("message", e.getMessage()));
         } catch (IllegalStateException e) {
+            ErrorLog.log(e);
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("message", e.getMessage()));
         }
     }

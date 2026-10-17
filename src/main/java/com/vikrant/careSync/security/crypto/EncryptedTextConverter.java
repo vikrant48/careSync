@@ -3,6 +3,7 @@ package com.vikrant.careSync.security.crypto;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
 import org.springframework.stereotype.Component;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * For patient-data columns that were stored in plaintext until now (intake answers, visit reasons, chat).
@@ -33,6 +34,7 @@ public class EncryptedTextConverter implements AttributeConverter<String, String
             try {
                 return cipher.decryptCurrent(dbData);
             } catch (IllegalStateException e) {
+                ErrorLog.debug(e);
                 // Old plaintext that merely starts with "v2:" (only possible before re-encryption)
                 if (!cipher.acceptsLegacy()) {
                     throw e;

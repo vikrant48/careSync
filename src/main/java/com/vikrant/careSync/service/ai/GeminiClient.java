@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * Google Gemini generateContent: text and vision (image or PDF sent inline). The model is configurable
@@ -110,11 +111,11 @@ public class GeminiClient {
                 return text;
             }
         } catch (HttpStatusCodeException e) {
-            log.error("Gemini request failed (HTTP {})", e.getStatusCode().value());
+            ErrorLog.error(e, "Gemini request failed (HTTP {})", e.getStatusCode().value());
             throw new IllegalStateException("Gemini request failed (HTTP " + e.getStatusCode().value() + ")");
         } catch (Exception e) {
             // Timeouts and connection errors: only the type is reported (no URLs or request details)
-            log.error("Gemini request failed: {}", e.getClass().getSimpleName());
+            ErrorLog.error(e, "Gemini request failed");
             throw new IllegalStateException("Gemini is unavailable right now");
         }
         throw new IllegalStateException("Gemini returned no content");

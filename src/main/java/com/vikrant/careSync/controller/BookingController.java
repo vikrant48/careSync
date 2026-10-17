@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/bookings")
@@ -42,8 +43,10 @@ public class BookingController {
                     request.getPaymentRequest());
             return ResponseEntity.status(HttpStatus.CREATED).body(booking);
         } catch (RuntimeException e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
+            ErrorLog.log(e);
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while creating the booking with payment");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
@@ -61,8 +64,10 @@ public class BookingController {
             BookingResponse booking = bookingService.createDoctorBooking(request);
             return ResponseEntity.status(HttpStatus.CREATED).body(booking);
         } catch (RuntimeException e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
+            ErrorLog.log(e);
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while creating the doctor booking");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
@@ -80,8 +85,10 @@ public class BookingController {
             BookingResponse booking = bookingService.createBooking(request);
             return ResponseEntity.status(HttpStatus.CREATED).body(booking);
         } catch (RuntimeException e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
+            ErrorLog.log(e);
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while creating the booking");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
@@ -99,8 +106,10 @@ public class BookingController {
             List<BookingResponse> bookings = bookingService.getBookingsByUserId(userId);
             return ResponseEntity.ok(bookings);
         } catch (RuntimeException e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
+            ErrorLog.log(e);
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while retrieving bookings");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
@@ -118,6 +127,7 @@ public class BookingController {
             List<BookingResponse> bookings = bookingService.getAllBookings();
             return ResponseEntity.ok(bookings);
         } catch (Exception e) {
+            ErrorLog.log(e);
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while retrieving bookings");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
@@ -135,8 +145,10 @@ public class BookingController {
             List<BookingResponse> bookings = bookingService.getCurrentUserBookings();
             return ResponseEntity.ok(bookings);
         } catch (RuntimeException e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
+            ErrorLog.log(e);
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while retrieving your bookings");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
@@ -154,8 +166,10 @@ public class BookingController {
             BookingResponse booking = bookingService.getBookingById(bookingId);
             return ResponseEntity.ok(booking);
         } catch (RuntimeException e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
+            ErrorLog.log(e);
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while retrieving the booking");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
@@ -174,8 +188,10 @@ public class BookingController {
             BookingResponse booking = bookingService.updateBookingStatus(bookingId, status);
             return ResponseEntity.ok(booking);
         } catch (RuntimeException e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
+            ErrorLog.log(e);
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while updating the booking status");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
@@ -193,6 +209,7 @@ public class BookingController {
             List<BookingResponse> bookings = bookingService.getBookingsByStatus(status);
             return ResponseEntity.ok(bookings);
         } catch (Exception e) {
+            ErrorLog.log(e);
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while retrieving bookings by status");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
@@ -213,8 +230,10 @@ public class BookingController {
             response.put("bookingCount", count);
             return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
+            ErrorLog.log(e);
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while retrieving booking count");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
@@ -240,6 +259,7 @@ public class BookingController {
             List<BookingResponse> bookings = bookingService.getBookingsByDateRange(startDate, endDate);
             return ResponseEntity.ok(bookings);
         } catch (Exception e) {
+            ErrorLog.log(e);
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while retrieving bookings by date range");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
@@ -260,8 +280,10 @@ public class BookingController {
             successResponse.put("booking", booking);
             return ResponseEntity.ok(successResponse);
         } catch (RuntimeException e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
+            ErrorLog.log(e);
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while cancelling the booking");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);

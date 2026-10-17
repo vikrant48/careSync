@@ -17,6 +17,7 @@ import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import java.util.Map;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @Slf4j
@@ -61,7 +62,7 @@ public class RazorpayService {
             return order.get("id");
             
         } catch (RazorpayException e) {
-            log.error("Failed to create Razorpay order for receipt: {}", receipt, e);
+            ErrorLog.error(e, "Failed to create Razorpay order for receipt: {}", receipt);
             throw new RuntimeException("Failed to create payment order: " + e.getMessage());
         }
         */
@@ -124,7 +125,7 @@ public class RazorpayService {
             return Utils.verifyPaymentSignature(attributes, keySecret);
             
         } catch (RazorpayException e) {
-            log.error("Failed to verify payment signature. Order: {}, Payment: {}", orderId, paymentId, e);
+            ErrorLog.error(e, "Failed to verify payment signature. Order: {}, Payment: {}", orderId, paymentId);
             return false;
         }
     }
@@ -138,7 +139,7 @@ public class RazorpayService {
             return payment.toJson().toMap();
             
         } catch (RazorpayException e) {
-            log.error("Failed to fetch payment details for payment ID: {}", paymentId, e);
+            ErrorLog.error(e, "Failed to fetch payment details for payment ID: {}", paymentId);
             throw new RuntimeException("Failed to fetch payment details: " + e.getMessage());
         }
     }
@@ -163,7 +164,7 @@ public class RazorpayService {
             return refund.get("id");
             
         } catch (RazorpayException e) {
-            log.error("Failed to initiate refund for payment ID: {}", paymentId, e);
+            ErrorLog.error(e, "Failed to initiate refund for payment ID: {}", paymentId);
             throw new RuntimeException("Failed to initiate refund: " + e.getMessage());
         }
     }
@@ -177,7 +178,7 @@ public class RazorpayService {
             return order.toJson().toMap();
             
         } catch (RazorpayException e) {
-            log.error("Failed to fetch order details for order ID: {}", orderId, e);
+            ErrorLog.error(e, "Failed to fetch order details for order ID: {}", orderId);
             throw new RuntimeException("Failed to fetch order details: " + e.getMessage());
         }
     }
@@ -196,7 +197,7 @@ public class RazorpayService {
             log.info("Payment captured successfully. Payment ID: {}", paymentId);
             
         } catch (RazorpayException e) {
-            log.error("Failed to capture payment ID: {}", paymentId, e);
+            ErrorLog.error(e, "Failed to capture payment ID: {}", paymentId);
             throw new RuntimeException("Failed to capture payment: " + e.getMessage());
         }
     }
@@ -214,7 +215,7 @@ public class RazorpayService {
             return Base64.getEncoder().encodeToString(hash);
             
         } catch (NoSuchAlgorithmException | InvalidKeyException e) {
-            log.error("Failed to generate webhook signature", e);
+            ErrorLog.error(e, "Failed to generate webhook signature");
             throw new RuntimeException("Failed to generate webhook signature: " + e.getMessage());
         }
     }
@@ -228,7 +229,7 @@ public class RazorpayService {
             return expectedSignature.equals(signature);
             
         } catch (Exception e) {
-            log.error("Failed to verify webhook signature", e);
+            ErrorLog.error(e, "Failed to verify webhook signature");
             return false;
         }
     }

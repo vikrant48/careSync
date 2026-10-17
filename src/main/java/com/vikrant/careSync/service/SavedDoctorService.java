@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import com.vikrant.careSync.util.ErrorLog;
 
 /** A patient's saved doctors. Callers pass the logged-in patient's id; it never comes from the request. */
 @Service
@@ -61,6 +62,7 @@ public class SavedDoctorService {
         try {
             savedDoctorRepository.saveAndFlush(new PatientSavedDoctor(patientId, doctorId));
         } catch (DataIntegrityViolationException alreadySaved) {
+            ErrorLog.debug(alreadySaved);
             // Saved by a second request at the same moment: the unique key kept one row, which is the goal
         }
     }

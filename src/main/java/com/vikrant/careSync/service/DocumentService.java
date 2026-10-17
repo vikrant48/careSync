@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Slf4j
 @Service
@@ -185,6 +186,7 @@ public class DocumentService {
         try {
             return new InputStreamResource(supabaseStorageService.openStream(document.getFilePath()));
         } catch (Exception e) {
+            ErrorLog.debug(e);
             throw new IOException("File not found or not readable from Supabase: " + document.getStoredFilename(), e);
         }
     }
@@ -206,7 +208,7 @@ public class DocumentService {
             supabaseStorageService.deleteStoredFile(document.getFilePath());
             log.info("File deleted from Supabase: {}", document.getStoredFilename());
         } catch (Exception e) {
-            log.warn("Failed to delete file from Supabase: {}", document.getStoredFilename(), e);
+            ErrorLog.warn(e, "Failed to delete file from Supabase: {}", document.getStoredFilename());
         }
     }
 

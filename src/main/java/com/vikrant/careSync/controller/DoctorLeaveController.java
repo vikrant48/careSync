@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/doctor-leaves")
@@ -42,6 +43,7 @@ public class DoctorLeaveController {
             DoctorLeave leave = doctorLeaveService.addLeave(currentDoctor.getId(), startDate, endDate, reason);
             return ResponseEntity.ok(new DoctorLeaveDto(leave));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -56,6 +58,7 @@ public class DoctorLeaveController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(leaves);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -70,6 +73,7 @@ public class DoctorLeaveController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(leaves);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -84,6 +88,7 @@ public class DoctorLeaveController {
             response.put("message", "Leave record deleted successfully");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }

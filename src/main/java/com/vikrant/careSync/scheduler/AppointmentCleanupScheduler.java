@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Component
 @RequiredArgsConstructor
@@ -60,7 +61,7 @@ public class AppointmentCleanupScheduler {
 
                 log.info("Auto-marked appointment ID [{}] as NO_SHOW_PATIENT", app.getId());
             } catch (Exception e) {
-                log.error("Failed to auto-process no-show for appointment ID [{}]: {}", app.getId(), e.getMessage());
+                ErrorLog.error(e, "Failed to auto-process no-show for appointment ID [{}]", app.getId());
             }
         }
 
@@ -80,7 +81,7 @@ public class AppointmentCleanupScheduler {
 
                 log.info("Auto-transitioned orphaned IN_PROGRESS appointment ID [{}] to REPORT_DRAFTED", app.getId());
             } catch (Exception e) {
-                log.error("Failed to process orphaned appointment ID [{}]: {}", app.getId(), e.getMessage());
+                ErrorLog.error(e, "Failed to process orphaned appointment ID [{}]", app.getId());
             }
         }
     }

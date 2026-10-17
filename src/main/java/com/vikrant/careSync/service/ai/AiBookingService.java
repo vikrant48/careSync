@@ -24,6 +24,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @Slf4j
@@ -101,7 +102,7 @@ public class AiBookingService {
                             .reason(reason).build())
                     .build();
         } catch (Exception e) {
-            log.warn("Safety validation failed during doctor selection: {}", e.getMessage());
+            ErrorLog.warn(e, "Safety validation failed during doctor selection");
             return AiChatResponse.builder().response("⚠️ " + e.getMessage()).success(false).build();
         }
     }
@@ -150,7 +151,7 @@ public class AiBookingService {
                     .suggestion(suggestionBuilder.build())
                     .build();
         } catch (Exception e) {
-            log.warn("Safety validation failed during date selection: {}", e.getMessage());
+            ErrorLog.warn(e, "Safety validation failed during date selection");
             return AiChatResponse.builder().response("⚠️ " + e.getMessage()).success(false).build();
         }
     }
@@ -161,7 +162,7 @@ public class AiBookingService {
             return prepareConfirmation(Long.parseLong(parts[0]), parts[1], parts[2],
                     parts.length > 3 ? parts[3] : "AI Assisted Booking");
         } catch (Exception e) {
-            log.warn("Safety validation failed during slot selection: {}", e.getMessage());
+            ErrorLog.warn(e, "Safety validation failed during slot selection");
             return AiChatResponse.builder().response("⚠️ " + e.getMessage()).success(false).build();
         }
     }
@@ -408,6 +409,7 @@ public class AiBookingService {
             appointmentService.cancelAppointment(apptId, currentUser);
             return AiChatResponse.builder().response("Appointment canceled successfully.").success(true).build();
         } catch (Exception e) {
+            ErrorLog.log(e);
             return AiChatResponse.builder().response("Error canceling appointment: " + e.getMessage()).success(true)
                     .build();
         }
@@ -485,6 +487,7 @@ public class AiBookingService {
                 suggestion.setRecommendedSlot(slot.time());
             });
         } catch (Exception ignored) {
+            ErrorLog.debug(ignored);
             // No suggestion for this doctor
         }
         return suggestion;

@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/medical-history")
@@ -62,6 +63,7 @@ public class MedicalHistoryController {
             MedicalHistory createdHistory = medicalHistoryService.createMedicalHistory(medicalHistory);
             return ResponseEntity.ok(new MedicalHistoryDto(createdHistory, "Medical history created successfully"));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -95,6 +97,7 @@ public class MedicalHistoryController {
                     currentDoctor.getId());
             return ResponseEntity.ok(new MedicalHistoryDto(createdHistory, "Medical history created successfully"));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -106,6 +109,7 @@ public class MedicalHistoryController {
             MedicalHistory medicalHistory = medicalHistoryService.getMedicalHistoryById(id);
             return ResponseEntity.ok(new MedicalHistoryDto(medicalHistory));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -120,6 +124,7 @@ public class MedicalHistoryController {
             }
             return ResponseEntity.ok(Map.of());
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -134,6 +139,7 @@ public class MedicalHistoryController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(dtos);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -149,6 +155,7 @@ public class MedicalHistoryController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(dtos);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -167,6 +174,7 @@ public class MedicalHistoryController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(dtos);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -189,6 +197,7 @@ public class MedicalHistoryController {
             MedicalHistory updatedHistory = medicalHistoryService.updateMedicalHistory(id, medicalHistory);
             return ResponseEntity.ok(new MedicalHistoryDto(updatedHistory));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -202,6 +211,7 @@ public class MedicalHistoryController {
             successResponse.put("message", "Medical history deleted successfully");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -213,6 +223,7 @@ public class MedicalHistoryController {
             Map<String, Object> summary = medicalHistoryService.getMedicalHistorySummary(patientId);
             return ResponseEntity.ok(summary);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -230,6 +241,7 @@ public class MedicalHistoryController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(dtos);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -242,6 +254,7 @@ public class MedicalHistoryController {
                     .getMedicalHistoryWithDoctorByPatient(patientId);
             return ResponseEntity.ok(medicalHistories);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }

@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.util.Map;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/reports")
@@ -28,6 +29,7 @@ public class ReportingController {
             Map<String, Object> report = reportingService.getDoctorPerformanceReport(doctorId, startDate, endDate);
             return ResponseEntity.ok(report);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -39,6 +41,7 @@ public class ReportingController {
             Map<String, Object> analytics = reportingService.getPatientAnalytics(patientId);
             return ResponseEntity.ok(analytics);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -52,6 +55,7 @@ public class ReportingController {
             Map<String, Object> report = reportingService.getClinicOverviewReport(startDate, endDate);
             return ResponseEntity.ok(report);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -65,6 +69,7 @@ public class ReportingController {
             Map<String, Object> report = reportingService.getAppointmentTrendsReport(startDate, endDate);
             return ResponseEntity.ok(report);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -76,6 +81,7 @@ public class ReportingController {
             Map<String, Object> analysis = reportingService.getSpecializationAnalysis();
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -87,6 +93,7 @@ public class ReportingController {
             Map<String, Object> report = reportingService.getPatientDemographicsReport();
             return ResponseEntity.ok(report);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -100,6 +107,7 @@ public class ReportingController {
             Map<String, Object> analysis = reportingService.getRevenueAnalysis(startDate, endDate);
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }

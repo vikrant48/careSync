@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.Set;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * Plain-language explanations of lab reports. Made only when the patient asks (one AI call per report), then
@@ -102,7 +103,7 @@ public class LabReportExplainerService {
             documentRepository.save(document);
         } catch (Exception e) {
             // Never block opening a report because the "seen" time could not be saved
-            log.warn("Could not mark a lab report as seen: {}", e.getClass().getSimpleName());
+            ErrorLog.warn(e, "Could not mark a lab report as seen");
         }
     }
 

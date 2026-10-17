@@ -14,6 +14,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * Per-user AI allowance (calls to a model per minute and per day). The providers' free tiers are shared by every
@@ -77,7 +78,7 @@ public class AiQuotaService {
             }
             return value != null ? value : 0L;
         } catch (Exception e) {
-            log.warn("Redis unavailable for AI quota, counting in memory");
+            ErrorLog.warn(e, "Redis unavailable for AI quota, counting in memory");
             pruneFallback();
             return fallbackCounts.computeIfAbsent(key, k -> new AtomicLong()).incrementAndGet();
         }

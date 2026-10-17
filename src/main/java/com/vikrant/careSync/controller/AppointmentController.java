@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/appointments")
@@ -91,7 +92,7 @@ public class AppointmentController {
 
             return ResponseEntity.ok(new AppointmentResponse(created));
         } catch (Exception e) {
-            log.error("=== ERROR in appointment creation: {}", e.getMessage(), e);
+            ErrorLog.error(e, "=== ERROR in appointment creation");
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -112,6 +113,7 @@ public class AppointmentController {
             response.put("message", "Slot held for 5 minutes");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -130,6 +132,7 @@ public class AppointmentController {
             response.put("message", "Slot lock released");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -151,7 +154,7 @@ public class AppointmentController {
             AppointmentResponse response = appointmentService.bookAppointmentWithPayment(patient.getId(), request);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            log.error("=== ERROR in atomic appointment creation with payment: {}", e.getMessage(), e);
+            ErrorLog.error(e, "=== ERROR in atomic appointment creation with payment");
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -167,6 +170,7 @@ public class AppointmentController {
                     request, patient.getId());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -178,6 +182,7 @@ public class AppointmentController {
             Patient patient = currentUserService.requirePatient();
             return ResponseEntity.ok(appointmentFollowThroughService.getFollowThrough(id, patient.getId()));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -189,6 +194,7 @@ public class AppointmentController {
             com.vikrant.careSync.dto.PreVisitIntakeResponse response = appointmentService.getPreVisitIntakeSummary(id);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -200,6 +206,7 @@ public class AppointmentController {
             Doctor currentDoctor = currentUserService.requireDoctor();
             return ResponseEntity.ok(appointmentService.getPreVisitBrief(id, currentDoctor.getId()));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -215,6 +222,7 @@ public class AppointmentController {
                     liveTranscript);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -231,6 +239,7 @@ public class AppointmentController {
                     : appointmentService.getSoapDraft(id);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -244,6 +253,7 @@ public class AppointmentController {
             Doctor currentDoctor = currentUserService.requireDoctor();
             return ResponseEntity.ok(appointmentService.saveReviewedSoapDraft(id, reportDto, currentDoctor.getId()));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -259,6 +269,7 @@ public class AppointmentController {
                     currentDoctor.getId());
             return ResponseEntity.ok(signedReport);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -274,6 +285,7 @@ public class AppointmentController {
                     .getAppointmentAnalytics(startDate, endDate, doctorId);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -286,6 +298,7 @@ public class AppointmentController {
                     .getAppointmentAuditTrail(id);
             return ResponseEntity.ok(auditTrail);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -305,6 +318,7 @@ public class AppointmentController {
             List<AppointmentResponse> responses = mapToResponses(appointments);
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -318,6 +332,7 @@ public class AppointmentController {
             List<AppointmentResponse> responses = mapToResponses(appointments);
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -333,6 +348,7 @@ public class AppointmentController {
             List<AppointmentResponse> responses = mapToResponses(appointments);
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -347,6 +363,7 @@ public class AppointmentController {
             List<AppointmentResponse> responses = mapToResponses(appointments);
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -361,6 +378,7 @@ public class AppointmentController {
             List<AppointmentResponse> responses = mapToResponses(appointments);
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -383,6 +401,7 @@ public class AppointmentController {
             Appointment updated = appointmentService.updateAppointment(id, updatedAppointment, currentUser.getUser());
             return ResponseEntity.ok(new AppointmentResponse(updated));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -399,6 +418,7 @@ public class AppointmentController {
             successResponse.put("message", "Appointment cancelled successfully");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -429,6 +449,7 @@ public class AppointmentController {
             successResponse.put("appointment", new AppointmentResponse(rescheduled));
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -443,6 +464,7 @@ public class AppointmentController {
             DoctorDashboardMetricsResponse metrics = appointmentService.getDoctorDashboardMetrics(currentUser.getId());
             return ResponseEntity.ok(metrics);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -456,6 +478,7 @@ public class AppointmentController {
             List<AppointmentResponse> responses = mapToResponses(appointments);
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -474,6 +497,7 @@ public class AppointmentController {
                     currentUser.getId(), page, size, status, range, search);
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -489,6 +513,7 @@ public class AppointmentController {
             long count = appointmentService.countDoctorAppointments(currentUser.getId(), status, range, search);
             return ResponseEntity.ok(count);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -502,6 +527,7 @@ public class AppointmentController {
             List<AppointmentResponse> responses = mapToResponses(appointments);
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -515,6 +541,7 @@ public class AppointmentController {
             List<AppointmentResponse> responses = mapToResponses(appointments);
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -530,6 +557,7 @@ public class AppointmentController {
             List<AppointmentResponse> responses = mapToResponses(appointments);
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -543,6 +571,7 @@ public class AppointmentController {
             List<AppointmentResponse> responses = mapToResponses(appointments);
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -556,6 +585,7 @@ public class AppointmentController {
             List<AppointmentResponse> responses = mapToResponses(appointments);
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -576,6 +606,7 @@ public class AppointmentController {
 
             return ResponseEntity.ok(uniquePatients);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -595,6 +626,7 @@ public class AppointmentController {
                     currentUser.getUser());
             return ResponseEntity.ok(new AppointmentResponse(updatedAppointment));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -628,6 +660,7 @@ public class AppointmentController {
                     userEntity);
             return ResponseEntity.ok(new AppointmentResponse(updatedAppointment));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -642,6 +675,7 @@ public class AppointmentController {
                     Appointment.Status.CONFIRMED, currentUser.getUser());
             return ResponseEntity.ok(new AppointmentResponse(updatedAppointment));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -656,6 +690,7 @@ public class AppointmentController {
                     Appointment.Status.COMPLETED, currentUser.getUser());
             return ResponseEntity.ok(new AppointmentResponse(updatedAppointment));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -670,6 +705,7 @@ public class AppointmentController {
                     Appointment.Status.CANCELLED, currentUser.getUser());
             return ResponseEntity.ok(new AppointmentResponse(updatedAppointment));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -708,6 +744,7 @@ public class AppointmentController {
 
             return ResponseEntity.ok(new AppointmentResponse(appointment));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -739,6 +776,7 @@ public class AppointmentController {
 
             return ResponseEntity.ok(details);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(Map.of("error", ClientErrorMessages.of(e)));
         }
     }
@@ -758,6 +796,7 @@ public class AppointmentController {
             successResponse.put("message", "Appointment deleted successfully");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -775,6 +814,7 @@ public class AppointmentController {
             try {
                 parsedDate = LocalDate.parse(date);
             } catch (Exception e) {
+                ErrorLog.log(e);
                 return ResponseEntity.badRequest().body(Map.of("error", "Invalid date format. Expected YYYY-MM-DD"));
             }
 
@@ -789,6 +829,7 @@ public class AppointmentController {
             SlotAvailabilityResponse response = appointmentService.getAvailableSlots(doctorId, date);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -811,6 +852,7 @@ public class AppointmentController {
 
             return ResponseEntity.ok(new AppointmentResponse(emergencyAppointment));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -822,6 +864,7 @@ public class AppointmentController {
             CompletionPreviewDto preview = appointmentService.getCompletionPreview(id);
             return ResponseEntity.ok(preview);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -837,6 +880,7 @@ public class AppointmentController {
                     currentDoctor.getId());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }

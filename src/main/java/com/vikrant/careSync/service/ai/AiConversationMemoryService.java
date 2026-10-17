@@ -16,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * Short chat memory sent back to the model with each message. Conversations belong to the logged-in user (the key
@@ -65,7 +66,7 @@ public class AiConversationMemoryService {
         try {
             stored = redisTemplate.opsForValue().get(key.get());
         } catch (Exception e) {
-            log.warn("Redis unavailable for AI conversation memory, using in-memory fallback");
+            ErrorLog.warn(e, "Redis unavailable for AI conversation memory, using in-memory fallback");
             stored = fallbackGet(key.get());
         }
         return decode(stored);
@@ -91,13 +92,13 @@ public class AiConversationMemoryService {
         try {
             encrypted = fieldCipher.encrypt(objectMapper.writeValueAsString(history));
         } catch (Exception e) {
-            log.warn("Could not store AI conversation memory: {}", e.getClass().getSimpleName());
+            ErrorLog.warn(e, "Could not store AI conversation memory");
             return;
         }
         try {
             redisTemplate.opsForValue().set(key.get(), encrypted, CONVERSATION_TTL);
         } catch (Exception e) {
-            log.warn("Redis unavailable for AI conversation memory, using in-memory fallback");
+            ErrorLog.warn(e, "Redis unavailable for AI conversation memory, using in-memory fallback");
             synchronized (fallbackMemory) {
                 fallbackMemory.put(key.get(), new FallbackEntry(encrypted, Instant.now().plus(CONVERSATION_TTL)));
             }
@@ -110,7 +111,7 @@ public class AiConversationMemoryService {
             try {
                 redisTemplate.delete(key);
             } catch (Exception e) {
-                log.warn("Redis unavailable while forgetting an AI conversation");
+                ErrorLog.warn(e, "Redis unavailable while forgetting an AI conversation");
             }
             synchronized (fallbackMemory) {
                 fallbackMemory.remove(key);
@@ -152,7 +153,7 @@ public class AiConversationMemoryService {
                     new TypeReference<List<Map<String, String>>>() {
                     });
         } catch (Exception e) {
-            log.warn("Discarding unreadable AI conversation memory: {}", e.getClass().getSimpleName());
+            ErrorLog.warn(e, "Discarding unreadable AI conversation memory");
             return new ArrayList<>();
         }
     }

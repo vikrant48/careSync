@@ -20,6 +20,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 import org.springframework.transaction.annotation.Transactional;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @RequiredArgsConstructor
@@ -400,7 +401,7 @@ public class NotificationService {
         try {
             messagingTemplate.convertAndSendToUser(username, "/queue/notifications", new NotificationDto(savedNotif));
         } catch (Exception e) {
-            log.error("Failed to send WebSocket notification to {} {}", recipientType, recipientId, e);
+            ErrorLog.error(e, "Failed to send WebSocket notification to {} {}", recipientType, recipientId);
         }
     }
 

@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.time.Duration;
 import java.util.UUID;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @RequiredArgsConstructor
@@ -117,7 +118,7 @@ public class SupabaseStorageService {
             log.info("File uploaded to Supabase Storage ({} bucket): {}", toPrivate ? "private" : "public", key);
             return new StoredFile(filePath, key, detected.contentType());
         } catch (Exception e) {
-            log.error("Failed to upload file to Supabase: {}", e.getMessage(), e);
+            ErrorLog.error(e, "Failed to upload file to Supabase");
             throw new IOException("Failed to upload file to Supabase: " + e.getMessage(), e);
         }
     }
@@ -169,7 +170,7 @@ public class SupabaseStorageService {
                     .build());
             return true;
         } catch (Exception e) {
-            log.error("Failed to delete private file from Supabase: {}", e.getMessage(), e);
+            ErrorLog.error(e, "Failed to delete private file from Supabase");
             return false;
         }
     }
@@ -221,7 +222,7 @@ public class SupabaseStorageService {
             return data.length == 0 || data.length > maxBytes ? java.util.Optional.empty()
                     : java.util.Optional.of(data);
         } catch (Exception e) {
-            log.warn("Could not read stored file {}: {}", key, e.getMessage());
+            ErrorLog.warn(e, "Could not read stored file {}", key);
             return java.util.Optional.empty();
         }
     }
@@ -245,7 +246,7 @@ public class SupabaseStorageService {
             log.info("File deleted from Supabase: {}", key);
             return true;
         } catch (Exception e) {
-            log.error("Failed to delete file from Supabase: {}", e.getMessage(), e);
+            ErrorLog.error(e, "Failed to delete file from Supabase");
             return false;
         }
     }

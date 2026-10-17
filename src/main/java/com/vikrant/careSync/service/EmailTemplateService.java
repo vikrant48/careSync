@@ -9,6 +9,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.stream.Collectors;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @RequiredArgsConstructor
@@ -29,6 +30,7 @@ public class EmailTemplateService {
                 return html;
             }
         } catch (Exception e) {
+            ErrorLog.debug(e);
             throw new RuntimeException("Failed to render email template: " + templatePath, e);
         }
     }

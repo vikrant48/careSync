@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.concurrent.ConcurrentHashMap;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @RequiredArgsConstructor
@@ -47,7 +48,7 @@ public class SlotLockService {
                 return false;
             }
         } catch (Exception e) {
-            log.warn("Redis unavailable for slot lock [{}]: {}. Falling back to in-memory guard.", key, e.getMessage());
+            ErrorLog.warn(e, "Redis unavailable for slot lock [{}]. Falling back to in-memory guard.", key);
             return acquireMemoryFallbackLock(key);
         }
     }
@@ -72,7 +73,7 @@ public class SlotLockService {
                 }
             }
         } catch (Exception e) {
-            log.warn("Redis check failed for {} slot locks: {}", keys.size(), e.getMessage());
+            ErrorLog.warn(e, "Redis check failed for {} slot locks", keys.size());
         }
         for (int i = 0; i < slots.size(); i++) {
             if (isMemoryLocked(keys.get(i))) {
@@ -105,7 +106,7 @@ public class SlotLockService {
                 return true;
             }
         } catch (Exception e) {
-            log.warn("Redis check failed for key [{}]: {}", key, e.getMessage());
+            ErrorLog.warn(e, "Redis check failed for key [{}]", key);
         }
 
         // Check fallback map
@@ -129,7 +130,7 @@ public class SlotLockService {
             redisTemplate.delete(key);
             log.info("Released slot lock key [{}]", key);
         } catch (Exception e) {
-            log.warn("Failed to delete Redis slot lock [{}]: {}", key, e.getMessage());
+            ErrorLog.warn(e, "Failed to delete Redis slot lock [{}]", key);
         }
         memoryLockMap.remove(key);
     }
@@ -151,7 +152,7 @@ public class SlotLockService {
                 log.info("Released slot lock key [{}]", key);
             }
         } catch (Exception e) {
-            log.warn("Failed to release Redis slot lock [{}]: {}", key, e.getMessage());
+            ErrorLog.warn(e, "Failed to release Redis slot lock [{}]", key);
         }
         memoryLockMap.remove(key);
         return true;

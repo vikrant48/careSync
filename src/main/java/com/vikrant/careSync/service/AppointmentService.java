@@ -62,6 +62,7 @@ import com.vikrant.careSync.repository.AppointmentIntakeRepository;
 import com.vikrant.careSync.dto.SoapReportDto;
 import com.vikrant.careSync.repository.MedicalHistoryRepository;
 import com.vikrant.careSync.entity.MedicalHistory;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @RequiredArgsConstructor
@@ -433,7 +434,7 @@ public class AppointmentService {
                     chatRepository.deleteByAppointmentId(saved.getId());
                 } catch (Exception e) {
                     // Log error but don't fail the transaction just for chat history
-                    System.err.println("Failed to delete chat history: " + e.getMessage());
+                    ErrorLog.log(e, "Failed to delete chat history");
                 }
 
                 // Optionally prompt feedback after completion
@@ -454,6 +455,7 @@ public class AppointmentService {
             appointment.changeStatus(appointmentStatus, "SYSTEM");
             return appointmentRepository.save(appointment);
         } catch (IllegalArgumentException e) {
+            ErrorLog.log(e);
             throw new RuntimeException("Invalid status: " + status);
         }
     }
@@ -1586,6 +1588,7 @@ public class AppointmentService {
             }
             return hexString.toString();
         } catch (Exception e) {
+            ErrorLog.log(e);
             return "SHA256_HASH_ERROR_" + System.currentTimeMillis();
         }
     }

@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @Slf4j
@@ -40,6 +41,7 @@ public class AiAuditService {
                         Long parsedId = Long.parseLong(username);
                         userOpt = userRepository.findById(parsedId);
                     } catch (NumberFormatException ignored) {
+                        ErrorLog.debug(ignored);
                     }
                 }
 
@@ -71,7 +73,7 @@ public class AiAuditService {
             log.info("AI Audit Log saved [Type: {}, Model: {}, Latency: {}ms, Success: {}, Action: {}]",
                     promptType, selectedModel, latencyMs, success, bookingActionProduced);
         } catch (Exception e) {
-            log.error("Failed to save AI Audit Log: {}", e.getMessage(), e);
+            ErrorLog.error(e, "Failed to save AI Audit Log");
         }
     }
 

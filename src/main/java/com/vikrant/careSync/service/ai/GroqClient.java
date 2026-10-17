@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * Groq chat completions (OpenAI-compatible). The model and its fallbacks come from configuration
@@ -185,16 +186,14 @@ public class GroqClient {
                     break;
                 } catch (HttpClientErrorException e) {
                     if (tryNextModel(e)) {
-                        log.warn("Groq model '{}' unavailable (HTTP {}). Trying the next model...", currentModel,
-                                e.getStatusCode().value());
+                        ErrorLog.warn(e, "Groq model '{}' unavailable (HTTP {}). Trying the next model...", currentModel, e.getStatusCode().value());
                         break;
                     }
                     log.error("Groq request refused (HTTP {})", e.getStatusCode().value());
                     throw new IllegalStateException("AI request was refused (HTTP " + e.getStatusCode().value() + ")");
                 } catch (HttpServerErrorException | ResourceAccessException e) {
                     // Overloaded, server error or timeout: retry this model once, then move on
-                    log.warn("Groq model '{}' failed (attempt {}/{}): {}", currentModel, attempt, RETRIES_PER_MODEL,
-                            e.getClass().getSimpleName());
+                    ErrorLog.warn(e, "Groq model '{}' failed (attempt {}/{})", currentModel, attempt, RETRIES_PER_MODEL);
                     if (attempt < RETRIES_PER_MODEL && !sleep(RETRY_DELAY_MS * attempt)) {
                         break;
                     }
@@ -255,10 +254,11 @@ public class GroqClient {
             } catch (IllegalStateException e) {
                 throw e;
             } catch (InterruptedException e) {
+                ErrorLog.log(e);
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException("AI streaming was interrupted", e);
             } catch (Exception e) {
-                log.warn("Groq streaming with '{}' failed: {}", currentModel, e.getClass().getSimpleName());
+                ErrorLog.warn(e, "Groq streaming with '{}' failed", currentModel);
             }
         }
         throw new IllegalStateException("The AI service is unavailable right now. Please try again shortly.");
@@ -287,6 +287,7 @@ public class GroqClient {
                         }
                     }
                 } catch (Exception ignored) {
+                    ErrorLog.debug(ignored);
                     // Keep-alive or non-JSON line
                 }
             }
@@ -343,15 +344,13 @@ public class GroqClient {
                 } catch (HttpClientErrorException e) {
                     // tool_use_failed: this model produced a malformed tool call; another model may do better
                     if (tryNextModel(e) || e.getResponseBodyAsString().contains("tool_use_failed")) {
-                        log.warn("Groq model '{}' unavailable for tools (HTTP {}). Trying the next model...",
-                                currentModel, e.getStatusCode().value());
+                        ErrorLog.warn(e, "Groq model '{}' unavailable for tools (HTTP {}). Trying the next model...", currentModel, e.getStatusCode().value());
                         break;
                     }
                     log.error("Groq request refused (HTTP {})", e.getStatusCode().value());
                     throw new IllegalStateException("AI request was refused (HTTP " + e.getStatusCode().value() + ")");
                 } catch (HttpServerErrorException | ResourceAccessException e) {
-                    log.warn("Groq model '{}' failed (attempt {}/{}): {}", currentModel, attempt, RETRIES_PER_MODEL,
-                            e.getClass().getSimpleName());
+                    ErrorLog.warn(e, "Groq model '{}' failed (attempt {}/{})", currentModel, attempt, RETRIES_PER_MODEL);
                     if (attempt < RETRIES_PER_MODEL && !sleep(RETRY_DELAY_MS * attempt)) {
                         break;
                     }
@@ -418,10 +417,11 @@ public class GroqClient {
             } catch (IllegalStateException e) {
                 throw e;
             } catch (InterruptedException e) {
+                ErrorLog.log(e);
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException("AI streaming was interrupted", e);
             } catch (Exception e) {
-                log.warn("Groq streaming with '{}' failed: {}", currentModel, e.getClass().getSimpleName());
+                ErrorLog.warn(e, "Groq streaming with '{}' failed", currentModel);
             }
         }
         throw new IllegalStateException("The AI service is unavailable right now. Please try again shortly.");
@@ -446,6 +446,7 @@ public class GroqClient {
                 try {
                     chunk = mapper.readTree(data);
                 } catch (Exception ignored) {
+                    ErrorLog.log(ignored);
                     continue;
                 }
                 JsonNode usageNode = chunk.hasNonNull("usage") ? chunk.get("usage") : chunk.path("x_groq").path("usage");
@@ -568,6 +569,7 @@ public class GroqClient {
             Thread.sleep(millis);
             return true;
         } catch (InterruptedException e) {
+            ErrorLog.log(e);
             Thread.currentThread().interrupt();
             return false;
         }

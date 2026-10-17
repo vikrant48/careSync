@@ -28,6 +28,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/payments")
@@ -61,10 +62,10 @@ public class PaymentController {
             PaymentResponseDto response = paymentService.payForBooking(bookingId, request);
             return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
-            log.error("Payment failed for booking ID: {}", bookingId, e);
+            ErrorLog.error(e, "Payment failed for booking ID: {}", bookingId);
             return ResponseEntity.badRequest().build();
         } catch (Exception e) {
-            log.error("Unexpected error during payment for booking ID: {}", bookingId, e);
+            ErrorLog.error(e, "Unexpected error during payment for booking ID: {}", bookingId);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -89,7 +90,7 @@ public class PaymentController {
             return ResponseEntity.ok(response);
 
         } catch (RuntimeException e) {
-            log.error("Payment initiation failed", e);
+            ErrorLog.error(e, "Payment initiation failed");
             return ResponseEntity.badRequest().build();
         }
     }
@@ -109,7 +110,7 @@ public class PaymentController {
             return ResponseEntity.ok(payment);
 
         } catch (RuntimeException e) {
-            log.error("Payment not found for transaction ID: {}", transactionId);
+            ErrorLog.error(e, "Payment not found for transaction ID: {}", transactionId);
             return ResponseEntity.notFound().build();
         }
     }
@@ -130,7 +131,7 @@ public class PaymentController {
         try {
             payment = paymentService.getPaymentFor(bookingId, type);
         } catch (RuntimeException e) {
-            log.error("Payment not found for booking ID: {}", bookingId);
+            ErrorLog.error(e, "Payment not found for booking ID: {}", bookingId);
             return ResponseEntity.notFound().build();
         }
         // The id may match a booking or an appointment, so check ownership on the payment found
@@ -160,7 +161,7 @@ public class PaymentController {
             return ResponseEntity.ok(payments);
 
         } catch (RuntimeException e) {
-            log.error("Error retrieving payments for patient ID: {}", patientId, e);
+            ErrorLog.error(e, "Error retrieving payments for patient ID: {}", patientId);
             return ResponseEntity.notFound().build();
         }
     }
@@ -221,7 +222,7 @@ public class PaymentController {
             return ResponseEntity.ok(Map.of("status", "success"));
 
         } catch (Exception e) {
-            log.error("Webhook processing failed", e);
+            ErrorLog.error(e, "Webhook processing failed");
             return ResponseEntity.badRequest().body(Map.of("status", "error", "message", ClientErrorMessages.of(e)));
         }
     }
@@ -242,7 +243,7 @@ public class PaymentController {
             return ResponseEntity.ok(payment);
 
         } catch (RuntimeException e) {
-            log.error("Payment verification failed for transaction ID: {}", transactionId, e);
+            ErrorLog.error(e, "Payment verification failed for transaction ID: {}", transactionId);
             return ResponseEntity.notFound().build();
         }
     }
@@ -270,7 +271,7 @@ public class PaymentController {
                     "transactionId", transactionId));
 
         } catch (RuntimeException e) {
-            log.error("Payment cancellation failed for transaction ID: {}", transactionId, e);
+            ErrorLog.error(e, "Payment cancellation failed for transaction ID: {}", transactionId);
             return ResponseEntity.badRequest().body(Map.of(
                     "status", "error",
                     "message", ClientErrorMessages.of(e)));
@@ -300,7 +301,7 @@ public class PaymentController {
             return ResponseEntity.ok(stats);
 
         } catch (Exception e) {
-            log.error("Error retrieving payment statistics", e);
+            ErrorLog.error(e, "Error retrieving payment statistics");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }

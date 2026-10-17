@@ -13,6 +13,7 @@ import org.springframework.web.client.RestTemplate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 public class ResendEmailClient {
@@ -77,7 +78,7 @@ public class ResendEmailClient {
                 return false;
             }
         } catch (Exception e) {
-            log.error("Resend HTTP send failed: {}", e.getMessage(), e);
+            ErrorLog.error(e, "Resend HTTP send failed");
             return false;
         }
     }

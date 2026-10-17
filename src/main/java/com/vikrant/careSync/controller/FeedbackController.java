@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/feedback")
@@ -43,8 +44,10 @@ public class FeedbackController {
                     request.getAnonymous());
             return ResponseEntity.ok(new FeedbackDto(createdFeedback));
         } catch (IllegalStateException e) {
+            ErrorLog.log(e);
             return ResponseEntity.status(409).body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -55,6 +58,7 @@ public class FeedbackController {
             Feedback feedback = feedbackService.getFeedbackById(id);
             return ResponseEntity.ok(forCurrentViewer(new FeedbackDto(feedback)));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -69,6 +73,7 @@ public class FeedbackController {
                     .getPendingFeedbackAppointmentsForPatient(current.getId());
             return ResponseEntity.ok(pending);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -82,6 +87,7 @@ public class FeedbackController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(dtos);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -96,6 +102,7 @@ public class FeedbackController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(dtos);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -107,6 +114,7 @@ public class FeedbackController {
             Feedback feedback = feedbackService.getFeedbackByAppointment(appointmentId);
             return ResponseEntity.ok(forCurrentViewer(new FeedbackDto(feedback)));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -122,6 +130,7 @@ public class FeedbackController {
             Feedback updatedFeedback = feedbackService.updateFeedback(id, feedback);
             return ResponseEntity.ok(new FeedbackDto(updatedFeedback));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -135,6 +144,7 @@ public class FeedbackController {
             successResponse.put("message", "Feedback deleted successfully");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -148,6 +158,7 @@ public class FeedbackController {
             response.put("averageRating", averageRating);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -158,6 +169,7 @@ public class FeedbackController {
             Map<Integer, Long> ratingDistribution = feedbackService.getRatingDistributionByDoctor(doctorId);
             return ResponseEntity.ok(ratingDistribution);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }

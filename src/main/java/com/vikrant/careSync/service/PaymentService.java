@@ -28,6 +28,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @RequiredArgsConstructor
@@ -114,7 +115,7 @@ public class PaymentService {
             log.info("Payment initiated successfully. Transaction ID: {}", payment.getTransactionId());
 
         } catch (Exception e) {
-            log.error("Payment initiation failed for transaction: {}", payment.getTransactionId(), e);
+            ErrorLog.error(e, "Payment initiation failed for transaction: {}", payment.getTransactionId());
             payment.setPaymentStatus(Payment.PaymentStatus.FAILED);
             payment.setFailureReason(e.getMessage());
             paymentRepository.save(payment);
@@ -245,7 +246,7 @@ public class PaymentService {
             }
 
         } catch (Exception e) {
-            log.error("Error processing payment callback for transaction: {}", payment.getTransactionId(), e);
+            ErrorLog.error(e, "Error processing payment callback for transaction: {}", payment.getTransactionId());
             payment.setPaymentStatus(Payment.PaymentStatus.FAILED);
             payment.setFailureReason("Callback processing error: " + e.getMessage());
         }
@@ -530,6 +531,7 @@ public class PaymentService {
         } catch (RuntimeException exception) {
             throw exception;
         } catch (Exception exception) {
+            ErrorLog.debug(exception);
             throw new RuntimeException("Payment gateway call failed: " + exception.getMessage(), exception);
         } finally {
             if (permitAcquired) {

@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -180,6 +181,7 @@ public class AdminController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(blockedIPs);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -192,6 +194,7 @@ public class AdminController {
             response.put("message", "IP address " + ipAddress + " has been unblocked");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -204,6 +207,7 @@ public class AdminController {
             response.put("message", "All IP addresses have been unblocked");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -217,6 +221,7 @@ public class AdminController {
             response.put("message", "Expired blocked IPs and sessions have been cleaned up");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -242,6 +247,7 @@ public class AdminController {
             response.put("reason", reason != null ? reason : "No reason provided");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -267,6 +273,7 @@ public class AdminController {
             response.put("reason", reason != null ? reason : "No reason provided");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -290,6 +297,7 @@ public class AdminController {
             response.put("message", "Doctor " + doctor.getUsername() + " has been unblocked");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -313,6 +321,7 @@ public class AdminController {
             response.put("message", "Patient " + patient.getUsername() + " has been unblocked");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -329,6 +338,7 @@ public class AdminController {
             response.put("message", "IP address " + ipAddress + " has been blocked for " + hoursToBlock + " hours");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -342,6 +352,7 @@ public class AdminController {
                     .map(UserSessionDto::new).collect(Collectors.toList());
             return ResponseEntity.ok(sessions);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -355,6 +366,7 @@ public class AdminController {
             response.put("message", "Session " + sessionId + " has been deactivated");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -367,6 +379,7 @@ public class AdminController {
             response.put("message", "All sessions for user " + username + " have been deactivated");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -379,6 +392,7 @@ public class AdminController {
             response.put("message", "Expired sessions have been cleaned up");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -412,6 +426,7 @@ public class AdminController {
             securityService.deactivateAllUserSessions(user.getUsername());
             refreshTokenService.deleteByUsername(user.getUsername());
         } catch (Exception e) {
+            ErrorLog.debug(e);
             // Non-blocking fallback log
         }
 

@@ -8,6 +8,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.math.*;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Getter
 @Setter
@@ -121,6 +122,7 @@ public class AppointmentResponse {
                 this.hasSignedRecord = false;
             }
         } catch (Exception e) {
+            ErrorLog.debug(e);
             this.hasSignedRecord = false;
         }
 
@@ -128,6 +130,7 @@ public class AppointmentResponse {
         try {
             this.feedbackSubmitted = (appointment.getFeedback() != null);
         } catch (Exception e) {
+            ErrorLog.debug(e);
             this.feedbackSubmitted = false;
         }
     }

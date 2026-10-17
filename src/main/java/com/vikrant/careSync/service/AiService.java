@@ -49,6 +49,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import com.vikrant.careSync.service.ai.AiAuditService;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @Slf4j
@@ -167,14 +168,14 @@ public class AiService {
                             chatUsage = reply.usage();
                             toolsUsed = reply.toolsUsed();
                         } catch (AccessDeniedException denied) {
+                            ErrorLog.log(denied);
                             finalResponse = AiChatResponse.builder().conversationId(conversationId).success(false)
                                     .response("You can only ask about your own patients.").build();
                         } catch (AiQuotaExceededException quota) {
                             throw quota;
                         } catch (Exception copilotError) {
                             // Old clinical assistant (no patient tools) as a fallback, so doctors still get an answer
-                            log.warn("Doctor co-pilot failed, using the basic assistant: {}",
-                                    copilotError.getClass().getSimpleName());
+                            ErrorLog.warn(copilotError, "Doctor co-pilot failed, using the basic assistant");
                             groqClient.resetLastCall();
                             finalResponse = basicDoctorReply(request, userMessage, conversationId);
                         }
@@ -210,6 +211,7 @@ public class AiService {
                     responseJson = new ObjectMapper().writeValueAsString(finalResponse);
                 }
             } catch (Exception ex) {
+                ErrorLog.log(ex);
                 responseJson = finalResponse != null ? finalResponse.getResponse() : null;
             }
             AiUsage usage = chatUsage != null ? chatUsage : groqClient.getLastUsage();
@@ -222,7 +224,7 @@ public class AiService {
                     finalResponse.setConversationId(savedId);
                 }
             } catch (Exception historyError) {
-                log.warn("AI chat history not saved: {}", historyError.getClass().getSimpleName());
+                ErrorLog.warn(historyError, "AI chat history not saved");
             }
 
             aiAuditService.logInteraction("CHAT", chatModel != null ? chatModel : groqClient.getLastUsedModel(),
@@ -232,12 +234,13 @@ public class AiService {
 
             return finalResponse;
         } catch (AiQuotaExceededException e) {
+            ErrorLog.log(e);
             long latencyMs = System.currentTimeMillis() - startTime;
             aiAuditService.logInteraction("CHAT", null, latencyMs, false,
                     null, null, null, "NONE", "AI allowance used up", userMessage, null);
             return AiChatResponse.builder().response(e.userMessage()).success(false).build();
         } catch (Exception e) {
-            log.error("AI Error: {}", e.getMessage(), e);
+            ErrorLog.error(e, "AI Error");
             errorMessage = e.getMessage();
             long latencyMs = System.currentTimeMillis() - startTime;
             aiAuditService.logInteraction("CHAT", groqClient.getLastUsedModel(), latencyMs, false,
@@ -316,7 +319,7 @@ public class AiService {
                     finalResponse.setConversationId(conversationId);
                 }
             } catch (Exception parseEx) {
-                log.warn("Failed to parse structured JSON response: {}", parseEx.getMessage());
+                ErrorLog.warn(parseEx, "Failed to parse structured JSON response");
                 finalResponse = AiChatResponse.builder().response(rawJson)
                         .conversationId(conversationId).success(true).build();
             }
@@ -360,11 +363,12 @@ public class AiService {
                     action.length() > 250 ? action.substring(0, 250) : action, null, text, null);
             return response;
         } catch (AiQuotaExceededException e) {
+            ErrorLog.log(e);
             aiAuditService.logInteraction("SYMPTOM_SEARCH", null, System.currentTimeMillis() - startTime, false,
                     null, null, null, "NONE", "AI allowance used up", text, null);
             return AiChatResponse.builder().response(e.userMessage()).success(false).build();
         } catch (Exception e) {
-            log.warn("Symptom search failed: {}", e.getClass().getSimpleName());
+            ErrorLog.warn(e, "Symptom search failed");
             aiAuditService.logInteraction("SYMPTOM_SEARCH", groqClient.getLastUsedModel(),
                     System.currentTimeMillis() - startTime, false, null, null, null, "NONE",
                     e.getClass().getSimpleName(), text, null);
@@ -398,6 +402,7 @@ public class AiService {
             }
             return response;
         } catch (Exception e) {
+            ErrorLog.log(e);
             success = false;
             errorMessage = e.getMessage();
             throw e;
@@ -410,6 +415,7 @@ public class AiService {
                     respText = new ObjectMapper().writeValueAsString(response);
                 }
             } catch (Exception ex) {
+                ErrorLog.log(ex);
                 respText = response != null ? response.getSummary() : null;
             }
             AiUsage usage = aiClinicalService.lastUsage();
@@ -432,6 +438,7 @@ public class AiService {
             }
             return response;
         } catch (Exception e) {
+            ErrorLog.log(e);
             success = false;
             errorMessage = e.getMessage();
             throw e;
@@ -443,6 +450,7 @@ public class AiService {
                     respText = new ObjectMapper().writeValueAsString(response);
                 }
             } catch (Exception ex) {
+                ErrorLog.log(ex);
                 respText = null;
             }
             AiUsage usage = aiClinicalService.lastUsage();
@@ -542,7 +550,7 @@ public class AiService {
                 scanResponse.setSuccess(true);
             }
         } catch (Exception e) {
-            log.error("Vision AI scan failed: {}", e.getMessage(), e);
+            ErrorLog.error(e, "Vision AI scan failed");
             success = false;
             errorMessage = e.getMessage();
             scanResponse = VisionScanResponse.builder()
@@ -630,7 +638,7 @@ public class AiService {
                 dictationResponse.setSuccess(true);
             }
         } catch (Exception e) {
-            log.error("Clinical dictation structuring failed: {}", e.getMessage(), e);
+            ErrorLog.error(e, "Clinical dictation structuring failed");
             success = false;
             errorMessage = e.getMessage();
             dictationResponse = ClinicalDictationResponse.builder()
@@ -708,7 +716,7 @@ public class AiService {
                     mismatches.add("Extracted credential ID does not match the recorded credential ID.");
                 }
             } catch (Exception e) {
-                log.warn("Certificate extraction failed: {}", e.getMessage());
+                ErrorLog.warn(e, "Certificate extraction failed");
                 mismatches.add("Certificate details could not be extracted. Review the document manually.");
             }
         }

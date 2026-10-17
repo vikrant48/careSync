@@ -17,6 +17,7 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Optional;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * Encryption of patient-data columns.
@@ -55,6 +56,7 @@ public class FieldCipher {
             this.gcmKey = new SecretKeySpec(
                     sha.digest(("caresync-db-fields-v2:" + secret).getBytes(StandardCharsets.UTF_8)), "AES");
         } catch (GeneralSecurityException e) {
+            ErrorLog.debug(e);
             throw new IllegalStateException("Cannot derive encryption keys", e);
         }
     }
@@ -90,6 +92,7 @@ public class FieldCipher {
             byte[] out = ByteBuffer.allocate(IV_LENGTH + encrypted.length).put(iv).put(encrypted).array();
             return PREFIX + Base64.getEncoder().encodeToString(out);
         } catch (GeneralSecurityException e) {
+            ErrorLog.debug(e);
             throw new IllegalStateException("Error encrypting field", e);
         }
     }
@@ -105,8 +108,10 @@ public class FieldCipher {
             cipher.init(Cipher.DECRYPT_MODE, gcmKey, new GCMParameterSpec(TAG_BITS, data, 0, IV_LENGTH));
             return new String(cipher.doFinal(data, IV_LENGTH, data.length - IV_LENGTH), StandardCharsets.UTF_8);
         } catch (AEADBadTagException e) {
+            ErrorLog.debug(e);
             throw new IllegalStateException("Encrypted field failed its integrity check (modified or wrong key)", e);
         } catch (GeneralSecurityException | IllegalArgumentException e) {
+            ErrorLog.debug(e);
             throw new IllegalStateException("Encrypted field is malformed", e);
         }
     }
@@ -126,6 +131,7 @@ public class FieldCipher {
                     .onUnmappableCharacter(CodingErrorAction.REPORT)
                     .decode(ByteBuffer.wrap(plain)).toString());
         } catch (GeneralSecurityException | IllegalArgumentException | CharacterCodingException e) {
+            ErrorLog.debug(e);
             return Optional.empty();
         }
     }

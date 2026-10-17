@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.function.Supplier;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * Read-through cache for list pages and counts: return the cached value, else load, store and return it.
@@ -48,7 +49,7 @@ public class PageCache {
             Cache.ValueWrapper wrapper = cache != null ? cache.get(key) : null;
             return wrapper != null ? wrapper.get() : null;
         } catch (Exception e) {
-            log.warn("Cache read failed for [{}] {}: {}. Using the database.", cacheName, key, e.getMessage());
+            ErrorLog.warn(e, "Cache read failed for [{}] {}. Using the database.", cacheName, key);
             return null;
         }
     }
@@ -60,7 +61,7 @@ public class PageCache {
                 cache.put(key, value);
             }
         } catch (Exception e) {
-            log.warn("Cache write failed for [{}] {}: {}", cacheName, key, e.getMessage());
+            ErrorLog.warn(e, "Cache write failed for [{}] {}", cacheName, key);
         }
     }
 }

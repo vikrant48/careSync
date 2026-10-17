@@ -6,6 +6,7 @@ import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Component
 @Slf4j
@@ -22,7 +23,7 @@ public class AfterCommitTaskDispatcher {
             try {
                 task.run();
             } catch (Exception exception) {
-                log.error("After-commit task failed: {}", taskName, exception);
+                ErrorLog.error(exception, "After-commit task failed: {}", taskName);
             }
         };
 

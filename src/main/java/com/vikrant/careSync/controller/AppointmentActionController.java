@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/appointments")
@@ -70,6 +71,7 @@ public class AppointmentActionController {
             List<AllowedActionDto> actions = stateMachineService.getAllowedActions(id, currentUser);
             return ResponseEntity.ok(actions);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorAndMessageBody(e)); // "message" is read by the frontend alert
         }
     }
@@ -85,10 +87,13 @@ public class AppointmentActionController {
             Appointment updated = stateMachineService.executeAction(id, action, currentUser, payload);
             return ResponseEntity.ok(new AppointmentResponse(updated));
         } catch (IllegalStateException e) {
+            ErrorLog.log(e);
             return ResponseEntity.status(409).body(ClientErrorMessages.errorAndMessageBody(e)); // "message" is read by the frontend alert // 409 Conflict for invalid state transitions
         } catch (SecurityException e) {
+            ErrorLog.log(e);
             return ResponseEntity.status(403).body(ClientErrorMessages.errorAndMessageBody(e)); // "message" is read by the frontend alert // 403 Forbidden for unauthorized role/ownership
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorAndMessageBody(e)); // "message" is read by the frontend alert
         }
     }

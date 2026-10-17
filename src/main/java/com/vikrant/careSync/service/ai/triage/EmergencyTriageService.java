@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * Builds the emergency / urgent-care notice and records every triage decision in the AI audit log (decision and
@@ -108,7 +109,7 @@ public class EmergencyTriageService {
             aiAuditService.logInteraction("TRIAGE", source, 0, true, null, null, null,
                     level.name() + "_" + category.name() + "_BY_" + source.toUpperCase(), null, null, null);
         } catch (Exception e) {
-            log.warn("Could not record triage decision: {}", e.getClass().getSimpleName());
+            ErrorLog.warn(e, "Could not record triage decision");
         }
     }
 }

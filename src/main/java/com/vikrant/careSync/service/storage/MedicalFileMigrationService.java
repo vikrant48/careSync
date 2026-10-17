@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * One-off move of medical files that were uploaded to the public bucket into the private bucket.
@@ -54,7 +55,7 @@ public class MedicalFileMigrationService {
                         originalsDeleted++;
                     }
                 } catch (Exception e) {
-                    log.error("Could not move document {} to the private bucket", doc.getId(), e);
+                    ErrorLog.error(e, "Could not move document {} to the private bucket", doc.getId());
                     failedDocumentIds.add(doc.getId());
                 }
             }

@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/doctors")
@@ -161,7 +162,7 @@ public class DoctorController {
                     doctorDto = (DoctorDto) wrapper.get();
                 }
             } catch (Exception e) {
-                log.warn("Redis unavailable during doctor profile cache read for {}: {}", username, e.getMessage());
+                ErrorLog.warn(e, "Redis unavailable during doctor profile cache read for {}", username);
             }
         }
 
@@ -178,8 +179,7 @@ public class DoctorController {
                     cache.put(key, doctorDto);
                     log.info("Saved doctor profile username: {} to Redis cache.", username);
                 } catch (Exception e) {
-                    log.warn("Redis unavailable during doctor profile cache write for {}: {}", username,
-                            e.getMessage());
+                    ErrorLog.warn(e, "Redis unavailable during doctor profile cache write for {}", username);
                 }
             }
         } else {
@@ -199,6 +199,7 @@ public class DoctorController {
                     .map(ResponseEntity::ok)
                     .orElse(ResponseEntity.notFound().build());
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -212,6 +213,7 @@ public class DoctorController {
                     .map(ResponseEntity::ok)
                     .orElse(ResponseEntity.notFound().build());
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -240,6 +242,7 @@ public class DoctorController {
             Experience savedExperience = doctorService.addExperienceByUsername(username, experience);
             return ResponseEntity.ok(new ExperienceDto(savedExperience));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -275,6 +278,7 @@ public class DoctorController {
             Experience updatedExperience = doctorService.updateExperience(experienceId, experience);
             return ResponseEntity.ok(new ExperienceDto(updatedExperience));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -286,6 +290,7 @@ public class DoctorController {
             doctorService.deleteExperience(experienceId);
             return ResponseEntity.ok().build();
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -305,6 +310,7 @@ public class DoctorController {
             Education savedEducation = doctorService.addEducationByUsername(username, education);
             return ResponseEntity.ok(new EducationDto(savedEducation));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -339,6 +345,7 @@ public class DoctorController {
             Education updatedEducation = doctorService.updateEducation(educationId, education);
             return ResponseEntity.ok(new EducationDto(updatedEducation));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -350,6 +357,7 @@ public class DoctorController {
             doctorService.deleteEducation(educationId);
             return ResponseEntity.ok().build();
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -373,6 +381,7 @@ public class DoctorController {
             Certificate savedCertificate = doctorService.addCertificateByUsername(username, certificate);
             return ResponseEntity.ok(new CertificateDto(savedCertificate));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -411,6 +420,7 @@ public class DoctorController {
             Certificate updatedCertificate = doctorService.updateCertificate(certificateId, certificate);
             return ResponseEntity.ok(new CertificateDto(updatedCertificate));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -422,6 +432,7 @@ public class DoctorController {
             doctorService.deleteCertificate(certificateId);
             return ResponseEntity.ok().build();
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -451,6 +462,7 @@ public class DoctorController {
                 return trimmed;
             }
         } catch (IllegalArgumentException ignored) {
+            ErrorLog.debug(ignored);
             // falls through to the error below
         }
         throw new IllegalArgumentException("Certificate links must be valid https:// addresses");

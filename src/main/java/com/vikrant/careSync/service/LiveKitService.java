@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import retrofit2.Response;
 
 import java.util.List;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @Slf4j
@@ -80,7 +81,7 @@ public class LiveKitService {
                 log.warn("listParticipants response not successful for room {}: code={}", roomName, response.code());
             }
         } catch (Exception e) {
-            log.warn("Could not query room participants for room {}: {}", roomName, e.getMessage());
+            ErrorLog.warn(e, "Could not query room participants for room {}", roomName);
         }
         return false;
     }
@@ -94,7 +95,7 @@ public class LiveKitService {
             client.deleteRoom(roomName).execute();
             log.info("Successfully closed LiveKit room: {}", roomName);
         } catch (Exception e) {
-            log.error("Failed to delete LiveKit room {}: {}", roomName, e.getMessage(), e);
+            ErrorLog.error(e, "Failed to delete LiveKit room {}", roomName);
         }
     }
 

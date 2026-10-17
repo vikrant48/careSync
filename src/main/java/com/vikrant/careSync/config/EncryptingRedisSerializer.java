@@ -13,6 +13,7 @@ import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Arrays;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * Encrypts cache values (AES-256-GCM, random IV per value) before they reach Redis, so patient data is never
@@ -42,6 +43,7 @@ public class EncryptingRedisSerializer implements RedisSerializer<Object> {
                     .digest(("caresync-redis-cache:" + secret).getBytes(StandardCharsets.UTF_8));
             this.key = new SecretKeySpec(derived, "AES");
         } catch (GeneralSecurityException e) {
+            ErrorLog.debug(e);
             throw new IllegalStateException("Cannot derive cache encryption key", e);
         }
     }
@@ -66,6 +68,7 @@ public class EncryptingRedisSerializer implements RedisSerializer<Object> {
             System.arraycopy(encrypted, 0, out, HEADER.length + IV_LENGTH, encrypted.length);
             return out;
         } catch (GeneralSecurityException e) {
+            ErrorLog.debug(e);
             throw new SerializationException("Cannot encrypt cache value", e);
         }
     }
@@ -88,7 +91,7 @@ public class EncryptingRedisSerializer implements RedisSerializer<Object> {
             byte[] plain = cipher.doFinal(bytes, HEADER.length + IV_LENGTH, bytes.length - HEADER.length - IV_LENGTH);
             return delegate.deserialize(plain);
         } catch (GeneralSecurityException e) {
-            log.warn("Ignoring cache value that failed decryption (wrong key or modified in Redis)");
+            ErrorLog.warn(e, "Ignoring cache value that failed decryption (wrong key or modified in Redis)");
             return null;
         }
     }

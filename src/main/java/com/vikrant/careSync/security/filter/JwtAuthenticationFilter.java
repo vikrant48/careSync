@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Component
 @RequiredArgsConstructor
@@ -76,7 +77,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 log.debug("Username is null or authentication already exists");
             }
         } catch (Exception e) {
-            log.error("Error processing JWT: {}", e.getMessage(), e);
+            ErrorLog.error(e, "Error processing JWT");
         }
 
         filterChain.doFilter(request, response);

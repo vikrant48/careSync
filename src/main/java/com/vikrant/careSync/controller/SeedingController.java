@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import com.vikrant.careSync.util.ErrorLog;
 
 // Disabled unless app.seeding.enabled=true; even then ADMIN-only and cannot create ADMIN accounts.
 @RestController
@@ -39,6 +40,7 @@ public class SeedingController {
             }
             return ResponseEntity.ok(result);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -52,6 +54,7 @@ public class SeedingController {
             SeedBulkResponse response = seedingService.seedBulkUsers(requests, password);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }

@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Component
 @RequiredArgsConstructor
@@ -23,7 +24,7 @@ public class AppointmentEventListener {
         try {
             notificationService.sendDoctorNewAppointmentNotification(event.getAppointmentId());
         } catch (Exception e) {
-            log.error("Failed to process AppointmentBookedEvent notification: {}", e.getMessage(), e);
+            ErrorLog.error(e, "Failed to process AppointmentBookedEvent notification");
         }
     }
 
@@ -34,7 +35,7 @@ public class AppointmentEventListener {
         try {
             notificationService.sendAppointmentStarted(event.getAppointmentId());
         } catch (Exception e) {
-            log.error("Failed to process PatientCheckedInEvent notification: {}", e.getMessage(), e);
+            ErrorLog.error(e, "Failed to process PatientCheckedInEvent notification");
         }
     }
 
@@ -45,7 +46,7 @@ public class AppointmentEventListener {
         try {
             notificationService.sendAppointmentStarted(event.getAppointmentId());
         } catch (Exception e) {
-            log.error("Failed to process VisitStartedEvent notification: {}", e.getMessage(), e);
+            ErrorLog.error(e, "Failed to process VisitStartedEvent notification");
         }
     }
 
@@ -57,7 +58,7 @@ public class AppointmentEventListener {
             notificationService.sendAppointmentCompleted(event.getAppointmentId());
             notificationService.sendFeedbackReminder(event.getAppointmentId());
         } catch (Exception e) {
-            log.error("Failed to process MedicalReportSignedEvent notification: {}", e.getMessage(), e);
+            ErrorLog.error(e, "Failed to process MedicalReportSignedEvent notification");
         }
     }
 
@@ -69,7 +70,7 @@ public class AppointmentEventListener {
         try {
             notificationService.sendAppointmentCancellation(event.getAppointmentId());
         } catch (Exception e) {
-            log.error("Failed to process AppointmentNoShowEvent notification: {}", e.getMessage(), e);
+            ErrorLog.error(e, "Failed to process AppointmentNoShowEvent notification");
         }
     }
 }

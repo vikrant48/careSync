@@ -39,6 +39,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @Slf4j
@@ -163,6 +164,7 @@ public class AuthenticationService implements IAuthenticationService {
             try {
                 doctor.setDateOfBirth(LocalDate.parse(request.getDateOfBirth()));
             } catch (Exception e) {
+                ErrorLog.log(e);
                 throw new RuntimeException("Invalid date format. Use YYYY-MM-DD");
             }
         }
@@ -202,6 +204,7 @@ public class AuthenticationService implements IAuthenticationService {
             try {
                 patient.setDateOfBirth(LocalDate.parse(request.getDateOfBirth()));
             } catch (Exception e) {
+                ErrorLog.log(e);
                 throw new RuntimeException("Invalid date format. Use YYYY-MM-DD");
             }
         }
@@ -253,6 +256,7 @@ public class AuthenticationService implements IAuthenticationService {
                     "Login successful as " + roleStr + ".", ipAddress, userAgent);
 
         } catch (org.springframework.security.authentication.DisabledException e) {
+            ErrorLog.log(e);
             securityService.recordLoginAttempt(request.getUsername(), ipAddress, false, userAgent);
             // Spring checks "disabled" before the password; only reveal the account state to the real owner
             boolean passwordMatches = userRepository.findByUsername(request.getUsername())
@@ -262,6 +266,7 @@ public class AuthenticationService implements IAuthenticationService {
                     ? "Your account is inactive. Please contact an administrator."
                     : "Invalid username or password");
         } catch (Exception e) {
+            ErrorLog.log(e);
             // Record failed login attempt
             securityService.recordLoginAttempt(request.getUsername(), ipAddress, false, userAgent);
             throw new RuntimeException("Invalid username or password");

@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * Saved AI chats (server side, so they follow the user to every device). Everything is stored encrypted and is
@@ -89,7 +90,7 @@ public class AiChatHistoryService {
                     json(reply.getSuggestion()), json(reply.getEmergency()), now));
             return id;
         } catch (Exception e) {
-            log.warn("Could not save AI chat history: {}", e.getClass().getSimpleName());
+            ErrorLog.warn(e, "Could not save AI chat history");
             return conversationId;
         }
     }
@@ -211,6 +212,7 @@ public class AiChatHistoryService {
         try {
             return objectMapper.writeValueAsString(value);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return null;
         }
     }
@@ -222,6 +224,7 @@ public class AiChatHistoryService {
         try {
             return objectMapper.readValue(json, type);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return null;
         }
     }

@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Component
 @RequiredArgsConstructor
@@ -47,7 +48,7 @@ public class AppointmentReminderScheduler {
                 appointmentRepository.save(app);
                 log.info("Dispatched 24h appointment reminder for appointment ID [{}]", app.getId());
             } catch (Exception e) {
-                log.error("Failed to send 24h reminder for appointment ID [{}]: {}", app.getId(), e.getMessage());
+                ErrorLog.error(e, "Failed to send 24h reminder for appointment ID [{}]", app.getId());
             }
         }
 
@@ -63,7 +64,7 @@ public class AppointmentReminderScheduler {
                 appointmentRepository.save(app);
                 log.info("Dispatched 1h appointment reminder for appointment ID [{}]", app.getId());
             } catch (Exception e) {
-                log.error("Failed to send 1h reminder for appointment ID [{}]: {}", app.getId(), e.getMessage());
+                ErrorLog.error(e, "Failed to send 1h reminder for appointment ID [{}]", app.getId());
             }
         }
 
@@ -80,7 +81,7 @@ public class AppointmentReminderScheduler {
                 appointmentRepository.save(app);
                 log.info("Dispatched 10m appointment reminder for appointment ID [{}]", app.getId());
             } catch (Exception e) {
-                log.error("Failed to send 10m reminder for appointment ID [{}]: {}", app.getId(), e.getMessage());
+                ErrorLog.error(e, "Failed to send 10m reminder for appointment ID [{}]", app.getId());
             }
         }
     }

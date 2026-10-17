@@ -29,6 +29,7 @@ import jakarta.validation.Valid;
 import org.springframework.security.core.userdetails.UserDetails;
 import java.util.HashMap;
 import java.util.Map;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -60,6 +61,7 @@ public class AuthController {
             AuthenticationResponse response = googleAuthService.authenticateGoogleUser(request, ipAddress, userAgent);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -71,6 +73,7 @@ public class AuthController {
             AuthenticationResponse response = authenticationService.register(request);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -84,6 +87,7 @@ public class AuthController {
             successResponse.put("message", "Verification OTP sent to email");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -101,6 +105,7 @@ public class AuthController {
             successResponse.put("message", "Email verified successfully");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -113,6 +118,7 @@ public class AuthController {
             successResponse.put("verified", verified);
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -136,6 +142,7 @@ public class AuthController {
             AuthenticationResponse response = authenticationService.authenticate(request, ipAddress, userAgent);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -178,6 +185,7 @@ public class AuthController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -202,6 +210,7 @@ public class AuthController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -218,6 +227,7 @@ public class AuthController {
             successResponse.put("message", "Password changed successfully");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -231,6 +241,7 @@ public class AuthController {
             successResponse.put("message", "Password reset email sent");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -243,6 +254,7 @@ public class AuthController {
             successResponse.put("message", "If account exists, an OTP has been sent");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -256,6 +268,7 @@ public class AuthController {
             successResponse.put("message", "Password reset successfully");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -268,6 +281,7 @@ public class AuthController {
             successResponse.put("message", "OTP verified. You may reset your password");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -280,6 +294,7 @@ public class AuthController {
             successResponse.put("message", "Password reset successfully");
             return ResponseEntity.ok(successResponse);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -298,6 +313,7 @@ public class AuthController {
             UserDto userDto = userService.getUserByUsername(username);
             return ResponseEntity.ok(userDto);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }

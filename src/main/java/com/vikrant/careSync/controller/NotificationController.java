@@ -16,6 +16,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/notifications")
@@ -32,6 +33,7 @@ public class NotificationController {
             notificationService.sendAppointmentReminder(appointmentId);
             return ResponseEntity.ok("Appointment reminder sent successfully");
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body("Failed to send appointment reminder: " + ClientErrorMessages.of(e));
         }
     }
@@ -84,6 +86,7 @@ public class NotificationController {
                     request.getHoursBeforeAppointment());
             return ResponseEntity.ok("Appointment reminder scheduled successfully");
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body("Failed to schedule appointment reminder: " + ClientErrorMessages.of(e));
         }
     }
@@ -95,6 +98,7 @@ public class NotificationController {
             notificationService.sendAppointmentConfirmation(appointmentId);
             return ResponseEntity.ok("Appointment confirmation sent successfully");
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body("Failed to send appointment confirmation: " + ClientErrorMessages.of(e));
         }
     }
@@ -106,6 +110,7 @@ public class NotificationController {
             notificationService.sendAppointmentCancellation(appointmentId);
             return ResponseEntity.ok("Appointment cancellation notification sent successfully");
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body("Failed to send cancellation notification: " + ClientErrorMessages.of(e));
         }
     }
@@ -117,6 +122,7 @@ public class NotificationController {
             notificationService.sendAppointmentReschedule(appointmentId);
             return ResponseEntity.ok("Appointment reschedule notification sent successfully");
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body("Failed to send reschedule notification: " + ClientErrorMessages.of(e));
         }
     }
@@ -128,6 +134,7 @@ public class NotificationController {
             notificationService.sendDailyAppointmentReminders();
             return ResponseEntity.ok("Daily schedule sent successfully");
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body("Failed to send daily schedule: " + ClientErrorMessages.of(e));
         }
     }
@@ -139,6 +146,7 @@ public class NotificationController {
             notificationService.sendWeeklySchedule(doctorId);
             return ResponseEntity.ok("Weekly schedule sent successfully");
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body("Failed to send weekly schedule: " + ClientErrorMessages.of(e));
         }
     }
@@ -150,6 +158,7 @@ public class NotificationController {
             notificationService.sendFeedbackReminder(appointmentId);
             return ResponseEntity.ok("Feedback reminder sent successfully");
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body("Failed to send feedback reminder: " + ClientErrorMessages.of(e));
         }
     }
@@ -164,6 +173,7 @@ public class NotificationController {
             notificationService.sendSystemNotification(message, targetAudience != null ? targetAudience : "ALL", 0L);
             return ResponseEntity.ok("System notification sent successfully");
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body("Failed to send system notification: " + ClientErrorMessages.of(e));
         }
     }
@@ -179,6 +189,7 @@ public class NotificationController {
             notificationService.sendBulkNotification(message, List.of());
             return ResponseEntity.ok("Bulk notification sent successfully");
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body("Failed to send bulk notification: " + ClientErrorMessages.of(e));
         }
     }
@@ -195,6 +206,7 @@ public class NotificationController {
             notificationService.sendSystemNotification(message, userType, userId);
             return ResponseEntity.ok("Custom notification sent successfully");
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body("Failed to send custom notification: " + ClientErrorMessages.of(e));
         }
     }

@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * Rewrites every encrypted column into the current AES-256-GCM format: old AES/ECB values, and plaintext in
@@ -128,6 +129,7 @@ public class FieldReencryptionService {
                 result.alreadyCurrent++;
                 return Optional.empty();
             } catch (IllegalStateException e) {
+                ErrorLog.debug(e);
                 if (!target.legacyEcb()) {
                     // Plaintext that happens to start with "v2:"
                     result.plaintext++;

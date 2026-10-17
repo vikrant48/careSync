@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.util.Map;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/analytics")
@@ -35,6 +36,7 @@ public class AnalyticsController {
             OverallAnalyticsDto analysis = analyticsService.getOverallAnalytics(startDate, endDate);
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -49,6 +51,7 @@ public class AnalyticsController {
             Map<String, Object> analysis = analyticsService.getPeakHoursAnalysis(doctorId, startDate, endDate);
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -63,6 +66,7 @@ public class AnalyticsController {
             Map<String, Object> analysis = analyticsService.getDayOfWeekAnalysis(doctorId, startDate, endDate);
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -74,6 +78,7 @@ public class AnalyticsController {
             Map<String, Object> analysis = analyticsService.getPatientRetentionAnalysis(doctorId);
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -89,6 +94,7 @@ public class AnalyticsController {
                     endDate);
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -100,6 +106,7 @@ public class AnalyticsController {
             Map<String, Object> analysis = analyticsService.getFeedbackSentimentAnalysis(doctorId);
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -113,6 +120,7 @@ public class AnalyticsController {
             Map<String, Object> analysis = analyticsService.getSeasonalTrendsAnalysis(doctorId, year);
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -124,6 +132,7 @@ public class AnalyticsController {
             Map<String, Object> analysis = analyticsService.getPatientDemographicsAnalysis(doctorId);
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -139,6 +148,7 @@ public class AnalyticsController {
                     endDate);
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -150,7 +160,7 @@ public class AnalyticsController {
             PatientFinancialStatsDto analysis = analyticsService.getPatientFinancialStats(patientId);
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
-            log.error("Error in getPatientFinancialStats for patient {}: {}", patientId, e.getMessage(), e);
+            ErrorLog.error(e, "Error in getPatientFinancialStats for patient {}", patientId);
             java.util.Map<String, String> error = new java.util.HashMap<>();
             error.put("error", ClientErrorMessages.of(e));
             return ResponseEntity.badRequest().body(error);

@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.stream.Collectors;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/files")
@@ -213,8 +214,10 @@ public class FileUploadController {
                     .contentType(MediaType.parseMediaType(document.getContentType()))
                     .body(resource);
         } catch (IOException e) {
+            ErrorLog.log(e);
             return ResponseEntity.notFound().build();
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -234,8 +237,10 @@ public class FileUploadController {
                     .contentType(MediaType.parseMediaType(document.getContentType()))
                     .body(resource);
         } catch (IOException e) {
+            ErrorLog.log(e);
             return ResponseEntity.notFound().build();
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -247,8 +252,10 @@ public class FileUploadController {
             documentService.deleteDocument(documentId);
             return ResponseEntity.ok().body("Document deleted successfully");
         } catch (IOException e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body("Failed to delete document: " + ClientErrorMessages.of(e));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body("Error: " + ClientErrorMessages.of(e));
         }
     }
@@ -263,6 +270,7 @@ public class FileUploadController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -273,6 +281,7 @@ public class FileUploadController {
         try {
             return ResponseEntity.ok(documentService.withFreshUrls(documentService.getDocumentsDtoByPatientId(patientId)));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -290,6 +299,7 @@ public class FileUploadController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -306,6 +316,7 @@ public class FileUploadController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }
@@ -321,6 +332,7 @@ public class FileUploadController {
             DocumentDto dto = documentService.toDto(document);
             return ResponseEntity.ok(dto);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body("Error: " + ClientErrorMessages.of(e));
         }
     }
@@ -342,6 +354,7 @@ public class FileUploadController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(documents);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().build();
         }
     }

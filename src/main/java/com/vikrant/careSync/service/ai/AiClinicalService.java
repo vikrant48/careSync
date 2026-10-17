@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @Slf4j
@@ -115,7 +116,7 @@ public class AiClinicalService {
             return MedicalSummaryResponse.builder().summary(summary).success(true).build();
 
         } catch (Exception e) {
-            log.error("Error summarizing patient history: {}", e.getClass().getSimpleName());
+            ErrorLog.error(e, "Error summarizing patient history");
             return MedicalSummaryResponse.builder().success(false)
                     .error("The AI summary is unavailable right now. Please try again later.").build();
         }
@@ -158,7 +159,7 @@ public class AiClinicalService {
                 dto = objectMapper.readValue(cleanJson, DiagnosisSuggestionDto.class);
             }
         } catch (Exception e) {
-            log.error("Error parsing diagnosis suggestion JSON: {}", e.getMessage());
+            ErrorLog.error(e, "Error parsing diagnosis suggestion JSON");
         }
 
         if (dto == null) {
@@ -234,7 +235,7 @@ public class AiClinicalService {
                     response.redFlags(modelFlags);
                 }
             } catch (Exception e) {
-                log.warn("Could not parse intake draft JSON; using patient narrative fallback: {}", e.getMessage());
+                ErrorLog.warn(e, "Could not parse intake draft JSON; using patient narrative fallback");
             }
         }
         return response.build();
@@ -336,7 +337,7 @@ public class AiClinicalService {
         } catch (AiQuotaExceededException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("Lab report explanation failed: {}", e.getClass().getSimpleName());
+            ErrorLog.warn(e, "Lab report explanation failed");
             audit("lab report explanation", geminiClient.getModel(), AiUsage.NONE, false,
                     e.getClass().getSimpleName(), start);
             return null;
@@ -414,7 +415,7 @@ public class AiClinicalService {
                     summaryText = node.get("summaryText").asText();
                 }
             } catch (Exception e) {
-                log.warn("Parsing structured intake summary JSON failed, using clean fallback: {}", e.getMessage());
+                ErrorLog.warn(e, "Parsing structured intake summary JSON failed, using clean fallback");
             }
         }
 
@@ -549,7 +550,7 @@ public class AiClinicalService {
                 if (node.has("notes") && !node.get("notes").asText().isBlank())
                     dto.setNotes(node.get("notes").asText());
             } catch (Exception e) {
-                log.error("Failed to parse JSON response for SOAP draft: {}", e.getMessage());
+                ErrorLog.error(e, "Failed to parse JSON response for SOAP draft");
             }
         }
 
@@ -604,12 +605,12 @@ public class AiClinicalService {
                 usage = orNone(groqClient.getLastUsage());
             } catch (AiQuotaExceededException e) {
                 // The user's allowance is used up: Gemini would count against the same allowance
-                log.info("AI {} skipped: user's AI allowance used up", task);
+                ErrorLog.info(e, "AI {} skipped: user's AI allowance used up", task);
                 audit(task, null, AiUsage.NONE, false, "AI allowance used up", start);
                 return null;
             } catch (Exception e) {
                 error = e.getClass().getSimpleName();
-                log.warn("Groq {} failed: {}", task, e.getMessage());
+                ErrorLog.warn(e, "Groq {} failed", task);
             }
         }
         if ((answer == null || answer.isBlank()) && geminiClient != null && geminiClient.isConfigured()) {
@@ -618,10 +619,10 @@ public class AiClinicalService {
                 model = geminiClient.getModel();
                 usage = orNone(geminiClient.getLastUsage());
             } catch (AiQuotaExceededException e) {
-                log.info("AI {} skipped: user's AI allowance used up", task);
+                ErrorLog.info(e, "AI {} skipped: user's AI allowance used up", task);
             } catch (Exception e) {
                 error = e.getClass().getSimpleName();
-                log.warn("Gemini {} failed: {}", task, e.getMessage());
+                ErrorLog.warn(e, "Gemini {} failed", task);
             }
         }
         boolean ok = answer != null && !answer.isBlank();
@@ -670,6 +671,7 @@ public class AiClinicalService {
                 end = text.length();
             return text.substring(start, end).trim();
         } catch (Exception e) {
+            ErrorLog.log(e);
             return "";
         }
     }

@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * The shared part of every file-upload endpoint: who is uploading, and the same three error answers.
@@ -42,10 +43,13 @@ public class DocumentUploads {
             String userType = userDto != null ? userDto.getRole() : "UNKNOWN";
             return ResponseEntity.ok(upload.run(authentication.getName(), userType));
         } catch (IOException e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body("Failed to upload " + failLabel + ": " + ClientErrorMessages.of(e));
         } catch (IllegalArgumentException e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(invalidLabel + ": " + ClientErrorMessages.of(e));
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body("Error: " + ClientErrorMessages.of(e));
         }
     }

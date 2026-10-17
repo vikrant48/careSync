@@ -19,6 +19,7 @@ import java.time.DayOfWeek;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @RequiredArgsConstructor
@@ -388,6 +389,7 @@ public class AnalyticsService {
                                         .build();
 
                 } catch (Exception e) {
+                        ErrorLog.log(e);
                         // Return empty/default DTO if there's an error
                         return OverallAnalyticsDto.builder()
                                         .avgRating(4.5)
@@ -405,7 +407,7 @@ public class AnalyticsService {
                         paymentStats = paymentRepository.getPatientPaymentStats(patientId);
                         log.info("Successfully fetched {} rows from repository", paymentStats.size());
                 } catch (Exception e) {
-                        log.error("Database error while fetching payment stats: {}", e.getMessage(), e);
+                        ErrorLog.error(e, "Database error while fetching payment stats");
                         throw e;
                 }
 
@@ -435,8 +437,7 @@ public class AnalyticsService {
                                         type = PaymentType
                                                         .valueOf(typeObj.toString().trim().toUpperCase());
                                 } catch (Exception e) {
-                                        log.error("Failed to parse payment type: '{}'. Valid types: {}", typeObj,
-                                                        java.util.Arrays.toString(
+                                        ErrorLog.error(e, "Failed to parse payment type: '{}'. Valid types: {}", typeObj, java.util.Arrays.toString(
                                                                         PaymentType
                                                                                         .values()));
                                         continue;
@@ -453,7 +454,7 @@ public class AnalyticsService {
                                         amount = new BigDecimal(amountObj.toString().trim());
                                 }
                         } catch (Exception e) {
-                                log.error("Failed to parse amount: {}", amountObj);
+                                ErrorLog.error(e, "Failed to parse amount: {}", amountObj);
                                 continue;
                         }
 

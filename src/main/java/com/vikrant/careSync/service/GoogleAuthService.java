@@ -29,6 +29,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @RequiredArgsConstructor
@@ -60,7 +61,7 @@ public class GoogleAuthService {
             ResponseEntity<Map> response = restTemplate.getForEntity(tokenInfoUrl, Map.class);
             tokenClaims = response.getBody();
         } catch (Exception e) {
-            log.error("Failed to verify Google ID token: {}", e.getMessage());
+            ErrorLog.error(e, "Failed to verify Google ID token");
             throw new RuntimeException("Invalid or expired Google ID Token");
         }
 

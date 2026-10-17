@@ -12,6 +12,7 @@ import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * Counts failed one-time-code attempts per purpose and email, independent of client IP, so a
@@ -47,7 +48,7 @@ public class OtpAttemptLimiter {
             }
             return count != null ? count : 0L;
         } catch (Exception e) {
-            log.warn("Redis unavailable for OTP attempt counter, using in-memory fallback: {}", e.getMessage());
+            ErrorLog.warn(e, "Redis unavailable for OTP attempt counter, using in-memory fallback");
             long now = System.currentTimeMillis();
             fallback.values().removeIf(c -> c.expiresAt() < now);
             return fallback.merge(key, new FallbackCounter(1, now + WINDOW.toMillis()),
@@ -61,7 +62,7 @@ public class OtpAttemptLimiter {
         try {
             redisTemplate.delete(key);
         } catch (Exception e) {
-            log.warn("Redis unavailable while resetting OTP attempt counter: {}", e.getMessage());
+            ErrorLog.warn(e, "Redis unavailable while resetting OTP attempt counter");
         }
     }
 
@@ -71,6 +72,7 @@ public class OtpAttemptLimiter {
             String value = redisTemplate.opsForValue().get(key);
             return value != null ? Long.parseLong(value) : 0L;
         } catch (Exception e) {
+            ErrorLog.log(e);
             FallbackCounter counter = fallback.get(key);
             return counter != null && counter.expiresAt() >= System.currentTimeMillis() ? counter.count() : 0L;
         }
@@ -83,6 +85,7 @@ public class OtpAttemptLimiter {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(normalized.getBytes(StandardCharsets.UTF_8));
             return "otp_fail:" + purpose + ":" + HexFormat.of().formatHex(digest);
         } catch (Exception e) {
+            ErrorLog.debug(e);
             throw new IllegalStateException("SHA-256 not available", e);
         }
     }

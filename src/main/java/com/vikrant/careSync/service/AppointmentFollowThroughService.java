@@ -25,6 +25,7 @@ import java.util.HexFormat;
 
 import java.util.EnumSet;
 import java.util.Set;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @RequiredArgsConstructor
@@ -123,6 +124,7 @@ public class AppointmentFollowThroughService {
         try {
             return visitSummaryRepository.save(saved);
         } catch (DataIntegrityViolationException e) {
+            ErrorLog.log(e);
             // Opened twice at the same moment: the other request saved it first
             return visitSummaryRepository.findById(appointmentId).orElse(null);
         }
@@ -133,6 +135,7 @@ public class AppointmentFollowThroughService {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                     .digest(text.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException e) {
+            ErrorLog.debug(e);
             throw new IllegalStateException("SHA-256 unavailable", e);
         }
     }

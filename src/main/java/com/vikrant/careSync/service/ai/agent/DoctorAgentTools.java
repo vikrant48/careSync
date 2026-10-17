@@ -41,6 +41,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * Read-only tools of the doctor co-pilot. Every tool runs as the logged-in doctor and only reaches patients the
@@ -102,14 +103,16 @@ public class DoctorAgentTools implements AgentToolbox {
             args = argumentsJson == null || argumentsJson.isBlank() ? mapper.createObjectNode()
                     : mapper.readTree(argumentsJson);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return error("Arguments were not valid JSON");
         }
         try {
             return tool.run().apply(args);
         } catch (IllegalArgumentException | IllegalStateException e) {
+            ErrorLog.log(e);
             return error(e.getMessage());
         } catch (Exception e) {
-            log.warn("Doctor tool {} failed: {}", name, e.getClass().getSimpleName());
+            ErrorLog.warn(e, "Doctor tool {} failed", name);
             return error("This step failed. Please try again.");
         }
     }
@@ -438,6 +441,7 @@ public class DoctorAgentTools implements AgentToolbox {
         try {
             date = LocalDate.parse(value);
         } catch (DateTimeParseException e) {
+            ErrorLog.log(e);
             throw new IllegalArgumentException("date must be like 2026-01-31");
         }
         if (date.isBefore(today.minusDays(SCHEDULE_DAYS_RANGE)) || date.isAfter(today.plusDays(SCHEDULE_DAYS_RANGE))) {
@@ -529,6 +533,7 @@ public class DoctorAgentTools implements AgentToolbox {
         try {
             return mapper.writeValueAsString(value);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return "{\"error\":\"Could not read the result\"}";
         }
     }

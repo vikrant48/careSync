@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @RequiredArgsConstructor
@@ -137,6 +138,7 @@ public class MedicalHistoryService implements IMedicalHistoryService {
             start = LocalDate.parse(startDate);
             end = LocalDate.parse(endDate);
         } catch (Exception e) {
+            ErrorLog.log(e);
             throw new RuntimeException("Invalid date format. Use YYYY-MM-DD");
         }
         // Same inclusive range as before, filtered in SQL instead of loading the whole history

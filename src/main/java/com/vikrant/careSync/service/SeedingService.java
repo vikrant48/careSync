@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @RequiredArgsConstructor
@@ -53,6 +54,7 @@ public class SeedingService implements ISeedingService {
         try {
             role = User.Role.valueOf(roleStr);
         } catch (IllegalArgumentException e) {
+            ErrorLog.log(e);
             throw new IllegalArgumentException("Invalid role: " + roleStr + ". Allowed values: PATIENT, DOCTOR");
         }
         if (role == User.Role.ADMIN) {

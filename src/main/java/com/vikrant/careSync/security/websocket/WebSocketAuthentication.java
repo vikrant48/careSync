@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 import java.security.Principal;
 import java.util.Optional;
 import java.util.function.Supplier;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * JWT authentication for STOMP sessions, using the same rules as JwtAuthenticationFilter,
@@ -46,7 +47,7 @@ public class WebSocketAuthentication {
             }
             return Optional.of(new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities()));
         } catch (Exception e) {
-            log.debug("WebSocket token rejected: {}", e.getMessage());
+            ErrorLog.debug(e, "WebSocket token rejected");
             return Optional.empty();
         }
     }

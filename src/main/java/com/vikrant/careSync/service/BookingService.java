@@ -29,6 +29,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 @Transactional
@@ -121,6 +122,7 @@ public class BookingService {
             return response;
 
         } catch (Exception e) {
+            ErrorLog.log(e);
             // If payment fails, keep booking as PENDING or delete it
             // For now, we'll keep it as PENDING so patient can retry payment later
             throw new RuntimeException("Payment failed: " + e.getMessage());
@@ -361,6 +363,7 @@ public class BookingService {
             Booking booking = bookingRepository.findById(bookingId).orElse(null);
             return booking != null && booking.getPatient().getId().equals(currentPatient.getId());
         } catch (Exception e) {
+            ErrorLog.log(e);
             return false;
         }
     }

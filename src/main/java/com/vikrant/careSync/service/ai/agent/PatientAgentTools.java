@@ -35,6 +35,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * The tools the patient assistant may call. Every tool runs as the logged-in patient with the app's normal checks.
@@ -88,14 +89,16 @@ public class PatientAgentTools implements AgentToolbox {
             args = argumentsJson == null || argumentsJson.isBlank() ? mapper.createObjectNode()
                     : mapper.readTree(argumentsJson);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return error("Arguments were not valid JSON");
         }
         try {
             return tool.run().apply(args);
         } catch (IllegalArgumentException | IllegalStateException e) {
+            ErrorLog.log(e);
             return error(e.getMessage());
         } catch (Exception e) {
-            log.warn("Agent tool {} failed: {}", name, e.getClass().getSimpleName());
+            ErrorLog.warn(e, "Agent tool {} failed", name);
             return error("This step failed. Please try again.");
         }
     }
@@ -197,6 +200,7 @@ public class PatientAgentTools implements AgentToolbox {
         try {
             return Enum.valueOf(type, value == null ? "" : value.trim().toUpperCase());
         } catch (IllegalArgumentException e) {
+            ErrorLog.log(e);
             throw new IllegalArgumentException(field + " has an unknown value");
         }
     }
@@ -507,6 +511,7 @@ public class PatientAgentTools implements AgentToolbox {
         try {
             date = LocalDate.parse(value);
         } catch (DateTimeParseException e) {
+            ErrorLog.log(e);
             throw new IllegalArgumentException(field + " must be a date like 2026-01-31");
         }
         LocalDate today = clock.today();
@@ -572,6 +577,7 @@ public class PatientAgentTools implements AgentToolbox {
         try {
             return mapper.writeValueAsString(value);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return "{\"error\":\"Could not read the result\"}";
         }
     }

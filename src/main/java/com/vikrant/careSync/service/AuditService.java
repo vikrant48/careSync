@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import com.vikrant.careSync.util.ErrorLog;
 
 /**
  * Who accessed or changed patient data, when, from where and with what result. Entries go to the audit_logs
@@ -53,9 +54,7 @@ public class AuditService {
             auditLogRepository.save(entry);
         } catch (Exception e) {
             // Keep the event in the application log if the database write fails
-            log.error("[HIPAA-AUDIT] could not store entry: user={} action={} entity={} id={} ip={}: {}",
-                    entry.getUsername(), entry.getAction(), entry.getEntityName(), entry.getEntityId(),
-                    entry.getIpAddress(), e.getMessage());
+            ErrorLog.error(e, "[HIPAA-AUDIT] could not store entry: user={} action={} entity={} id={} ip={}", entry.getUsername(), entry.getAction(), entry.getEntityName(), entry.getEntityId(), entry.getIpAddress());
         }
     }
 
@@ -77,6 +76,7 @@ public class AuditService {
             try {
                 Thread.sleep(10);
             } catch (InterruptedException e) {
+                ErrorLog.log(e);
                 Thread.currentThread().interrupt();
                 return false;
             }

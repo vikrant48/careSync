@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/appointments")
@@ -130,7 +131,7 @@ public class VideoConsultationController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            log.error("Error generating video token for appointment {}: {}", id, e.getMessage(), e);
+            ErrorLog.error(e, "Error generating video token for appointment {}", id);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -160,6 +161,7 @@ public class VideoConsultationController {
 
             return ResponseEntity.ok(resp);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }
@@ -198,6 +200,7 @@ public class VideoConsultationController {
             resp.put("message", "Consultation session ended. Appointment status remains IN_PROGRESS.");
             return ResponseEntity.ok(resp);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
     }

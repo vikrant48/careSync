@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.Optional;
+import com.vikrant.careSync.util.ErrorLog;
 
 @RestController
 @RequestMapping("/api/lab-tests")
@@ -38,6 +39,7 @@ public class LabTestController {
             List<LabTestDto> labTests = labTestService.getAllActiveLabTests();
             return ResponseEntity.ok(labTests);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -52,6 +54,7 @@ public class LabTestController {
             List<LabTestDto> labTests = labTestService.getAllLabTests();
             return ResponseEntity.ok(labTests);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -67,6 +70,7 @@ public class LabTestController {
             return labTest.map(ResponseEntity::ok)
                     .orElse(ResponseEntity.notFound().build());
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -82,8 +86,10 @@ public class LabTestController {
             LabTestDto createdLabTest = labTestService.createLabTest(request);
             return ResponseEntity.status(HttpStatus.CREATED).body(createdLabTest);
         } catch (RuntimeException e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
+            ErrorLog.log(e);
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while creating the lab test");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
@@ -101,8 +107,10 @@ public class LabTestController {
             LabTestDto updatedLabTest = labTestService.updateLabTest(id, request);
             return ResponseEntity.ok(updatedLabTest);
         } catch (RuntimeException e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
+            ErrorLog.log(e);
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while updating the lab test");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
@@ -122,8 +130,10 @@ public class LabTestController {
             response.put("message", "Lab test deleted successfully");
             return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
+            ErrorLog.log(e);
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while deleting the lab test");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
@@ -140,6 +150,7 @@ public class LabTestController {
             List<LabTestDto> labTests = labTestService.searchLabTestsByName(testName);
             return ResponseEntity.ok(labTests);
         } catch (Exception e) {
+            ErrorLog.log(e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -163,8 +174,10 @@ public class LabTestController {
             response.put("testCount", testIds.size());
             return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
+            ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         } catch (Exception e) {
+            ErrorLog.log(e);
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "An error occurred while calculating the total price");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);

@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import com.vikrant.careSync.util.ErrorLog;
 
 @Service
 public class EmailService {
@@ -65,7 +66,7 @@ public class EmailService {
                 sent = resendEmailClient.sendHtml(sender, to, subject, html);
             } catch (Exception e) {
                 sendError = e;
-                log.warn("Resend send failed, falling back to SMTP: {}", e.getMessage());
+                ErrorLog.warn(e, "Resend send failed, falling back to SMTP");
             }
         }
 
@@ -83,7 +84,7 @@ public class EmailService {
                 sendError = null;
             } catch (Exception e) {
                 sendError = e;
-                log.error("SMTP send failed: {}", e.getMessage(), e);
+                ErrorLog.error(e, "SMTP send failed");
             }
         }
 
