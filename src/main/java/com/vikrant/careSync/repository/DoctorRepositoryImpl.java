@@ -58,6 +58,8 @@ public class DoctorRepositoryImpl implements DoctorRepositoryCustom {
                         searchDto.getGender().trim().toLowerCase()));
             }
 
+            addVerifiedFilter(cb, doctor, searchDto, predicates);
+
             // Active status filter (only return active doctors if flag exists)
             predicates.add(cb.isTrue(doctor.get("isActive")));
         } else {
@@ -135,6 +137,8 @@ public class DoctorRepositoryImpl implements DoctorRepositoryCustom {
                         searchDto.getGender().trim().toLowerCase()));
             }
 
+            addVerifiedFilter(cb, doctor, searchDto, predicates);
+
             predicates.add(cb.isTrue(doctor.get("isActive")));
         } else {
             predicates.add(cb.isTrue(doctor.get("isActive")));
@@ -143,6 +147,17 @@ public class DoctorRepositoryImpl implements DoctorRepositoryCustom {
         query.where(predicates.toArray(new Predicate[0]));
 
         return entityManager.createQuery(query).getSingleResult();
+    }
+
+    /** Verified filter; a doctor with no value counts as not verified (as DoctorDto shows it). */
+    private static void addVerifiedFilter(CriteriaBuilder cb, Root<Doctor> doctor, SearchRequestDto searchDto,
+            List<Predicate> predicates) {
+        if (searchDto.getVerified() == null) {
+            return;
+        }
+        predicates.add(searchDto.getVerified()
+                ? cb.isTrue(doctor.get("isVerified"))
+                : cb.or(cb.isFalse(doctor.get("isVerified")), cb.isNull(doctor.get("isVerified"))));
     }
 
     /** User text is matched literally: % and _ in a search box are not wildcards. */

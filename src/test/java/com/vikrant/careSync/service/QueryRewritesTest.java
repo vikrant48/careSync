@@ -93,6 +93,20 @@ class QueryRewritesTest {
     }
 
     @Test
+    void doctorSearchFiltersByVerification() {
+        // New doctors start unverified
+        assertEquals(1, doctorRepository.searchDoctorsDynamic(SearchRequestDto.builder().query("meera").verified(false).build()).size());
+        assertEquals(0, doctorRepository.countDoctorsDynamic(SearchRequestDto.builder().query("meera").verified(true).build()));
+
+        doctor.setIsVerified(true);
+        doctorRepository.saveAndFlush(doctor);
+        assertEquals(1, doctorRepository.countDoctorsDynamic(SearchRequestDto.builder().query("meera").verified(true).build()));
+        assertEquals(0, doctorRepository.searchDoctorsDynamic(SearchRequestDto.builder().query("meera").verified(false).build()).size());
+        assertEquals(1, doctorRepository.countDoctorsDynamic(SearchRequestDto.builder().query("meera").build()),
+                "No verified filter: both kinds");
+    }
+
+    @Test
     void todaysAppointmentsUseTheDayRange() {
         LocalDate today = LocalDate.now();
         appointment(patientA, today.atTime(9, 0), Appointment.Status.BOOKED);

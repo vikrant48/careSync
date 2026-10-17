@@ -67,6 +67,7 @@ public class DoctorController {
             @RequestParam(required = false) String specialization,
             @RequestParam(required = false) String location,
             @RequestParam(required = false) String gender,
+            @RequestParam(required = false) Boolean verified,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false, defaultValue = "50") Integer size,
             @RequestParam(required = false) String sortBy,
@@ -77,6 +78,7 @@ public class DoctorController {
                 .specialization(specialization)
                 .location(location)
                 .gender(gender)
+                .verified(verified)
                 .page(page)
                 .size(size)
                 .sortBy(sortBy)
@@ -92,13 +94,15 @@ public class DoctorController {
             @RequestParam(required = false) String query,
             @RequestParam(required = false) String specialization,
             @RequestParam(required = false) String location,
-            @RequestParam(required = false) String gender) {
+            @RequestParam(required = false) String gender,
+            @RequestParam(required = false) Boolean verified) {
 
         SearchRequestDto searchDto = SearchRequestDto.builder()
                 .query(query)
                 .specialization(specialization)
                 .location(location)
                 .gender(gender)
+                .verified(verified)
                 .build();
 
         return ResponseEntity.ok(doctorService.countDoctors(searchDto));

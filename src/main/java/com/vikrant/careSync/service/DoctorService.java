@@ -420,7 +420,7 @@ public class DoctorService {
         String cacheKey = "query_" + (searchDto == null ? "" : String.join("_",
                 Objects.toString(searchDto.getQuery(), ""), Objects.toString(searchDto.getSpecialization(), ""),
                 Objects.toString(searchDto.getLocation(), ""), Objects.toString(searchDto.getGender(), ""),
-                Objects.toString(searchDto.getSortBy(), ""), Objects.toString(searchDto.getSortDirection(), "")))
+                Objects.toString(searchDto.getVerified(), ""), Objects.toString(searchDto.getSortBy(), ""), Objects.toString(searchDto.getSortDirection(), "")))
                 + "_page_" + page + "_size_" + size;
         int finalPage = page;
         int finalSize = size;
@@ -434,6 +434,7 @@ public class DoctorService {
                 .specialization(baseSearchDto != null ? baseSearchDto.getSpecialization() : null)
                 .location(baseSearchDto != null ? baseSearchDto.getLocation() : null)
                 .gender(baseSearchDto != null ? baseSearchDto.getGender() : null)
+                .verified(baseSearchDto != null ? baseSearchDto.getVerified() : null)
                 .page(page)
                 .size(size)
                 .sortBy(baseSearchDto != null ? baseSearchDto.getSortBy() : null)

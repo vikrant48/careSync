@@ -102,7 +102,9 @@ public class AppointmentService {
     // Only patients can book appointments - status automatically set to BOOKED
     @Caching(evict = {
             @CacheEvict(value = "PATIENT:APPOINTMENTS", key = "'upcoming_appointments_' + #patientId"),
-            @CacheEvict(value = "DOCTOR:APPOINTMENTS", key = "'upcoming_appointments_' + #doctorId")
+            @CacheEvict(value = "DOCTOR:APPOINTMENTS", key = "'upcoming_appointments_' + #doctorId"),
+            // A new booking changes the admin platform numbers (cached per date range)
+            @CacheEvict(value = "ANALYTICS:OVERALL", allEntries = true)
     })
     public Appointment bookAppointment(Long doctorId, Long patientId, LocalDateTime appointmentDateTime,
             String reason, Appointment.BookingSource bookingSource) {
@@ -171,6 +173,8 @@ public class AppointmentService {
         return saved;
     }
 
+    // A new booking changes the admin platform numbers (cached per date range)
+    @CacheEvict(value = "ANALYTICS:OVERALL", allEntries = true)
     @Transactional
     public AppointmentResponse bookAppointmentWithPayment(Long patientId, BookAppointmentWithPaymentRequest request) {
         log.info("Booking appointment with atomic payment for patient ID: {}, doctor ID: {}", patientId,
@@ -203,10 +207,15 @@ public class AppointmentService {
     }
 
     // Emergency appointment booking - books at current time (or client local time)
+    // A new booking changes the admin platform numbers (cached per date range). On both overloads: the inner
+    // call below bypasses the cache proxy
+    @CacheEvict(value = "ANALYTICS:OVERALL", allEntries = true)
     public Appointment bookEmergencyAppointment(Long doctorId, Long patientId, String reason) {
         return bookEmergencyAppointment(doctorId, patientId, reason, null);
     }
 
+    // A new booking changes the admin platform numbers (cached per date range)
+    @CacheEvict(value = "ANALYTICS:OVERALL", allEntries = true)
     public Appointment bookEmergencyAppointment(Long doctorId, Long patientId, String reason,
             LocalDateTime clientTime) {
         Doctor doctor = doctorRepository.findByIdForUpdate(doctorId)
