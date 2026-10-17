@@ -85,6 +85,14 @@ public class AiService {
         boolean success = false;
         String errorMessage = null;
         String userMessage = request != null ? request.getMessage() : null;
+        // Every chat path comes through here, including the GET stream endpoint that skips @Valid: refuse
+        // oversized messages before any AI call (they would only burn tokens)
+        if (userMessage != null && userMessage.length() > AiChatRequest.MAX_MESSAGE_LENGTH) {
+            return AiChatResponse.builder().success(false)
+                    .response("Your message is too long. Please keep it under "
+                            + AiChatRequest.MAX_MESSAGE_LENGTH + " characters.")
+                    .build();
+        }
         try {
             AiChatResponse finalResponse = null;
 
