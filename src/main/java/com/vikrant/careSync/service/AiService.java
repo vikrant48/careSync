@@ -26,6 +26,10 @@ import com.vikrant.careSync.service.ai.GroqClient;
 import com.vikrant.careSync.service.ai.AiQuotaExceededException;
 import com.vikrant.careSync.service.ai.AiUsage;
 import com.vikrant.careSync.service.ai.agent.AiAgentService;
+import com.vikrant.careSync.service.ai.triage.EmergencyTriageService;
+import com.vikrant.careSync.service.ai.triage.TriageCategory;
+import com.vikrant.careSync.dto.AiEmergencyInfo;
+import java.util.Optional;
 import com.vikrant.careSync.service.ai.AiAuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -58,6 +62,7 @@ public class AiService {
     private final GeminiClient geminiClient;
     private final AccessGuard accessGuard;
     private final AiAgentService aiAgentService;
+    private final EmergencyTriageService emergencyTriageService;
     private final SupabaseStorageService supabaseStorageService;
 
     public AiChatResponse getResponse(AiChatRequest request) {
@@ -77,9 +82,15 @@ public class AiService {
             AiUsage chatUsage = null;
             List<String> toolsUsed = List.of();
 
-            // 1. Emergency Triage Safety Check
-            if (isEmergencySymptom(userMessage)) {
-                finalResponse = handleEmergencyTriage(userMessage);
+            // 1. Emergency triage, layer 1 (rules, no AI): patients only, doctors discuss symptoms clinically.
+            // Layer 2 is the AI's own urgency check (flag_urgent_symptoms tool) in the agent below.
+            boolean patientChat = !SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                    .anyMatch(a -> "ROLE_DOCTOR".equals(a.getAuthority()));
+            Optional<AiEmergencyInfo> ruleEmergency = patientChat && !userMessage.startsWith("ACTION_")
+                    ? emergencyTriageService.fromRules(userMessage)
+                    : Optional.empty();
+            if (ruleEmergency.isPresent()) {
+                finalResponse = emergencyResponse(ruleEmergency.get());
                 finalResponse.setConversationId(conversationId);
             } else {
                 // 2. Handle UI-triggered action commands
@@ -111,7 +122,8 @@ public class AiService {
                         AiAgentService.AgentReply reply = aiAgentService.run(userMessage,
                                 memoryService.getRecentHistory(conversationId));
                         finalResponse = AiChatResponse.builder().response(reply.text()).success(true)
-                                .suggestion(reply.card()).conversationId(conversationId).build();
+                                .suggestion(reply.card()).emergency(reply.emergency())
+                                .conversationId(conversationId).build();
                         memoryService.saveTurn(conversationId, userMessage,
                                 reply.text() + AiAgentService.cardNote(reply.card()));
                         turnSaved = true;
@@ -260,6 +272,12 @@ public class AiService {
         }
 
         String userMessage = request.getMessage();
+        Optional<AiEmergencyInfo> ruleEmergency = emergencyTriageService.fromRules(userMessage);
+        if (ruleEmergency.isPresent()) {
+            AiEmergencyInfo notice = ruleEmergency.get();
+            chunkConsumer.accept("**" + notice.getTitle() + "**\n\n" + notice.getMessage());
+            return;
+        }
         List<Map<String, String>> conversationHistory = memoryService.getRecentHistory(conversationId);
         StringBuilder fullResponse = new StringBuilder();
 
@@ -373,36 +391,27 @@ public class AiService {
         return aiClinicalService.draftIntakeFromNarrative(narrative);
     }
 
-    private boolean isEmergencySymptom(String message) {
-        if (message == null)
-            return false;
-        String lower = message.toLowerCase();
-        return lower.contains("chest pain") || lower.contains("heart attack") || lower.contains("shortness of breath")
-                || lower.contains("can't breathe") || lower.contains("cant breathe")
-                || lower.contains("severe bleeding")
-                || lower.contains("stroke") || lower.contains("unconscious") || lower.contains("suicide")
-                || lower.contains("kill myself");
-    }
-
-    private AiChatResponse handleEmergencyTriage(String userMsg) {
-        String warningMessage = "**URGENT MEDICAL NOTICE**: Your message indicates a potential medical emergency.\n\n"
-                + "Please call emergency services immediately (911 / 112 / 102) or go to the nearest hospital Emergency Room.\n"
-                + "Do not wait for an online appointment for severe symptoms such as chest pain, severe shortness of breath, stroke symptoms, or severe bleeding.\n\n"
-                + "If you still need an urgent doctor consultation, choose from available Emergency & Cardiology specialists below:";
-
-        List<Doctor> emergencyDoctors = doctorRepository.findAll().stream()
-                .filter(Doctor::canAcceptAppointments)
-                .filter(d -> "Cardiology".equalsIgnoreCase(d.getSpecialization())
-                        || "Emergency Medicine".equalsIgnoreCase(d.getSpecialization()))
+    /**
+     * Answer for a red-flag message: the emergency notice (numbers, what to do now) and, for medical emergencies,
+     * doctors who handle emergencies, for the emergency booking. A mental-health crisis gets the helpline first.
+     */
+    private AiChatResponse emergencyResponse(AiEmergencyInfo notice) {
+        boolean mentalHealth = TriageCategory.MENTAL_HEALTH.name().equals(notice.getCategory());
+        List<String> specializations = mentalHealth ? List.of("Psychiatry", "Psychology")
+                : List.of("Emergency Medicine", "General Medicine", "Cardiology");
+        List<AiBookingSuggestion.DoctorSuggestion> doctors = specializations.stream()
+                .flatMap(spec -> doctorRepository.findBookableBySpecialization(spec).stream())
+                .distinct()
+                .limit(3)
+                .map(aiBookingService::mapToDoctorSuggestion)
                 .collect(Collectors.toList());
-
         return AiChatResponse.builder()
-                .response(warningMessage)
+                .response("**" + notice.getTitle() + "**\n\n" + notice.getMessage())
                 .success(true)
-                .suggestion(AiBookingSuggestion.builder()
+                .emergency(notice)
+                .suggestion(doctors.isEmpty() ? null : AiBookingSuggestion.builder()
                         .type(AiBookingSuggestion.SuggestionType.DOCTORS)
-                        .doctors(emergencyDoctors.stream().map(aiBookingService::mapToDoctorSuggestion)
-                                .collect(Collectors.toList()))
+                        .doctors(doctors)
                         .reason("EMERGENCY_TRIAGE")
                         .build())
                 .build();

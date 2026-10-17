@@ -190,11 +190,8 @@ public class AiClinicalService {
             throw new IllegalArgumentException("Please describe the health concern in at least 5 characters.");
         }
 
-        String lower = cleanNarrative.toLowerCase();
-        boolean emergency = lower.contains("chest pain") || lower.contains("difficulty breathing")
-                || lower.contains("shortness of breath") || lower.contains("stroke")
-                || lower.contains("loss of consciousness") || lower.contains("unconscious")
-                || lower.contains("severe bleeding");
+        // Same red-flag rules as the chat (word-based, understands "no chest pain")
+        boolean emergency = com.vikrant.careSync.service.ai.triage.RedFlagRules.isEmergency(cleanNarrative);
         List<String> deterministicFlags = emergency
                 ? List.of("Potential emergency symptoms were reported. Seek urgent medical care if symptoms are severe or worsening.")
                 : List.of();
@@ -295,11 +292,10 @@ public class AiClinicalService {
     public com.vikrant.careSync.dto.AiIntakeSummaryDto generateStructuredIntakeSummary(String chiefComplaint,
             String symptoms, String duration, String severity, String medications, String allergies) {
         // Red flag emergency check
-        String combinedText = ((chiefComplaint != null ? chiefComplaint : "") + " "
-                + (symptoms != null ? symptoms : "")).toLowerCase();
-        boolean redFlagDetected = combinedText.contains("chest pain") || combinedText.contains("stroke")
-                || combinedText.contains("difficulty breathing") || combinedText.contains("loss of consciousness")
-                || combinedText.contains("unconscious") || combinedText.contains("severe bleeding");
+        // Same red-flag rules as the chat (word-based, understands "no chest pain")
+        String combinedText = (chiefComplaint != null ? chiefComplaint : "") + ". "
+                + (symptoms != null ? symptoms : "");
+        boolean redFlagDetected = com.vikrant.careSync.service.ai.triage.RedFlagRules.isEmergency(combinedText);
 
         List<String> redFlagsList = new java.util.ArrayList<>();
         if (redFlagDetected) {

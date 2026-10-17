@@ -17,6 +17,10 @@ import com.vikrant.careSync.service.AppointmentService;
 import com.vikrant.careSync.service.LabTestService;
 import com.vikrant.careSync.service.SavedDoctorService;
 import com.vikrant.careSync.service.ai.AiBookingService;
+import com.vikrant.careSync.service.ai.AiClock;
+import com.vikrant.careSync.service.ai.triage.EmergencyTriageService;
+import com.vikrant.careSync.service.ai.triage.TriageCategory;
+import com.vikrant.careSync.service.ai.triage.TriageLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -54,6 +58,8 @@ public class PatientAgentTools {
     private final DoctorRepository doctorRepository;
     private final SavedDoctorService savedDoctorService;
     private final LabTestService labTestService;
+    private final EmergencyTriageService triageService;
+    private final AiClock clock;
     private final ObjectMapper mapper = new ObjectMapper();
 
     private record Tool(String description, Map<String, Object> parameters, Function<JsonNode, AiToolResult> run) {
@@ -97,6 +103,19 @@ public class PatientAgentTools {
     private Map<String, Tool> tools() {
         if (tools == null) {
             Map<String, Tool> map = new LinkedHashMap<>();
+            map.put("flag_urgent_symptoms", new Tool(
+                    "Call this FIRST whenever the patient's symptoms may need emergency care now (EMERGENCY) or a "
+                            + "doctor today (URGENT), or they mention wanting to harm themselves (category "
+                            + "MENTAL_HEALTH). The patient then sees emergency numbers and help. Do not call it for "
+                            + "routine questions.",
+                    schema(Map.of(
+                            "level", Map.of("type", "string", "enum", List.of("EMERGENCY", "URGENT"),
+                                    "description", "EMERGENCY: act now. URGENT: see a doctor today."),
+                            "category", Map.of("type", "string", "enum", List.of("MEDICAL", "MENTAL_HEALTH"),
+                                    "description", "MENTAL_HEALTH for self-harm or suicidal thoughts"),
+                            "reasons", Map.of("type", "array", "items", Map.of("type", "string"),
+                                    "description", "1-3 short reasons, e.g. 'chest pain spreading to the arm'")
+                    ), "level", "category"), this::flagUrgentSymptoms));
             map.put("list_specializations", new Tool(
                     "List the medical specializations available on CareSync, shown to the patient as choices.",
                     schema(Map.of()), args -> listSpecializations()));
@@ -163,6 +182,25 @@ public class PatientAgentTools {
 
     // ---------------------------------------------------------------- tools
 
+    private AiToolResult flagUrgentSymptoms(JsonNode args) {
+        TriageLevel level = enumValue(TriageLevel.class, text(args, "level"), "level");
+        TriageCategory category = enumValue(TriageCategory.class, text(args, "category"), "category");
+        List<String> reasons = new ArrayList<>();
+        args.path("reasons").forEach(r -> reasons.add(r.asText()));
+        var notice = triageService.fromAi(level, category, reasons)
+                .orElseThrow(() -> new IllegalArgumentException("level must be EMERGENCY or URGENT"));
+        return new AiToolResult(json(Map.of("status", "The patient now sees: " + notice.getTitle()
+                + ". Add one or two calm sentences; don't repeat the phone numbers.")), null, notice);
+    }
+
+    private static <E extends Enum<E>> E enumValue(Class<E> type, String value, String field) {
+        try {
+            return Enum.valueOf(type, value == null ? "" : value.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(field + " has an unknown value");
+        }
+    }
+
     private AiToolResult listSpecializations() {
         List<String> specializations = bookingService.getAvailableSpecializations();
         return new AiToolResult(json(Map.of("specializations", specializations)), AiBookingSuggestion.builder()
@@ -216,7 +254,7 @@ public class PatientAgentTools {
             } else if (from != null || to != null) {
                 // Time of day without a date: first matching slot in the coming week
                 for (int d = 0; d < TIME_WINDOW_DAYS && card.getRecommendedSlot() == null; d++) {
-                    LocalDate day = LocalDate.now().plusDays(d);
+                    LocalDate day = clock.today().plusDays(d);
                     List<String> slots = slotsBetween(doctor.getId(), day, from, to);
                     if (!slots.isEmpty()) {
                         card.setRecommendedDate(day.toString());
@@ -460,7 +498,7 @@ public class PatientAgentTools {
         return args.get(field).asLong();
     }
 
-    static LocalDate optionalDate(JsonNode args, String field) {
+    LocalDate optionalDate(JsonNode args, String field) {
         String value = text(args, field);
         if (value == null) {
             return null;
@@ -471,7 +509,7 @@ public class PatientAgentTools {
         } catch (DateTimeParseException e) {
             throw new IllegalArgumentException(field + " must be a date like 2026-01-31");
         }
-        LocalDate today = LocalDate.now();
+        LocalDate today = clock.today();
         if (date.isBefore(today)) {
             throw new IllegalArgumentException("That date is in the past. Today is " + today + ".");
         }
@@ -481,7 +519,7 @@ public class PatientAgentTools {
         return date;
     }
 
-    private static LocalDate requiredDate(JsonNode args, String field) {
+    private LocalDate requiredDate(JsonNode args, String field) {
         LocalDate date = optionalDate(args, field);
         if (date == null) {
             throw new IllegalArgumentException(field + " is required (YYYY-MM-DD)");

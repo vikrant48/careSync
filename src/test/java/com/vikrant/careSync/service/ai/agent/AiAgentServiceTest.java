@@ -1,7 +1,9 @@
 package com.vikrant.careSync.service.ai.agent;
 
 import com.vikrant.careSync.dto.AiBookingSuggestion;
+import com.vikrant.careSync.dto.AiEmergencyInfo;
 import com.vikrant.careSync.service.ai.AiBookingService;
+import com.vikrant.careSync.service.ai.AiClock;
 import com.vikrant.careSync.service.ai.AiModelTier;
 import com.vikrant.careSync.service.ai.AiToolCall;
 import com.vikrant.careSync.service.ai.AiToolTurn;
@@ -38,7 +40,7 @@ class AiAgentServiceTest {
         AiBookingService booking = mock(AiBookingService.class);
         when(booking.getAvailableSpecializations()).thenReturn(List.of("Cardiology", "Dermatology"));
         when(tools.definitions()).thenReturn(List.of(Map.of("type", "function")));
-        agent = new AiAgentService(groq, tools, booking);
+        agent = new AiAgentService(groq, tools, booking, new AiClock("Asia/Kolkata"));
     }
 
     private static AiToolTurn toolTurn(String name, String args) {
@@ -103,6 +105,22 @@ class AiAgentServiceTest {
         agent.run("many", List.of());
 
         verify(tools, times(AiAgentService.MAX_TOOL_CALLS_PER_STEP)).execute(anyString(), anyString());
+    }
+
+    @Test
+    void emergencyNoticeFromTheTriageToolReachesThePatient() {
+        AiEmergencyInfo urgent = AiEmergencyInfo.builder().level("URGENT").build();
+        AiEmergencyInfo emergency = AiEmergencyInfo.builder().level("EMERGENCY").build();
+        when(groq.callWithTools(anyList(), anyList(), any()))
+                .thenReturn(toolTurn("flag_urgent_symptoms", "{}"))
+                .thenReturn(toolTurn("flag_urgent_symptoms", "{\"x\":1}"))
+                .thenReturn(textTurn("Please call 112 now."));
+        when(tools.execute("flag_urgent_symptoms", "{}")).thenReturn(new AiToolResult("{}", null, emergency));
+        when(tools.execute("flag_urgent_symptoms", "{\"x\":1}")).thenReturn(new AiToolResult("{}", null, urgent));
+
+        AiAgentService.AgentReply reply = agent.run("crushing chest pain", List.of());
+
+        assertSame(emergency, reply.emergency(), "a later, milder flag does not replace an emergency");
     }
 
     @Test

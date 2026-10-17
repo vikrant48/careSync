@@ -7,7 +7,10 @@ import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.service.AppointmentService;
 import com.vikrant.careSync.service.LabTestService;
 import com.vikrant.careSync.service.SavedDoctorService;
+import com.vikrant.careSync.service.ai.AiAuditService;
 import com.vikrant.careSync.service.ai.AiBookingService;
+import com.vikrant.careSync.service.ai.AiClock;
+import com.vikrant.careSync.service.ai.triage.EmergencyTriageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -25,21 +28,23 @@ class PatientAgentToolsTest {
     private AiBookingService booking;
     private AppointmentService appointments;
     private PatientAgentTools tools;
+    private EmergencyTriageService triage;
 
     @BeforeEach
     void setUp() {
         booking = mock(AiBookingService.class);
         appointments = mock(AppointmentService.class);
         when(booking.currentPatient()).thenReturn(Patient.builder().id(201L).build());
+        triage = new EmergencyTriageService(mock(AiAuditService.class), "112", "108", "14416", "Tele-MANAS");
         tools = new PatientAgentTools(booking, appointments, mock(DoctorRepository.class),
-                mock(SavedDoctorService.class), mock(LabTestService.class));
+                mock(SavedDoctorService.class), mock(LabTestService.class), triage, new AiClock("Asia/Kolkata"));
     }
 
     @Test
     void definesTheExpectedTools() {
         List<String> names = tools.definitions().stream()
                 .map(d -> (String) ((Map<?, ?>) d.get("function")).get("name")).toList();
-        assertEquals(List.of("list_specializations", "search_doctors", "get_available_slots", "prepare_booking",
+        assertEquals(List.of("flag_urgent_symptoms", "list_specializations", "search_doctors", "get_available_slots", "prepare_booking",
                 "list_my_appointments", "prepare_cancel", "prepare_reschedule", "my_saved_doctors",
                 "search_lab_tests"), names);
     }
@@ -116,6 +121,25 @@ class PatientAgentToolsTest {
         assertNull(move.card());
         assertTrue(cancel.forModel().contains("not one of the patient's appointments"));
         verify(booking, never()).prepareConfirmation(anyLong(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void urgentSymptomsFlagShowsTheEmergencyNotice() {
+        AiToolResult result = tools.execute("flag_urgent_symptoms",
+                "{\"level\":\"EMERGENCY\",\"category\":\"MEDICAL\",\"reasons\":[\"chest pain spreading to arm\"]}");
+
+        assertNotNull(result.emergency());
+        assertEquals("EMERGENCY", result.emergency().getLevel());
+        assertTrue(result.emergency().getMessage().contains("112"));
+        assertEquals(List.of("chest pain spreading to arm"), result.emergency().getReasons());
+    }
+
+    @Test
+    void urgentSymptomsFlagRejectsUnknownLevels() {
+        assertNull(tools.execute("flag_urgent_symptoms", "{\"level\":\"PANIC\",\"category\":\"MEDICAL\"}")
+                .emergency());
+        assertNull(tools.execute("flag_urgent_symptoms", "{\"level\":\"ROUTINE\",\"category\":\"MEDICAL\"}")
+                .emergency());
     }
 
     @Test
