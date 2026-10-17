@@ -155,52 +155,78 @@ public class AiBookingService {
     }
 
     public AiChatResponse handleSlotSelection(String message) {
+        String[] parts = message.replace("ACTION_SELECT_SLOT_", "").split("_", 4);
         try {
-            Patient patient = validatePatientAuthenticated();
-            String[] parts = message.replace("ACTION_SELECT_SLOT_", "").split("_", 4);
-            Long doctorId = Long.parseLong(parts[0]);
-            String date = parts[1];
-            String slot = parts[2];
-            String reason = parts.length > 3 ? parts[3] : "AI Assisted Booking";
-
-            Doctor d = validateDoctorExists(doctorId);
-            LocalDate bookingDate = LocalDate.parse(date);
-
-            // Safety validations
-            validateDoctorNotOnLeave(doctorId, bookingDate);
-            validateSlotAvailability(doctorId, date, slot);
-
-            if (!reason.startsWith("RESCHEDULE:")) {
-                validateNoDuplicateAppointment(patient.getId(), doctorId, bookingDate, slot);
-            }
-
-            AiBookingSuggestion.AiBookingSuggestionBuilder suggestionBuilder = AiBookingSuggestion.builder()
-                    .type(AiBookingSuggestion.SuggestionType.CONFIRM)
-                    .doctorId(d.getId()).doctorName(d.getName()).date(date)
-                    .specialization(d.getSpecialization())
-                    .slot(slot).consultationFee(d.getConsultationFees()).reason(reason);
-
-            if (reason.startsWith("RESCHEDULE:")) {
-                Long apptId = Long.parseLong(reason.split(":")[1]);
-                requireOwnAppointment(apptId);
-                suggestionBuilder.appointmentId(apptId);
-                appointmentRepository.findById(apptId).ifPresent(appt -> {
-                    suggestionBuilder.originalDate(appt.getAppointmentDateTime().toLocalDate().toString());
-                    suggestionBuilder
-                            .originalSlot(appt.getAppointmentDateTime().toLocalTime().toString().substring(0, 5));
-                });
-            }
-
-            return AiChatResponse.builder()
-                    .response("Confirm " + (reason.startsWith("RESCHEDULE") ? "rescheduling" : "booking") + " with "
-                            + d.getName() + " on " + date + " at " + slot + ".")
-                    .success(true)
-                    .suggestion(suggestionBuilder.build())
-                    .build();
+            return prepareConfirmation(Long.parseLong(parts[0]), parts[1], parts[2],
+                    parts.length > 3 ? parts[3] : "AI Assisted Booking");
         } catch (Exception e) {
             log.warn("Safety validation failed during slot selection: {}", e.getMessage());
             return AiChatResponse.builder().response("⚠️ " + e.getMessage()).success(false).build();
         }
+    }
+
+    /**
+     * The confirm card for a booking (or, with reason "RESCHEDULE:{id}", a reschedule), after every safety check:
+     * logged-in active patient, doctor accepting appointments, not on leave, slot still free, no duplicate, own
+     * appointment for reschedules. Nothing is booked here: the patient confirms (and pays) from the card.
+     * Throws with a readable message when a check fails.
+     */
+    public AiChatResponse prepareConfirmation(Long doctorId, String date, String slot, String reason) {
+        Patient patient = validatePatientAuthenticated();
+        Doctor d = validateDoctorExists(doctorId);
+        LocalDate bookingDate = LocalDate.parse(date);
+
+        // Safety validations
+        validateDoctorNotOnLeave(doctorId, bookingDate);
+        validateSlotAvailability(doctorId, date, slot);
+
+        if (!reason.startsWith("RESCHEDULE:")) {
+            validateNoDuplicateAppointment(patient.getId(), doctorId, bookingDate, slot);
+        }
+
+        AiBookingSuggestion.AiBookingSuggestionBuilder suggestionBuilder = AiBookingSuggestion.builder()
+                .type(AiBookingSuggestion.SuggestionType.CONFIRM)
+                .doctorId(d.getId()).doctorName(d.getName()).date(date)
+                .specialization(d.getSpecialization())
+                .slot(slot).consultationFee(d.getConsultationFees()).reason(reason);
+
+        if (reason.startsWith("RESCHEDULE:")) {
+            Long apptId = Long.parseLong(reason.split(":")[1]);
+            requireOwnAppointment(apptId);
+            suggestionBuilder.appointmentId(apptId);
+            appointmentRepository.findById(apptId).ifPresent(appt -> {
+                suggestionBuilder.originalDate(appt.getAppointmentDateTime().toLocalDate().toString());
+                suggestionBuilder
+                        .originalSlot(appt.getAppointmentDateTime().toLocalTime().toString().substring(0, 5));
+            });
+        }
+
+        return AiChatResponse.builder()
+                .response("Confirm " + (reason.startsWith("RESCHEDULE") ? "rescheduling" : "booking") + " with "
+                        + d.getName() + " on " + date + " at " + slot + ".")
+                .success(true)
+                .suggestion(suggestionBuilder.build())
+                .build();
+    }
+
+    /** The logged-in patient (active, allowed to book); throws with a readable message otherwise. */
+    public Patient currentPatient() {
+        return validatePatientAuthenticated();
+    }
+
+    /** A doctor that exists and accepts appointments; throws with a readable message otherwise. */
+    public Doctor bookableDoctor(Long doctorId) {
+        return validateDoctorExists(doctorId);
+    }
+
+    /** True when the logged-in patient owns this appointment */
+    public boolean ownsAppointment(Long appointmentId) {
+        return accessGuard.isAppointmentPatient(appointmentId);
+    }
+
+    /** Doctor card entry with the doctor's first open slot in the next two weeks (no slot when none) */
+    public AiBookingSuggestion.DoctorSuggestion doctorWithFirstSlot(Doctor doctor) {
+        return mapToDoctorSuggestionWithFirstSlot(doctor);
     }
 
     // Safety Validation Guardrails

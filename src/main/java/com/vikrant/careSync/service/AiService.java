@@ -25,6 +25,7 @@ import com.vikrant.careSync.service.ai.GeminiClient;
 import com.vikrant.careSync.service.ai.GroqClient;
 import com.vikrant.careSync.service.ai.AiQuotaExceededException;
 import com.vikrant.careSync.service.ai.AiUsage;
+import com.vikrant.careSync.service.ai.agent.AiAgentService;
 import com.vikrant.careSync.service.ai.AiAuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -56,6 +57,7 @@ public class AiService {
     private final AiAuditService aiAuditService;
     private final GeminiClient geminiClient;
     private final AccessGuard accessGuard;
+    private final AiAgentService aiAgentService;
     private final SupabaseStorageService supabaseStorageService;
 
     public AiChatResponse getResponse(AiChatRequest request) {
@@ -71,6 +73,9 @@ public class AiService {
             // Conversation ID: reuse a well-formed id from the client, otherwise start a new conversation
             String conversationId = validConversationIdOrNew(request.getConversationId());
             boolean turnSaved = false;
+            String chatModel = null;
+            AiUsage chatUsage = null;
+            List<String> toolsUsed = List.of();
 
             // 1. Emergency Triage Safety Check
             if (isEmergencySymptom(userMessage)) {
@@ -97,75 +102,33 @@ public class AiService {
                 if (finalResponse != null) {
                     finalResponse.setConversationId(conversationId);
                 } else {
-                    String lowerMsg = userMessage.toLowerCase();
+                    boolean isDoctor = SecurityContextHolder.getContext().getAuthentication().getAuthorities()
+                            .stream().anyMatch(a -> a.getAuthority().equals("ROLE_DOCTOR"));
 
-                    // 3. Direct Specialization mentions
-                    List<String> specializations = aiBookingService.getAvailableSpecializations();
-                    for (String spec : specializations) {
-                        if (lowerMsg.contains(spec.toLowerCase())) {
-                            finalResponse = aiBookingService
-                                    .handleSpecializationSelection("ACTION_SELECT_SPECIALIZATION_" + spec);
-                            finalResponse.setConversationId(conversationId);
-                            break;
-                        }
-                    }
+                    if (!isDoctor) {
+                        // 3. Patients: the AI agent. Its tools run on the server as this patient; bookings,
+                        // cancellations and reschedules only produce a card the patient confirms by clicking.
+                        AiAgentService.AgentReply reply = aiAgentService.run(userMessage,
+                                memoryService.getRecentHistory(conversationId));
+                        finalResponse = AiChatResponse.builder().response(reply.text()).success(true)
+                                .suggestion(reply.card()).conversationId(conversationId).build();
+                        memoryService.saveTurn(conversationId, userMessage,
+                                reply.text() + AiAgentService.cardNote(reply.card()));
+                        turnSaved = true;
+                        chatModel = reply.model();
+                        chatUsage = reply.usage();
+                        toolsUsed = reply.toolsUsed();
+                    } else {
+                        // 4. Doctors: clinical assistant (patient context via name; a doctor co-pilot comes later)
 
-                    // 4. Direct Doctor Name mentions
-                    if (finalResponse == null) {
-                        List<Doctor> allDoctors = doctorRepository.findAll();
-                        for (Doctor d : allDoctors) {
-                            String fullName = (d.getName() != null ? d.getName() : "").toLowerCase();
-                            String lastName = (d.getLastName() != null ? d.getLastName() : "").toLowerCase();
-                            if (!fullName.isEmpty() && lowerMsg.contains(fullName)) {
-                                finalResponse = aiBookingService
-                                        .handleDoctorSelection("ACTION_SELECT_DOCTOR_" + d.getId());
-                                finalResponse.setConversationId(conversationId);
-                                break;
-                            } else if (!lastName.isEmpty() && lowerMsg.contains(lastName)) {
-                                finalResponse = aiBookingService
-                                        .handleDoctorSelection("ACTION_SELECT_DOCTOR_" + d.getId());
-                                finalResponse.setConversationId(conversationId);
-                                break;
-                            }
-                        }
-                    }
-
-                    // 5. Check if user sent direct date/time text or let the AI model handle
-                    // structured intent
-                    // (Naive keyword matching for "book" was removed to prevent hijacking natural
-                    // language inputs like "book an appointment with her at 10am tomorrow")
-
-                    // 6. AI model call (Groq)
-                    if (finalResponse == null) {
-                        boolean isDoctor = SecurityContextHolder.getContext().getAuthentication().getAuthorities()
-                                .stream().anyMatch(a -> a.getAuthority().equals("ROLE_DOCTOR"));
-
-                        String specializationsList = String.join(", ", aiBookingService.getAvailableSpecializations());
-                        String systemInstructions;
-
-                        if (isDoctor) {
-                            systemInstructions = "You are CareSync AI Clinical Assistant, a specialized advisor for medical professionals. "
+                        String systemInstructions = "You are CareSync AI Clinical Assistant, a specialized advisor for medical professionals. "
                                     + "Respond strictly in JSON format with fields:\n"
                                     + "{\"reply\": \"User-facing response\", \"intent\": \"GENERAL_CONSULT\", \"specializations\": [], \"action\": \"NONE\"}.\n"
                                     + "- For clinical topics: provide evidence-based insights.\n"
                                     + "- Always include a medical disclaimer in 'reply'.";
-                        } else {
-                            systemInstructions = "You are CareSync AI health assistant. "
-                                    + "Respond STRICTLY in JSON format matching this schema:\n" + "{\n"
-                                    + "  \"reply\": \"Detailed user-facing empathetic health advice and medical disclaimer\",\n"
-                                    + "  \"intent\": \"BOOK_APPOINTMENT\" | \"CANCEL_APPOINTMENT\" | \"RESCHEDULE_APPOINTMENT\" | \"GENERAL_CONSULT\",\n"
-                                    + "  \"specializations\": [\"SpecializationFromList\"],\n"
-                                    + "  \"action\": \"SHOW_DOCTORS\" | \"SHOW_SPECIALIZATIONS\" | \"SHOW_MY_APPOINTMENTS\" | \"NONE\"\n"
-                                    + "}\n" + "Rules:\n" + "1. Available specializations: [" + specializationsList
-                                    + "]\n"
-                                    + "2. If user has symptoms: set intent='BOOK_APPOINTMENT', specializations=[matching specializations], action='SHOW_DOCTORS'.\n"
-                                    + "3. If user wants to cancel appointment: set intent='CANCEL_APPOINTMENT', action='SHOW_MY_APPOINTMENTS'.\n"
-                                    + "4. If user wants to move/reschedule: set intent='RESCHEDULE_APPOINTMENT', action='SHOW_MY_APPOINTMENTS'.\n"
-                                    + "5. Always include a concise medical disclaimer inside 'reply'.";
-                        }
 
                         String context = "";
-                        if (isDoctor && (userMessage.toLowerCase().contains("summarize")
+                        if ((userMessage.toLowerCase().contains("summarize")
                                 || userMessage.toLowerCase().contains("history"))) {
                             // Only the doctor's own patients can be summarized
                             List<Patient> patients = patientRepository.findAllById(accessGuard.treatedPatientIds());
@@ -240,8 +203,13 @@ public class AiService {
 
             // Save the turn once (the model path saves above). Button commands (ACTION_*) are not conversation, so
             // they stay out of the model's memory.
-            if (!turnSaved && finalResponse.getResponse() != null && !userMessage.startsWith("ACTION_")) {
-                memoryService.saveTurn(conversationId, userMessage, finalResponse.getResponse());
+            if (!turnSaved && finalResponse.getResponse() != null) {
+                if (userMessage.startsWith("ACTION_")) {
+                    memoryService.saveTurn(conversationId, "(The patient used a button in the chat)",
+                            finalResponse.getResponse() + AiAgentService.cardNote(finalResponse.getSuggestion()));
+                } else {
+                    memoryService.saveTurn(conversationId, userMessage, finalResponse.getResponse());
+                }
             }
 
             long latencyMs = System.currentTimeMillis() - startTime;
@@ -253,9 +221,12 @@ public class AiService {
             } catch (Exception ex) {
                 responseJson = finalResponse != null ? finalResponse.getResponse() : null;
             }
-            AiUsage usage = groqClient.getLastUsage();
-            aiAuditService.logInteraction("CHAT", groqClient.getLastUsedModel(), latencyMs, success,
-                    usage.promptTokens(), usage.completionTokens(), usage.totalTokens(), bookingActionProduced,
+            AiUsage usage = chatUsage != null ? chatUsage : groqClient.getLastUsage();
+            String auditedAction = toolsUsed.isEmpty() ? bookingActionProduced
+                    : bookingActionProduced + " via " + String.join(",", toolsUsed);
+            aiAuditService.logInteraction("CHAT", chatModel != null ? chatModel : groqClient.getLastUsedModel(),
+                    latencyMs, success, usage.promptTokens(), usage.completionTokens(), usage.totalTokens(),
+                    auditedAction.length() > 250 ? auditedAction.substring(0, 250) : auditedAction,
                     errorMessage, userMessage, responseJson);
 
             return finalResponse;

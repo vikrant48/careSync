@@ -38,8 +38,8 @@ public class AiQuotaService {
 
     public AiQuotaService(StringRedisTemplate redisTemplate, CurrentUserService currentUserService,
             @Value("${app.ai.quota.enabled:true}") boolean enabled,
-            @Value("${app.ai.quota.per-minute:10}") int perMinute,
-            @Value("${app.ai.quota.per-day:150}") int perDay) {
+            @Value("${app.ai.quota.per-minute:20}") int perMinute,
+            @Value("${app.ai.quota.per-day:200}") int perDay) {
         this.redisTemplate = redisTemplate;
         this.currentUserService = currentUserService;
         this.enabled = enabled;

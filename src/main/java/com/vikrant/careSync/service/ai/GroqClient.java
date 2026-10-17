@@ -293,6 +293,102 @@ public class GroqClient {
         }
     }
 
+    /**
+     * One step of a tool-calling conversation (OpenAI "tools" format). The caller keeps the message list: it adds
+     * the assistant's tool calls and the tool results, then calls again. Counts against the user's AI allowance and
+     * falls back to the next model like callGroq.
+     */
+    public AiToolTurn callWithTools(List<Map<String, Object>> messages, List<Map<String, Object>> tools,
+            AiModelTier tier) {
+        if (!isConfigured()) {
+            throw new IllegalStateException("Groq API key is not configured.");
+        }
+        resetLastCall();
+        if (quotaService != null) {
+            quotaService.consume();
+        }
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(apiKey);
+
+        for (String currentModel : tier == AiModelTier.FAST ? fastCandidateModels : candidateModels) {
+            Map<String, Object> body = new HashMap<>();
+            body.put("model", currentModel);
+            body.put("messages", messages);
+            body.put("temperature", 0.2);
+            body.put("max_completion_tokens", maxTokens);
+            if (tools != null && !tools.isEmpty()) {
+                body.put("tools", tools);
+                body.put("tool_choice", "auto");
+            }
+            if (currentModel.startsWith("openai/gpt-oss")) {
+                if (reasoningEffort != null && !reasoningEffort.isBlank()) {
+                    body.put("reasoning_effort", reasoningEffort);
+                }
+                body.put("include_reasoning", false);
+            }
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+
+            for (int attempt = 1; attempt <= RETRIES_PER_MODEL; attempt++) {
+                try {
+                    JsonNode response = restTemplate.postForObject(apiUrl, entity, JsonNode.class);
+                    AiToolTurn turn = parseToolTurn(response, currentModel);
+                    if (turn != null) {
+                        lastUsedModel.set(currentModel);
+                        lastUsage.set(turn.usage());
+                        return turn;
+                    }
+                    log.warn("Groq model '{}' returned an empty answer", currentModel);
+                    break;
+                } catch (HttpClientErrorException e) {
+                    // tool_use_failed: this model produced a malformed tool call; another model may do better
+                    if (tryNextModel(e) || e.getResponseBodyAsString().contains("tool_use_failed")) {
+                        log.warn("Groq model '{}' unavailable for tools (HTTP {}). Trying the next model...",
+                                currentModel, e.getStatusCode().value());
+                        break;
+                    }
+                    log.error("Groq request refused (HTTP {})", e.getStatusCode().value());
+                    throw new IllegalStateException("AI request was refused (HTTP " + e.getStatusCode().value() + ")");
+                } catch (HttpServerErrorException | ResourceAccessException e) {
+                    log.warn("Groq model '{}' failed (attempt {}/{}): {}", currentModel, attempt, RETRIES_PER_MODEL,
+                            e.getClass().getSimpleName());
+                    if (attempt < RETRIES_PER_MODEL && !sleep(RETRY_DELAY_MS * attempt)) {
+                        break;
+                    }
+                }
+            }
+        }
+        throw new IllegalStateException("The AI service is unavailable right now. Please try again shortly.");
+    }
+
+    static AiToolTurn parseToolTurn(JsonNode response, String model) {
+        if (response == null || !response.path("choices").isArray() || response.path("choices").isEmpty()) {
+            return null;
+        }
+        JsonNode message = response.path("choices").get(0).path("message");
+        List<AiToolCall> calls = new ArrayList<>();
+        for (JsonNode call : message.path("tool_calls")) {
+            String name = call.path("function").path("name").asText("");
+            if (!name.isBlank()) {
+                calls.add(new AiToolCall(call.path("id").asText(""), name,
+                        call.path("function").path("arguments").asText("{}")));
+            }
+        }
+        String content = message.hasNonNull("content") ? message.get("content").asText() : null;
+        if (calls.isEmpty() && (content == null || content.isBlank())) {
+            return null;
+        }
+        JsonNode usage = response.path("usage");
+        AiUsage aiUsage = usage.isMissingNode() ? AiUsage.NONE
+                : new AiUsage(intOrNull(usage, "prompt_tokens"), intOrNull(usage, "completion_tokens"),
+                        intOrNull(usage, "total_tokens"));
+        return new AiToolTurn(content, List.copyOf(calls), model, aiUsage);
+    }
+
+    private static Integer intOrNull(JsonNode node, String field) {
+        return node.hasNonNull(field) ? node.get(field).asInt() : null;
+    }
+
     private static List<Map<String, String>> messages(String systemPrompt, List<Map<String, String>> history,
             String userMessage) {
         List<Map<String, String>> messages = new ArrayList<>();

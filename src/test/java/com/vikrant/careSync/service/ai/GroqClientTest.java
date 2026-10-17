@@ -87,6 +87,43 @@ class GroqClientTest {
     }
 
     @Test
+    void toolCallsAreReturnedForTheCallerToRun() {
+        server.expect(jsonPath("$.tools[0].function.name").value("search_doctors"))
+                .andExpect(jsonPath("$.tool_choice").value("auto"))
+                .andRespond(withSuccess("{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":null,"
+                        + "\"tool_calls\":[{\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":"
+                        + "\"search_doctors\",\"arguments\":\"{\\\"specialization\\\":\\\"Cardiology\\\"}\"}}]}}],"
+                        + "\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":20,\"total_tokens\":120}}",
+                        MediaType.APPLICATION_JSON));
+
+        AiToolTurn turn = client.callWithTools(
+                List.of(java.util.Map.of("role", "user", "content", "I need a heart doctor")),
+                List.of(java.util.Map.of("type", "function", "function",
+                        java.util.Map.of("name", "search_doctors", "parameters", java.util.Map.of("type", "object")))),
+                AiModelTier.SMART);
+
+        assertTrue(turn.wantsTools());
+        assertEquals(new AiToolCall("call_1", "search_doctors", "{\"specialization\":\"Cardiology\"}"),
+                turn.toolCalls().get(0));
+        assertEquals(new AiUsage(100, 20, 120), turn.usage());
+        server.verify();
+    }
+
+    @Test
+    void malformedToolCallMovesToTheNextModel() {
+        server.expect(jsonPath("$.model").value("openai/gpt-oss-120b"))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST).body("{\"error\":{\"code\":\"tool_use_failed\"}}"));
+        server.expect(jsonPath("$.model").value("openai/gpt-oss-20b"))
+                .andRespond(withSuccess(OK, MediaType.APPLICATION_JSON));
+
+        AiToolTurn turn = client.callWithTools(List.of(java.util.Map.of("role", "user", "content", "hi")),
+                List.of(), AiModelTier.SMART);
+        assertFalse(turn.wantsTools());
+        assertEquals("hello", turn.content());
+        server.verify();
+    }
+
+    @Test
     void otherRefusalsStopWithoutLeakingDetails() {
         server.expect(requestTo(URL)).andRespond(withStatus(HttpStatus.UNAUTHORIZED).body("{\"error\":\"invalid key\"}"));
 
