@@ -25,6 +25,11 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     @Query("SELECT d FROM Document d WHERE d.patient.id = :patientId AND d.isActive = true ORDER BY d.uploadDate DESC")
     List<Document> findByPatientId(@Param("patientId") Long patientId);
 
+    // Health brief: lab reports the patient has not opened yet, newest first
+    @Query("SELECT d FROM Document d WHERE d.patient.id = :patientId AND d.documentType = 'LAB_REPORT'"
+            + " AND d.isActive = true AND d.patientViewedAt IS NULL ORDER BY d.uploadDate DESC")
+    List<Document> findUnreadLabReports(@Param("patientId") Long patientId);
+
     @Query("SELECT d FROM Document d WHERE d.doctor.id = :doctorId AND d.documentType = :documentType AND d.isActive = true ORDER BY d.uploadDate DESC")
     List<Document> findByDoctorIdAndDocumentType(@Param("doctorId") Long doctorId,
             @Param("documentType") Document.DocumentType documentType);

@@ -52,26 +52,73 @@ public class AiAgentService {
             AiUsage usage, List<String> toolsUsed) {
     }
 
+    /**
+     * Receives a streaming answer as it is produced: text pieces, a short status while a tool runs ("Finding
+     * doctors..."), and whether the patient pressed Stop (checked before each model call).
+     */
+    public interface AgentListener {
+        void onText(String text);
+
+        void onStatus(String status);
+
+        default boolean cancelled() {
+            return false;
+        }
+    }
+
     public AgentReply run(String userMessage, List<Map<String, String>> history) {
+        return run(userMessage, history, null);
+    }
+
+    /** With a listener the answer is streamed (text shown as it arrives); without one it is returned at the end. */
+    public AgentReply run(String userMessage, List<Map<String, String>> history, AgentListener listener) {
+        return runWith(systemPrompt(), tools, userMessage, history, listener);
+    }
+
+    /**
+     * The agent loop with any instructions and tool set (the doctor co-pilot uses its own). The limits, Stop
+     * handling and streaming are the same for everyone.
+     */
+    public AgentReply runWith(String systemPrompt, AgentToolbox toolbox, String userMessage,
+            List<Map<String, String>> history, AgentListener listener) {
         List<Map<String, Object>> messages = new ArrayList<>();
-        messages.add(Map.of("role", "system", "content", systemPrompt()));
+        messages.add(Map.of("role", "system", "content", systemPrompt));
         if (history != null) {
             history.forEach(turn -> messages.add(new LinkedHashMap<>(turn)));
         }
         messages.add(Map.of("role", "user", "content", userMessage));
 
-        List<Map<String, Object>> toolDefinitions = tools.definitions();
+        List<Map<String, Object>> toolDefinitions = toolbox.definitions();
         AiBookingSuggestion card = null;
         AiEmergencyInfo emergency = null;
         String model = null;
         int prompt = 0, completion = 0, total = 0;
         boolean anyUsage = false;
         Set<String> toolsUsed = new LinkedHashSet<>();
+        // What the patient has already seen when streaming (text before tool calls plus the final answer)
+        StringBuilder streamed = new StringBuilder();
 
         for (int step = 1; step <= MAX_STEPS; step++) {
+            if (listener != null && listener.cancelled()) {
+                return new AgentReply(streamed.isEmpty() ? "(Stopped)" : streamed.toString().trim(), card, emergency,
+                        model, usage(anyUsage, prompt, completion, total), List.copyOf(toolsUsed));
+            }
             // On the last step the model must answer: no more tools offered
-            AiToolTurn turn = groqClient.callWithTools(messages, step < MAX_STEPS ? toolDefinitions : List.of(),
-                    AiModelTier.SMART);
+            List<Map<String, Object>> offered = step < MAX_STEPS ? toolDefinitions : List.of();
+            AiToolTurn turn;
+            if (listener == null) {
+                turn = groqClient.callWithTools(messages, offered, AiModelTier.SMART);
+            } else {
+                if (!streamed.isEmpty()) {
+                    // Separate text from an earlier step ("Let me check...") from what follows
+                    streamed.append("\n\n");
+                    listener.onText("\n\n");
+                }
+                turn = groqClient.streamWithTools(messages, offered, AiModelTier.SMART, text -> {
+                    streamed.append(text);
+                    listener.onText(text);
+                });
+            }
             model = turn.model();
             if (turn.usage() != null && turn.usage().totalTokens() != null) {
                 anyUsage = true;
@@ -81,8 +128,18 @@ public class AiAgentService {
             }
 
             if (!turn.wantsTools()) {
-                String text = turn.content() == null || turn.content().isBlank() ? fallbackText(card)
-                        : turn.content().trim();
+                String text;
+                if (listener != null) {
+                    if (turn.content() == null || turn.content().isBlank()) {
+                        String fallback = fallbackText(card);
+                        listener.onText(fallback);
+                        streamed.append(fallback);
+                    }
+                    text = streamed.toString().trim();
+                } else {
+                    text = turn.content() == null || turn.content().isBlank() ? fallbackText(card)
+                            : turn.content().trim();
+                }
                 return new AgentReply(text, card, emergency, model, usage(anyUsage, prompt, completion, total),
                         List.copyOf(toolsUsed));
             }
@@ -94,7 +151,10 @@ public class AiAgentService {
                 if (++run > MAX_TOOL_CALLS_PER_STEP) {
                     result = "{\"error\":\"Too many tool calls at once. Call fewer tools.\"}";
                 } else {
-                    AiToolResult toolResult = tools.execute(call.name(), call.argumentsJson());
+                    if (listener != null) {
+                        listener.onStatus(statusFor(call.name()));
+                    }
+                    AiToolResult toolResult = toolbox.execute(call.name(), call.argumentsJson());
                     result = toolResult.forModel();
                     if (toolResult.card() != null) {
                         card = toolResult.card();
@@ -114,6 +174,9 @@ public class AiAgentService {
             }
         }
         log.warn("Agent stopped after {} steps without a final answer", MAX_STEPS);
+        if (listener != null) {
+            listener.onText(fallbackText(card));
+        }
         return new AgentReply(fallbackText(card), card, emergency, model,
                 usage(anyUsage, prompt, completion, total), List.copyOf(toolsUsed));
     }
@@ -155,6 +218,26 @@ public class AiAgentService {
         message.put("content", turn.content() == null ? "" : turn.content());
         message.put("tool_calls", calls);
         return message;
+    }
+
+    /** What the patient sees while a tool runs */
+    static String statusFor(String tool) {
+        return switch (tool) {
+            case "search_doctors", "my_saved_doctors" -> "Finding doctors...";
+            case "get_available_slots" -> "Checking open slots...";
+            case "prepare_booking" -> "Preparing your booking...";
+            case "list_my_appointments", "prepare_cancel", "prepare_reschedule" -> "Looking at your appointments...";
+            case "search_lab_tests" -> "Looking up lab tests...";
+            case "flag_urgent_symptoms" -> "Checking how urgent this is...";
+            case "list_my_patients" -> "Looking up your patients...";
+            case "get_patient_summary" -> "Reading the patient's record...";
+            case "get_recent_vitals" -> "Checking vitals...";
+            case "get_medical_history" -> "Reading past visits...";
+            case "list_lab_reports" -> "Looking at lab reports...";
+            case "get_schedule" -> "Checking your schedule...";
+            case "brief_next_patient" -> "Preparing the brief...";
+            default -> "Working on it...";
+        };
     }
 
     private static String fallbackText(AiBookingSuggestion card) {

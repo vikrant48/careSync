@@ -45,7 +45,7 @@ import java.util.stream.Collectors;
 @Component
 @Slf4j
 @RequiredArgsConstructor
-public class PatientAgentTools {
+public class PatientAgentTools implements AgentToolbox {
 
     static final int MAX_DOCTORS = 5;
     private static final int DOCTORS_TO_SCAN = 8;
@@ -67,7 +67,7 @@ public class PatientAgentTools {
 
     private Map<String, Tool> tools;
 
-    /** Tool definitions in the OpenAI "tools" format */
+    @Override
     public List<Map<String, Object>> definitions() {
         return tools().entrySet().stream()
                 .map(e -> Map.<String, Object>of("type", "function", "function", Map.of(
@@ -77,7 +77,7 @@ public class PatientAgentTools {
                 .collect(Collectors.toList());
     }
 
-    /** Runs a tool by name; unknown tools and bad arguments become {"error": ...} for the model */
+    @Override
     public AiToolResult execute(String name, String argumentsJson) {
         Tool tool = tools().get(name);
         if (tool == null) {

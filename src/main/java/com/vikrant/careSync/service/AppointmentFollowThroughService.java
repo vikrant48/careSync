@@ -3,16 +3,25 @@ package com.vikrant.careSync.service;
 import com.vikrant.careSync.dto.AiBookingSuggestion;
 import com.vikrant.careSync.dto.AppointmentFollowThroughDto;
 import com.vikrant.careSync.dto.FollowUpSlotDto;
+import com.vikrant.careSync.entity.AiVisitSummary;
 import com.vikrant.careSync.entity.Appointment;
 import com.vikrant.careSync.entity.Doctor;
 import com.vikrant.careSync.entity.MedicalHistory;
+import com.vikrant.careSync.repository.AiVisitSummaryRepository;
 import com.vikrant.careSync.repository.AppointmentRepository;
 import com.vikrant.careSync.repository.FeedbackRepository;
 import com.vikrant.careSync.repository.MedicalHistoryRepository;
 import com.vikrant.careSync.service.ai.AiBookingService;
 import com.vikrant.careSync.service.ai.AiClinicalService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.LocalDateTime;
+import java.util.HexFormat;
 
 import java.util.EnumSet;
 import java.util.Set;
@@ -37,6 +46,7 @@ public class AppointmentFollowThroughService {
     private final DoctorLeaveService doctorLeaveService;
     private final AiClinicalService aiClinicalService;
     private final AiBookingService aiBookingService;
+    private final AiVisitSummaryRepository visitSummaryRepository;
 
     public AppointmentFollowThroughDto getFollowThrough(Long appointmentId, Long patientId) {
         Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
@@ -53,13 +63,16 @@ public class AppointmentFollowThroughService {
 
         if (appointment.getStatus() == Appointment.Status.COMPLETED) {
             MedicalHistory history = medicalHistoryRepository.findByAppointmentId(appointmentId).orElse(null);
-            response.plainLanguageSummary(aiClinicalService.generatePlainLanguageVisitSummary(
+            String facts = aiClinicalService.visitSummaryFacts(
                     doctor == null ? "" : doctor.getName(),
                     history == null ? "" : history.getSubjective(),
                     history == null ? "" : history.getAssessment(),
                     history == null ? "" : history.getPlan(),
                     history == null ? "" : history.getDiagnosis(),
-                    history == null ? "" : history.getMedicine()))
+                    history == null ? "" : history.getMedicine());
+            AiVisitSummary saved = savedVisitSummary(appointmentId, facts);
+            response.plainLanguageSummary(saved != null ? saved.getSummary() : aiClinicalService.visitSummaryFallback(facts))
+                    .plainLanguageSummarySavedAt(saved != null ? saved.getUpdatedAt() : null)
                     .feedbackRequested(feedbackRepository.findByAppointmentId(appointmentId).isEmpty())
                     .suggestedFollowUp(toSlot(aiBookingService.findNextBookableDoctor(
                             doctor == null ? null : doctor.getSpecialization(),
@@ -82,6 +95,46 @@ public class AppointmentFollowThroughService {
                     keepSameDoctor), reason));
         }
         return response.build();
+    }
+
+    /**
+     * The saved after-visit summary, written (and saved) the first time it is needed and again when the doctor
+     * amends the visit record. Null when the AI could not write one: nothing is saved then, the next visit retries.
+     */
+    private AiVisitSummary savedVisitSummary(Long appointmentId, String facts) {
+        String hash = sha256(facts);
+        AiVisitSummary saved = visitSummaryRepository.findById(appointmentId).orElse(null);
+        if (saved != null && hash.equals(saved.getSourceHash())) {
+            return saved;
+        }
+        String written = aiClinicalService.writeVisitSummary(facts);
+        if (written == null) {
+            return null;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        if (saved == null) {
+            saved = new AiVisitSummary();
+            saved.setAppointmentId(appointmentId);
+            saved.setCreatedAt(now);
+        }
+        saved.setSummary(written);
+        saved.setSourceHash(hash);
+        saved.setUpdatedAt(now);
+        try {
+            return visitSummaryRepository.save(saved);
+        } catch (DataIntegrityViolationException e) {
+            // Opened twice at the same moment: the other request saved it first
+            return visitSummaryRepository.findById(appointmentId).orElse(null);
+        }
+    }
+
+    private static String sha256(String text) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(text.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
     }
 
     private FollowUpSlotDto toSlot(AiBookingSuggestion.DoctorSuggestion suggestion, String reason) {

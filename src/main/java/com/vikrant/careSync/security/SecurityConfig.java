@@ -4,6 +4,7 @@ import com.vikrant.careSync.constants.AppConstants;
 import com.vikrant.careSync.security.filter.JwtAuthenticationFilter;
 import com.vikrant.careSync.security.filter.RateLimitingFilter;
 import com.vikrant.careSync.security.filter.SecurityFilter;
+import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -46,6 +47,10 @@ public class SecurityConfig {
                                 .cors(cors -> {
                                 })
                                 .authorizeHttpRequests(auth -> auth
+                                                // A streamed reply (AI chat SSE) ends with an async dispatch of the
+                                                // same request, which carries no login of its own. The request was
+                                                // already authorized on its first pass, so this only finishes it.
+                                                .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                                                 .requestMatchers("/api/auth/login", "/api/auth/register",
                                                                 "/api/auth/google",
                                                                 "/api/auth/refresh",

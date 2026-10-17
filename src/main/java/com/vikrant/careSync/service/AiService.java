@@ -25,7 +25,10 @@ import com.vikrant.careSync.service.ai.GeminiClient;
 import com.vikrant.careSync.service.ai.GroqClient;
 import com.vikrant.careSync.service.ai.AiQuotaExceededException;
 import com.vikrant.careSync.service.ai.AiUsage;
+import com.vikrant.careSync.service.ai.AiChatHistoryService;
 import com.vikrant.careSync.service.ai.agent.AiAgentService;
+import com.vikrant.careSync.service.ai.agent.DoctorCopilotService;
+import org.springframework.security.access.AccessDeniedException;
 import com.vikrant.careSync.service.ai.triage.EmergencyTriageService;
 import com.vikrant.careSync.service.ai.triage.TriageCategory;
 import com.vikrant.careSync.dto.AiEmergencyInfo;
@@ -63,9 +66,19 @@ public class AiService {
     private final AccessGuard accessGuard;
     private final AiAgentService aiAgentService;
     private final EmergencyTriageService emergencyTriageService;
+    private final AiChatHistoryService chatHistoryService;
     private final SupabaseStorageService supabaseStorageService;
+    private final DoctorCopilotService doctorCopilotService;
 
     public AiChatResponse getResponse(AiChatRequest request) {
+        return getResponse(request, null);
+    }
+
+    /**
+     * One chat message. With a listener (streaming endpoint) the patient agent's text and tool status are passed on
+     * as they happen; everything else (emergency check, buttons, doctors, memory, audit) is the same.
+     */
+    public AiChatResponse getResponse(AiChatRequest request, AiAgentService.AgentListener listener) {
         long startTime = System.currentTimeMillis();
         groqClient.resetLastCall();
         String bookingActionProduced = "NONE";
@@ -120,7 +133,7 @@ public class AiService {
                         // 3. Patients: the AI agent. Its tools run on the server as this patient; bookings,
                         // cancellations and reschedules only produce a card the patient confirms by clicking.
                         AiAgentService.AgentReply reply = aiAgentService.run(userMessage,
-                                memoryService.getRecentHistory(conversationId));
+                                memoryService.getRecentHistory(conversationId), listener);
                         finalResponse = AiChatResponse.builder().response(reply.text()).success(true)
                                 .suggestion(reply.card()).emergency(reply.emergency())
                                 .conversationId(conversationId).build();
@@ -131,73 +144,31 @@ public class AiService {
                         chatUsage = reply.usage();
                         toolsUsed = reply.toolsUsed();
                     } else {
-                        // 4. Doctors: clinical assistant (patient context via name; a doctor co-pilot comes later)
-
-                        String systemInstructions = "You are CareSync AI Clinical Assistant, a specialized advisor for medical professionals. "
-                                    + "Respond strictly in JSON format with fields:\n"
-                                    + "{\"reply\": \"User-facing response\", \"intent\": \"GENERAL_CONSULT\", \"specializations\": [], \"action\": \"NONE\"}.\n"
-                                    + "- For clinical topics: provide evidence-based insights.\n"
-                                    + "- Always include a medical disclaimer in 'reply'.";
-
-                        String context = "";
-                        if ((userMessage.toLowerCase().contains("summarize")
-                                || userMessage.toLowerCase().contains("history"))) {
-                            // Only the doctor's own patients can be summarized
-                            List<Patient> patients = patientRepository.findAllById(accessGuard.treatedPatientIds());
-                            for (Patient p : patients) {
-                                if (userMessage.toLowerCase().contains(p.getName().toLowerCase())) {
-                                    MedicalSummaryResponse summary = summarizePatientHistory(p.getId());
-                                    if (summary.isSuccess()) {
-                                        context = "\n[CONTEXT] Patient " + p.getName() + " History Summary: "
-                                                + summary.getSummary() + "\n";
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-
-                        List<Map<String, String>> conversationHistory = memoryService.getRecentHistory(conversationId);
-                        String rawJson = groqClient.callGroq(systemInstructions + context, conversationHistory,
-                                userMessage, true, conversationId);
-
-                        if (rawJson != null && !rawJson.isBlank()) {
-                            try {
-                                String cleanJson = extractJson(rawJson);
-                                GroqAiStructuredResponse structured = new ObjectMapper().readValue(cleanJson,
-                                        GroqAiStructuredResponse.class);
-
-                                if (structured != null) {
-                                    String reply = structured.getReply();
-                                    String intent = structured.getIntent() != null ? structured.getIntent()
-                                            : "GENERAL_CONSULT";
-                                    String action = structured.getAction() != null ? structured.getAction() : "NONE";
-
-                                    if ("CANCEL_APPOINTMENT".equalsIgnoreCase(intent)
-                                            || "SHOW_MY_APPOINTMENTS".equalsIgnoreCase(action)) {
-                                        finalResponse = aiBookingService.handleFetchMyAppointments(
-                                                "Which appointment would you like to cancel?", reply);
-                                    } else if ("RESCHEDULE_APPOINTMENT".equalsIgnoreCase(intent)) {
-                                        finalResponse = aiBookingService.handleFetchMyAppointments(
-                                                "Which appointment would you like to move?", reply);
-                                    } else if ("BOOK_APPOINTMENT".equalsIgnoreCase(intent)
-                                            || "SHOW_DOCTORS".equalsIgnoreCase(action)
-                                            || (structured.getSpecializations() != null
-                                                    && !structured.getSpecializations().isEmpty())) {
-                                        finalResponse = aiBookingService.handleRecommendedSpecializationList(
-                                                structured.getSpecializations(), reply, request.getMessage());
-                                    } else {
-                                        finalResponse = AiChatResponse.builder().response(reply).success(true).build();
-                                    }
-
-                                    finalResponse.setConversationId(conversationId);
-                                    memoryService.saveTurn(conversationId, userMessage, reply);
-                                    turnSaved = true;
-                                }
-                            } catch (Exception parseEx) {
-                                log.warn("Failed to parse structured JSON response: {}", parseEx.getMessage());
-                                finalResponse = AiChatResponse.builder().response(rawJson)
-                                        .conversationId(conversationId).success(true).build();
-                            }
+                        // 4. Doctors: the co-pilot. Read-only tools over the doctor's own patients and schedule;
+                        // the patient picked with @patient is checked (own patients only) and every fact is cited.
+                        Long patientId = request.getPatientId();
+                        try {
+                            AiAgentService.AgentReply reply = doctorCopilotService.answer(userMessage, patientId,
+                                    memoryService.getRecentHistory(conversationId), listener);
+                            finalResponse = AiChatResponse.builder().response(reply.text()).success(true)
+                                    .conversationId(conversationId).build();
+                            memoryService.saveTurn(conversationId,
+                                    DoctorCopilotService.patientNote(patientId) + userMessage, reply.text());
+                            turnSaved = true;
+                            chatModel = reply.model();
+                            chatUsage = reply.usage();
+                            toolsUsed = reply.toolsUsed();
+                        } catch (AccessDeniedException denied) {
+                            finalResponse = AiChatResponse.builder().conversationId(conversationId).success(false)
+                                    .response("You can only ask about your own patients.").build();
+                        } catch (AiQuotaExceededException quota) {
+                            throw quota;
+                        } catch (Exception copilotError) {
+                            // Old clinical assistant (no patient tools) as a fallback, so doctors still get an answer
+                            log.warn("Doctor co-pilot failed, using the basic assistant: {}",
+                                    copilotError.getClass().getSimpleName());
+                            groqClient.resetLastCall();
+                            finalResponse = basicDoctorReply(request, userMessage, conversationId);
                         }
                     }
                 }
@@ -236,6 +207,16 @@ public class AiService {
             AiUsage usage = chatUsage != null ? chatUsage : groqClient.getLastUsage();
             String auditedAction = toolsUsed.isEmpty() ? bookingActionProduced
                     : bookingActionProduced + " via " + String.join(",", toolsUsed);
+            // Saved chat history (all devices). Never blocks the answer if saving fails.
+            try {
+                String savedId = chatHistoryService.record(conversationId, userMessage, finalResponse);
+                if (savedId != null && finalResponse.getConversationId() != null) {
+                    finalResponse.setConversationId(savedId);
+                }
+            } catch (Exception historyError) {
+                log.warn("AI chat history not saved: {}", historyError.getClass().getSimpleName());
+            }
+
             aiAuditService.logInteraction("CHAT", chatModel != null ? chatModel : groqClient.getLastUsedModel(),
                     latencyMs, success, usage.promptTokens(), usage.completionTokens(), usage.totalTokens(),
                     auditedAction.length() > 250 ? auditedAction.substring(0, 250) : auditedAction,
@@ -261,50 +242,126 @@ public class AiService {
         }
     }
 
-    public void streamResponse(AiChatRequest request, java.util.function.Consumer<String> chunkConsumer) {
+    /**
+     * The earlier doctor assistant (JSON mode, patient context only when a treated patient's name is typed). Kept as
+     * the fallback while the co-pilot proves itself.
+     */
+    private AiChatResponse basicDoctorReply(AiChatRequest request, String userMessage, String conversationId) {
+        AiChatResponse finalResponse = null;
+
+        String systemInstructions = "You are CareSync AI Clinical Assistant, a specialized advisor for medical professionals. "
+                    + "Respond strictly in JSON format with fields:\n"
+                    + "{\"reply\": \"User-facing response\", \"intent\": \"GENERAL_CONSULT\", \"specializations\": [], \"action\": \"NONE\"}.\n"
+                    + "- For clinical topics: provide evidence-based insights.\n"
+                    + "- Always include a medical disclaimer in 'reply'.";
+
+        String context = "";
+        if ((userMessage.toLowerCase().contains("summarize")
+                || userMessage.toLowerCase().contains("history"))) {
+            // Only the doctor's own patients can be summarized
+            List<Patient> patients = patientRepository.findAllById(accessGuard.treatedPatientIds());
+            for (Patient p : patients) {
+                if (userMessage.toLowerCase().contains(p.getName().toLowerCase())) {
+                    MedicalSummaryResponse summary = summarizePatientHistory(p.getId());
+                    if (summary.isSuccess()) {
+                        context = "\n[CONTEXT] Patient " + p.getName() + " History Summary: "
+                                + summary.getSummary() + "\n";
+                        break;
+                    }
+                }
+            }
+        }
+
+        List<Map<String, String>> conversationHistory = memoryService.getRecentHistory(conversationId);
+        String rawJson = groqClient.callGroq(systemInstructions + context, conversationHistory,
+                userMessage, true, conversationId);
+
+        if (rawJson != null && !rawJson.isBlank()) {
+            try {
+                String cleanJson = extractJson(rawJson);
+                GroqAiStructuredResponse structured = new ObjectMapper().readValue(cleanJson,
+                        GroqAiStructuredResponse.class);
+
+                if (structured != null) {
+                    String reply = structured.getReply();
+                    String intent = structured.getIntent() != null ? structured.getIntent()
+                            : "GENERAL_CONSULT";
+                    String action = structured.getAction() != null ? structured.getAction() : "NONE";
+
+                    if ("CANCEL_APPOINTMENT".equalsIgnoreCase(intent)
+                            || "SHOW_MY_APPOINTMENTS".equalsIgnoreCase(action)) {
+                        finalResponse = aiBookingService.handleFetchMyAppointments(
+                                "Which appointment would you like to cancel?", reply);
+                    } else if ("RESCHEDULE_APPOINTMENT".equalsIgnoreCase(intent)) {
+                        finalResponse = aiBookingService.handleFetchMyAppointments(
+                                "Which appointment would you like to move?", reply);
+                    } else if ("BOOK_APPOINTMENT".equalsIgnoreCase(intent)
+                            || "SHOW_DOCTORS".equalsIgnoreCase(action)
+                            || (structured.getSpecializations() != null
+                                    && !structured.getSpecializations().isEmpty())) {
+                        finalResponse = aiBookingService.handleRecommendedSpecializationList(
+                                structured.getSpecializations(), reply, request.getMessage());
+                    } else {
+                        finalResponse = AiChatResponse.builder().response(reply).success(true).build();
+                    }
+
+                    finalResponse.setConversationId(conversationId);
+                }
+            } catch (Exception parseEx) {
+                log.warn("Failed to parse structured JSON response: {}", parseEx.getMessage());
+                finalResponse = AiChatResponse.builder().response(rawJson)
+                        .conversationId(conversationId).success(true).build();
+            }
+        }
+        return finalResponse;
+    }
+
+    /**
+     * "Describe your problem" on Find & Book: the emergency rules first, then the patient agent suggests the
+     * fitting specialization and finds doctors (a doctor-cards answer). Not saved as a chat; audited like one.
+     */
+    public AiChatResponse symptomSearch(String description) {
         long startTime = System.currentTimeMillis();
         groqClient.resetLastCall();
-        boolean success = true;
-        String errorMessage = null;
-        String conversationId = request.getConversationId();
-        if (conversationId == null || conversationId.isBlank()) {
-            conversationId = UUID.randomUUID().toString();
-        }
-
-        String userMessage = request.getMessage();
-        Optional<AiEmergencyInfo> ruleEmergency = emergencyTriageService.fromRules(userMessage);
-        if (ruleEmergency.isPresent()) {
-            AiEmergencyInfo notice = ruleEmergency.get();
-            chunkConsumer.accept("**" + notice.getTitle() + "**\n\n" + notice.getMessage());
-            return;
-        }
-        List<Map<String, String>> conversationHistory = memoryService.getRecentHistory(conversationId);
-        StringBuilder fullResponse = new StringBuilder();
-
-        String specializationsList = String.join(", ", aiBookingService.getAvailableSpecializations());
-        String systemInstructions = "You are CareSync AI health assistant. "
-                + "Provide concise, empathetic medical and appointment guidance. "
-                + "Available specializations: [" + specializationsList + "].";
-
-        final String activeConversationId = conversationId;
+        String text = description == null ? "" : description.replaceAll("[\r\n]+", " ").trim();
+        String model = null;
+        AiUsage usage = AiUsage.NONE;
+        String action = "NONE";
         try {
-            groqClient.streamGroq(systemInstructions, conversationHistory, userMessage, false, activeConversationId,
-                    chunk -> {
-                        fullResponse.append(chunk);
-                        chunkConsumer.accept(chunk);
-                    });
-
-            if (fullResponse.length() > 0) {
-                memoryService.saveTurn(activeConversationId, userMessage, fullResponse.toString());
+            AiChatResponse response;
+            Optional<AiEmergencyInfo> ruleEmergency = emergencyTriageService.fromRules(text);
+            if (ruleEmergency.isPresent()) {
+                response = emergencyResponse(ruleEmergency.get());
+            } else {
+                AiAgentService.AgentReply reply = aiAgentService.run("I am on the Find & Book page and describe my "
+                        + "problem: \"" + text + "\". Name the fitting specialization in one or two sentences and "
+                        + "search doctors for it.", List.of());
+                response = AiChatResponse.builder().response(reply.text()).success(true)
+                        .suggestion(reply.card()).emergency(reply.emergency()).build();
+                model = reply.model();
+                usage = reply.usage();
+                if (!reply.toolsUsed().isEmpty()) {
+                    action = "via " + String.join(",", reply.toolsUsed());
+                }
             }
+            if (response.getSuggestion() != null && response.getSuggestion().getType() != null) {
+                action = response.getSuggestion().getType().name() + ("NONE".equals(action) ? "" : " " + action);
+            }
+            aiAuditService.logInteraction("SYMPTOM_SEARCH", model, System.currentTimeMillis() - startTime,
+                    response.isSuccess(), usage.promptTokens(), usage.completionTokens(), usage.totalTokens(),
+                    action.length() > 250 ? action.substring(0, 250) : action, null, text, null);
+            return response;
+        } catch (AiQuotaExceededException e) {
+            aiAuditService.logInteraction("SYMPTOM_SEARCH", null, System.currentTimeMillis() - startTime, false,
+                    null, null, null, "NONE", "AI allowance used up", text, null);
+            return AiChatResponse.builder().response(e.userMessage()).success(false).build();
         } catch (Exception e) {
-            success = false;
-            errorMessage = e.getMessage();
-            throw e;
-        } finally {
-            long latencyMs = System.currentTimeMillis() - startTime;
-            aiAuditService.logInteraction("STREAM", groqClient.getModel(), latencyMs, success,
-                    null, null, null, "STREAM_CHAT", errorMessage, userMessage, fullResponse.toString());
+            log.warn("Symptom search failed: {}", e.getClass().getSimpleName());
+            aiAuditService.logInteraction("SYMPTOM_SEARCH", groqClient.getLastUsedModel(),
+                    System.currentTimeMillis() - startTime, false, null, null, null, "NONE",
+                    e.getClass().getSimpleName(), text, null);
+            return AiChatResponse.builder().success(false)
+                    .response("The AI search is unavailable right now. Please use the filters below.").build();
         }
     }
 

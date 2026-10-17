@@ -124,6 +124,24 @@ class GroqClientTest {
     }
 
     @Test
+    void streamedReplyPassesTextOnAndJoinsToolCallPieces() throws Exception {
+        String stream = String.join("\n",
+                "data: {\"choices\":[{\"delta\":{\"content\":\"Let me \"}}]}",
+                "data: {\"choices\":[{\"delta\":{\"content\":\"check.\\nOne moment\"}}]}",
+                "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_9\",\"function\":{\"name\":\"search_doctors\",\"arguments\":\"{\\\"special\"}}]}}]}",
+                "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"ization\\\":\\\"ENT\\\"}\"}}]}}],\"x_groq\":{\"usage\":{\"prompt_tokens\":50,\"completion_tokens\":9,\"total_tokens\":59}}}",
+                "data: [DONE]", "");
+        StringBuilder shown = new StringBuilder();
+
+        AiToolTurn turn = client.readToolStream(new java.io.ByteArrayInputStream(stream.getBytes()), "m", shown::append);
+
+        assertEquals("Let me check.\nOne moment", shown.toString(), "text and line breaks reach the patient");
+        assertEquals("Let me check.\nOne moment", turn.content());
+        assertEquals(new AiToolCall("call_9", "search_doctors", "{\"specialization\":\"ENT\"}"), turn.toolCalls().get(0));
+        assertEquals(new AiUsage(50, 9, 59), turn.usage());
+    }
+
+    @Test
     void otherRefusalsStopWithoutLeakingDetails() {
         server.expect(requestTo(URL)).andRespond(withStatus(HttpStatus.UNAUTHORIZED).body("{\"error\":\"invalid key\"}"));
 

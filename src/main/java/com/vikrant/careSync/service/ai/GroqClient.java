@@ -361,6 +361,128 @@ public class GroqClient {
         throw new IllegalStateException("The AI service is unavailable right now. Please try again shortly.");
     }
 
+    /**
+     * Streaming version of callWithTools: text is passed to onText as it arrives; tool calls are collected from the
+     * stream and returned. Falls back to the next model only before any text was shown.
+     */
+    public AiToolTurn streamWithTools(List<Map<String, Object>> messages, List<Map<String, Object>> tools,
+            AiModelTier tier, Consumer<String> onText) {
+        if (!isConfigured()) {
+            throw new IllegalStateException("Groq API key is not configured.");
+        }
+        resetLastCall();
+        if (quotaService != null) {
+            quotaService.consume();
+        }
+        for (String currentModel : tier == AiModelTier.FAST ? fastCandidateModels : candidateModels) {
+            Map<String, Object> body = new HashMap<>();
+            body.put("model", currentModel);
+            body.put("messages", messages);
+            body.put("temperature", 0.2);
+            body.put("max_completion_tokens", maxTokens);
+            body.put("stream", true);
+            if (tools != null && !tools.isEmpty()) {
+                body.put("tools", tools);
+                body.put("tool_choice", "auto");
+            }
+            if (currentModel.startsWith("openai/gpt-oss")) {
+                if (reasoningEffort != null && !reasoningEffort.isBlank()) {
+                    body.put("reasoning_effort", reasoningEffort);
+                }
+                body.put("include_reasoning", false);
+            }
+            try {
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(apiUrl))
+                        .timeout(readTimeout)
+                        .header("Content-Type", "application/json")
+                        .header("Authorization", "Bearer " + apiKey)
+                        .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))
+                        .build();
+                HttpResponse<InputStream> response = streamClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+                int status = response.statusCode();
+                if (status != 200) {
+                    String error = new String(response.body().readAllBytes(), StandardCharsets.UTF_8);
+                    if (status == 404 || status == 429 || status >= 500 || error.contains("tool_use_failed")
+                            || error.contains("decommissioned") || error.contains("model_not_found")) {
+                        log.warn("Groq streaming with '{}' unavailable (HTTP {}). Trying the next model...",
+                                currentModel, status);
+                        continue;
+                    }
+                    throw new IllegalStateException("AI request was refused (HTTP " + status + ")");
+                }
+                AiToolTurn turn = readToolStream(response.body(), currentModel, onText);
+                lastUsedModel.set(currentModel);
+                lastUsage.set(turn.usage());
+                return turn;
+            } catch (IllegalStateException e) {
+                throw e;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("AI streaming was interrupted", e);
+            } catch (Exception e) {
+                log.warn("Groq streaming with '{}' failed: {}", currentModel, e.getClass().getSimpleName());
+            }
+        }
+        throw new IllegalStateException("The AI service is unavailable right now. Please try again shortly.");
+    }
+
+    /** Reads an OpenAI-style stream: content deltas go to onText; tool call pieces are joined by index. */
+    AiToolTurn readToolStream(InputStream body, String model, Consumer<String> onText) throws Exception {
+        StringBuilder content = new StringBuilder();
+        Map<Integer, String[]> calls = new java.util.TreeMap<>(); // index -> {id, name, arguments}
+        AiUsage usage = AiUsage.NONE;
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!line.startsWith("data: ")) {
+                    continue;
+                }
+                String data = line.substring(6).trim();
+                if ("[DONE]".equalsIgnoreCase(data)) {
+                    break;
+                }
+                JsonNode chunk;
+                try {
+                    chunk = mapper.readTree(data);
+                } catch (Exception ignored) {
+                    continue;
+                }
+                JsonNode usageNode = chunk.hasNonNull("usage") ? chunk.get("usage") : chunk.path("x_groq").path("usage");
+                if (usageNode.isObject()) {
+                    usage = new AiUsage(intOrNull(usageNode, "prompt_tokens"), intOrNull(usageNode, "completion_tokens"),
+                            intOrNull(usageNode, "total_tokens"));
+                }
+                JsonNode delta = chunk.path("choices").path(0).path("delta");
+                if (delta.hasNonNull("content")) {
+                    String text = delta.get("content").asText();
+                    if (!text.isEmpty()) {
+                        content.append(text);
+                        onText.accept(text);
+                    }
+                }
+                for (JsonNode call : delta.path("tool_calls")) {
+                    String[] parts = calls.computeIfAbsent(call.path("index").asInt(0), i -> new String[] { "", "", "" });
+                    if (call.hasNonNull("id")) {
+                        parts[0] = call.get("id").asText();
+                    }
+                    JsonNode function = call.path("function");
+                    if (function.hasNonNull("name")) {
+                        parts[1] += function.get("name").asText();
+                    }
+                    if (function.hasNonNull("arguments")) {
+                        parts[2] += function.get("arguments").asText();
+                    }
+                }
+            }
+        }
+        List<AiToolCall> toolCalls = calls.values().stream()
+                .filter(parts -> !parts[1].isBlank())
+                .map(parts -> new AiToolCall(parts[0], parts[1], parts[2].isBlank() ? "{}" : parts[2]))
+                .toList();
+        return new AiToolTurn(content.isEmpty() ? null : content.toString(), toolCalls, model, usage);
+    }
+
     static AiToolTurn parseToolTurn(JsonNode response, String model) {
         if (response == null || !response.path("choices").isArray() || response.path("choices").isEmpty()) {
             return null;

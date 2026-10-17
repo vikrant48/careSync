@@ -26,6 +26,11 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
     List<Booking> findByPatientIdOrderByBookingDateDesc(Long patientId);
 
+    // Health brief: the patient's lab test bookings still waiting for results, with their tests
+    @Query("SELECT DISTINCT b FROM Booking b LEFT JOIN FETCH b.selectedTests WHERE b.patient.id = :patientId"
+            + " AND b.status = 'PENDING' ORDER BY b.bookingDate DESC")
+    List<Booking> findPendingWithTestsByPatientId(@Param("patientId") Long patientId);
+
     List<Booking> findByPatientOrderByBookingDateDesc(Patient patient);
 
     List<Booking> findByStatusOrderByBookingDateDesc(Booking.BookingStatus status);

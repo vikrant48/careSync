@@ -48,6 +48,7 @@ public class FileUploadController {
     private final PatientRepository patientRepository;
     private final AccessGuard accessGuard;
     private final CurrentUserService currentUserService;
+    private final com.vikrant.careSync.service.ai.LabReportExplainerService labReportExplainerService;
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Upload certificate", description = "Uploads a professional certificate for a doctor")
     @PostMapping(value = "/upload/certificate", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -200,6 +201,8 @@ public class FileUploadController {
                     .orElseThrow(() -> new RuntimeException("Document not found"));
 
             Resource resource = documentService.getFileAsResource(documentId);
+            // The patient opened their lab report: it no longer shows as unread in the health brief
+            labReportExplainerService.markSeenByPatient(documentId);
 
             HttpHeaders headers = new HttpHeaders();
             headers.add(HttpHeaders.CONTENT_DISPOSITION,
@@ -224,6 +227,8 @@ public class FileUploadController {
                     .orElseThrow(() -> new RuntimeException("Document not found"));
 
             Resource resource = documentService.getFileAsResource(documentId);
+            // The patient opened their lab report: it no longer shows as unread in the health brief
+            labReportExplainerService.markSeenByPatient(documentId);
 
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType(document.getContentType()))

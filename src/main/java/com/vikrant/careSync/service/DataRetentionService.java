@@ -35,6 +35,7 @@ public class DataRetentionService {
     private final CommunicationRepository communicationRepository;
     private final AiAuditLogRepository aiAuditLogRepository;
     private final com.vikrant.careSync.scheduler.ClusterJobLock clusterJobLock;
+    private final com.vikrant.careSync.repository.AiConversationRepository aiConversationRepository;
 
     @Value("${app.retention.one-time-codes-days:1}")
     private long oneTimeCodesDays;
@@ -44,6 +45,9 @@ public class DataRetentionService {
 
     @Value("${app.retention.sent-emails-days:30}")
     private long sentEmailsDays;
+
+    @Value("${app.retention.ai-chat-days:90}")
+    private int aiChatDays;
 
     @Value("${app.retention.ai-text-days:30}")
     private long aiTextDays;
@@ -73,6 +77,7 @@ public class DataRetentionService {
                 loginAttemptRepository.deleteOlderThan(now.minus(Duration.ofDays(loginAttemptsDays))));
         removed.put("sentEmails", communicationRepository.deleteOlderThan(localNow.minusDays(sentEmailsDays)));
         removed.put("aiLogTextCleared", aiAuditLogRepository.clearTextOlderThan(localNow.minusDays(aiTextDays)));
+        removed.put("aiChatsDeleted", aiConversationRepository.deleteNotUpdatedSince(localNow.minusDays(aiChatDays)));
         log.info("Data retention purge: {}", removed);
         return removed;
     }

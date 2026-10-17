@@ -104,6 +104,20 @@ public class AiConversationMemoryService {
         }
     }
 
+    /** Removes the short-term memory of a chat (when the user deletes it) */
+    public void forget(String conversationId) {
+        key(conversationId).ifPresent(key -> {
+            try {
+                redisTemplate.delete(key);
+            } catch (Exception e) {
+                log.warn("Redis unavailable while forgetting an AI conversation");
+            }
+            synchronized (fallbackMemory) {
+                fallbackMemory.remove(key);
+            }
+        });
+    }
+
     /** No logged-in user or an odd id: no memory at all */
     private Optional<String> key(String conversationId) {
         if (conversationId == null || !conversationId.matches("[A-Za-z0-9-]{8,64}")) {

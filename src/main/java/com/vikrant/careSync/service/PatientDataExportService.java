@@ -42,6 +42,7 @@ public class PatientDataExportService {
     private final VitalRepository vitalRepository;
     private final DocumentService documentService;
     private final PaymentPreferenceService paymentPreferenceService;
+    private final com.vikrant.careSync.service.ai.AiChatHistoryService aiChatHistoryService;
 
     @Transactional(readOnly = true)
     public Map<String, Object> export(Patient patient) {
@@ -106,6 +107,7 @@ public class PatientDataExportService {
                 .map(PaymentResponseDto::new)
                 .toList());
         data.put("savedPaymentMethod", paymentPreferenceService.find(patientId).orElse(null));
+        data.put("aiAssistantChats", aiChatHistoryService.exportFor(patientId));
         data.put("feedbackGiven", feedbackRepository.findByPatientId(patientId).stream()
                 .map(FeedbackDto::new)
                 .toList());

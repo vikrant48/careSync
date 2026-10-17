@@ -70,9 +70,24 @@ public class Document {
     @Column(name = "uploaded_by_type", length = 20)
     private String uploadedByType; // "DOCTOR" or "PATIENT"
 
+    /** Plain-language explanation of a lab report, made when the patient asks for it (V13). Encrypted. */
+    @Convert(converter = com.vikrant.careSync.security.crypto.EncryptedTextConverter.class)
+    @Column(name = "ai_explanation", columnDefinition = "TEXT")
+    private String aiExplanation;
+
+    @Column(name = "ai_explained_at")
+    private LocalDateTime aiExplainedAt;
+
+    /** When the patient first opened this report; null = unread (V13). A patient's own upload counts as seen. */
+    @Column(name = "patient_viewed_at")
+    private LocalDateTime patientViewedAt;
+
     @PrePersist
     protected void onCreate() {
         uploadDate = LocalDateTime.now();
+        if ("PATIENT".equalsIgnoreCase(uploadedByType) && patientViewedAt == null) {
+            patientViewedAt = uploadDate;
+        }
     }
 
     public enum DocumentType {

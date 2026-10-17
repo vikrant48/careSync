@@ -75,6 +75,13 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
   List<Appointment> findUpcomingAppointmentsByPatientWithDetails(@Param("patientId") Long patientId,
       @Param("now") LocalDateTime now);
 
+  // Health brief: the patient's coming appointments that are still on, soonest first
+  @Query("SELECT a FROM Appointment a JOIN FETCH a.doctor WHERE a.patient.id = :patientId AND a.appointmentDateTime > :now"
+      + " AND a.status IN ('BOOKED', 'REQUESTED', 'CONFIRMED', 'SCHEDULED', 'INTAKE', 'INTAKE_COMPLETED',"
+      + " 'WAITING_ROOM', 'READY_FOR_VISIT') ORDER BY a.appointmentDateTime ASC")
+  List<Appointment> findPatientComingAppointments(@Param("patientId") Long patientId,
+      @Param("now") LocalDateTime now);
+
   @Query("SELECT a FROM Appointment a JOIN FETCH a.patient JOIN FETCH a.doctor WHERE a.id = :id")
   Optional<Appointment> findByIdWithDetails(@Param("id") Long id);
 
@@ -93,6 +100,20 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
   @Query("SELECT DISTINCT a.patient.id FROM Appointment a WHERE a.doctor.id = :doctorId"
       + " AND a.status NOT IN ('REJECTED', 'CANCELLED', 'CANCELLED_BY_PATIENT', 'CANCELLED_BY_DOCTOR')")
   List<Long> findTreatedPatientIds(@Param("doctorId") Long doctorId);
+
+  // Doctor co-pilot: each treated patient with their latest appointment time with this doctor (rows: id, time)
+  @Query("SELECT a.patient.id, MAX(a.appointmentDateTime) FROM Appointment a WHERE a.doctor.id = :doctorId"
+      + " AND a.status NOT IN ('REJECTED', 'CANCELLED', 'CANCELLED_BY_PATIENT', 'CANCELLED_BY_DOCTOR')"
+      + " GROUP BY a.patient.id ORDER BY MAX(a.appointmentDateTime) DESC")
+  List<Object[]> findTreatedPatientsWithLastAppointment(@Param("doctorId") Long doctorId);
+
+  // Doctor co-pilot: the doctor's appointments in a time range that still stand, with their patients
+  @Query("SELECT a FROM Appointment a JOIN FETCH a.patient WHERE a.doctor.id = :doctorId"
+      + " AND a.appointmentDateTime >= :from AND a.appointmentDateTime < :to"
+      + " AND a.status NOT IN ('REJECTED', 'CANCELLED', 'CANCELLED_BY_PATIENT', 'CANCELLED_BY_DOCTOR')"
+      + " ORDER BY a.appointmentDateTime ASC")
+  List<Appointment> findDoctorScheduleWithPatients(@Param("doctorId") Long doctorId,
+      @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("SELECT a FROM Appointment a JOIN FETCH a.patient JOIN FETCH a.doctor WHERE a.id = :id")

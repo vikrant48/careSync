@@ -124,6 +124,49 @@ class AiAgentServiceTest {
     }
 
     @Test
+    void streamingPassesTextAndToolStatusToTheListener() {
+        java.util.List<String> texts = new java.util.ArrayList<>();
+        java.util.List<String> statuses = new java.util.ArrayList<>();
+        AiAgentService.AgentListener listener = new AiAgentService.AgentListener() {
+            public void onText(String text) { texts.add(text); }
+            public void onStatus(String status) { statuses.add(status); }
+        };
+        when(groq.streamWithTools(anyList(), anyList(), any(), any()))
+                .thenAnswer(inv -> toolTurn("search_doctors", "{}"))
+                .thenAnswer(inv -> {
+                    java.util.function.Consumer<String> onText = inv.getArgument(3);
+                    onText.accept("Dr. Asha Rao ");
+                    onText.accept("is free tomorrow.");
+                    return textTurn("Dr. Asha Rao is free tomorrow.");
+                });
+        when(tools.execute(anyString(), anyString())).thenReturn(new AiToolResult("{}", doctorsCard));
+
+        AiAgentService.AgentReply reply = agent.run("heart doctor", List.of(), listener);
+
+        assertEquals(List.of("Finding doctors..."), statuses);
+        assertEquals("Dr. Asha Rao is free tomorrow.", String.join("", texts));
+        assertEquals("Dr. Asha Rao is free tomorrow.", reply.text());
+        assertSame(doctorsCard, reply.card());
+        verify(groq, never()).callWithTools(anyList(), anyList(), any());
+    }
+
+    @Test
+    void stopButtonEndsTheTurnBeforeTheNextModelCall() {
+        java.util.concurrent.atomic.AtomicBoolean stopped = new java.util.concurrent.atomic.AtomicBoolean(false);
+        AiAgentService.AgentListener listener = new AiAgentService.AgentListener() {
+            public void onText(String text) { }
+            public void onStatus(String status) { stopped.set(true); }
+            public boolean cancelled() { return stopped.get(); }
+        };
+        when(groq.streamWithTools(anyList(), anyList(), any(), any())).thenReturn(toolTurn("search_doctors", "{}"));
+        when(tools.execute(anyString(), anyString())).thenReturn(AiToolResult.data("{}"));
+
+        agent.run("anything", List.of(), listener);
+
+        verify(groq, times(1)).streamWithTools(anyList(), anyList(), any(), any());
+    }
+
+    @Test
     void cardNoteLetsFollowUpsReferToWhatWasShown() {
         String note = AiAgentService.cardNote(doctorsCard);
         assertTrue(note.contains("Asha Rao (doctor_id 12, first open 2026-10-20 10:00)"));

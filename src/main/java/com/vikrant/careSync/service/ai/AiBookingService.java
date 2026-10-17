@@ -97,6 +97,7 @@ public class AiBookingService {
                     .suggestion(AiBookingSuggestion.builder()
                             .type(AiBookingSuggestion.SuggestionType.DATES)
                             .doctorId(d.getId()).doctorName(d.getName())
+                            .specialization(d.getSpecialization())
                             .reason(reason).build())
                     .build();
         } catch (Exception e) {
@@ -427,6 +428,7 @@ public class AiBookingService {
                         .type(AiBookingSuggestion.SuggestionType.DATES)
                         .doctorId(appt.getDoctor().getId())
                         .doctorName(appt.getDoctor().getName())
+                        .specialization(appt.getDoctor().getSpecialization())
                         .appointmentId(apptId)
                         .originalDate(appt.getAppointmentDateTime().toLocalDate().toString())
                         .originalSlot(appt.getAppointmentDateTime().toLocalTime().toString().substring(0, 5))
