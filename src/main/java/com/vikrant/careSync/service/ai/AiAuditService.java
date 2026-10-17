@@ -54,7 +54,7 @@ public class AiAuditService {
                     .userId(userId)
                     .username(username)
                     .promptType(promptType != null ? promptType : "CHAT")
-                    .selectedModel(selectedModel != null ? selectedModel : "grok-beta")
+                    .selectedModel(selectedModel != null ? selectedModel : "unknown")
                     .latencyMs(latencyMs)
                     .success(success)
                     .promptTokens(promptTokens)

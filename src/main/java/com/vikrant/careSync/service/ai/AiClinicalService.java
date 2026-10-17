@@ -27,7 +27,43 @@ public class AiClinicalService {
     private final AppointmentRepository appointmentRepository;
     private final MedicalHistoryRepository medicalHistoryRepository;
     private final AppointmentIntakeRepository appointmentIntakeRepository;
+    private final AiAuditService aiAuditService;
+    private final AiResponseCache aiResponseCache;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /** How long a history summary is reused (a changed history makes a new cache key anyway) */
+    private static final java.time.Duration HISTORY_SUMMARY_TTL = java.time.Duration.ofHours(6);
+    /** A completed visit's plain-language summary rarely changes */
+    private static final java.time.Duration VISIT_SUMMARY_TTL = java.time.Duration.ofDays(7);
+
+    /** Set while a caller (AiService) writes its own audit row for this call, so it is not logged twice */
+    private static final ThreadLocal<Boolean> CALLER_AUDITS = new ThreadLocal<>();
+    private final ThreadLocal<String> lastModel = new ThreadLocal<>();
+    private final ThreadLocal<AiUsage> lastUsage = new ThreadLocal<>();
+
+    /** Runs a call whose audit row the caller writes itself (with lastModel() / lastUsage()). */
+    public <T> T withCallerAudit(java.util.function.Supplier<T> call) {
+        // A cached answer makes no model call: start from "none" rather than an earlier request's values
+        lastModel.remove();
+        lastUsage.remove();
+        CALLER_AUDITS.set(Boolean.TRUE);
+        try {
+            return call.get();
+        } finally {
+            CALLER_AUDITS.remove();
+        }
+    }
+
+    /** Model that answered this thread's last askModel call ("none" when no model answered) */
+    public String lastModel() {
+        String model = lastModel.get();
+        return model != null ? model : "none";
+    }
+
+    public AiUsage lastUsage() {
+        AiUsage usage = lastUsage.get();
+        return usage != null ? usage : AiUsage.NONE;
+    }
 
     public MedicalSummaryResponse summarizePatientHistory(Long patientId) {
         try {
@@ -62,21 +98,26 @@ public class AiClinicalService {
                     + "* **[Date]:** [Event description and diagnosis]\n\n"
                     + "### 🩺 Chronic Conditions & Notes\n"
                     + "[Documented chronic conditions or state 'No chronic conditions documented.']";
-            String userPrompt = systemPrompt + "\n\nSummarize the following patient's medical history:\n\n"
-                    + fullHistoryStr;
-
             String promptText = fullHistoryStr.length() > 3000
                     ? fullHistoryStr.substring(0, 3000) + "\n...[Truncated for AI processing]"
                     : fullHistoryStr;
-            String summary = askModel("patient history summary", systemPrompt, "Summarize:\n" + promptText, false,
-                    userPrompt);
+            // Gemini gets the same truncated history as Groq (it used to receive the whole record)
+            String geminiPrompt = systemPrompt + "\n\nSummarize the following patient's medical history:\n\n"
+                    + promptText;
+            String summary = aiResponseCache.getOrCompute("history_summary", promptText, HISTORY_SUMMARY_TTL,
+                    () -> askModel("patient history summary", AiModelTier.SMART, systemPrompt,
+                            "Summarize:\n" + promptText, false, geminiPrompt));
 
+            if (summary == null || summary.isBlank()) {
+                return MedicalSummaryResponse.builder().success(false)
+                        .error("The AI summary is unavailable right now. Please try again later.").build();
+            }
             return MedicalSummaryResponse.builder().summary(summary).success(true).build();
 
         } catch (Exception e) {
-            log.error("Error summarizing patient history", e);
-            return MedicalSummaryResponse.builder().success(false).error("Clinical service error: " + e.getMessage())
-                    .build();
+            log.error("Error summarizing patient history: {}", e.getClass().getSimpleName());
+            return MedicalSummaryResponse.builder().success(false)
+                    .error("The AI summary is unavailable right now. Please try again later.").build();
         }
     }
 
@@ -106,7 +147,7 @@ public class AiClinicalService {
 
         String userPrompt = "Analyze symptoms: '" + cleanSymptoms + "'. Return strictly JSON differential suggestions.";
 
-        String jsonResponse = askModel("diagnosis suggestion", systemPrompt, userPrompt, true,
+        String jsonResponse = askModel("diagnosis suggestion", AiModelTier.SMART, systemPrompt, userPrompt, true,
                 systemPrompt + "\n\n" + userPrompt);
 
         DiagnosisSuggestionDto dto = null;
@@ -166,7 +207,7 @@ public class AiClinicalService {
                 + "Return strict JSON: {\"chiefComplaint\":\"\",\"symptoms\":[],\"duration\":\"\",\"severity\":\"\","
                 + "\"currentMedications\":\"\",\"allergies\":\"\",\"redFlags\":[]}.";
 
-        String raw = askModel("intake drafting", systemPrompt, cleanNarrative, true,
+        String raw = askModel("intake drafting", AiModelTier.FAST, systemPrompt, cleanNarrative, true,
                 systemPrompt + "\n\nPatient narrative:\n" + cleanNarrative);
 
         AiIntakeDraftResponse.AiIntakeDraftResponseBuilder response = AiIntakeDraftResponse.builder()
@@ -240,8 +281,10 @@ public class AiClinicalService {
         String systemPrompt = "Rewrite the recorded visit facts in plain language for the patient. "
                 + "Use only the supplied facts. Do not add a diagnosis, medicine, dose, or instruction that is not recorded. "
                 + "If a field says Not recorded, say that it was not recorded. Keep it under 160 words.";
-        String generated = askModel("visit summary", systemPrompt, recordedFacts, false,
-                systemPrompt + "\n\n" + recordedFacts);
+        // Cached: the patient's follow-through page asks for this every time it opens
+        String generated = aiResponseCache.getOrCompute("visit_summary", recordedFacts, VISIT_SUMMARY_TTL,
+                () -> askModel("visit summary", AiModelTier.FAST, systemPrompt, recordedFacts, false,
+                        systemPrompt + "\n\n" + recordedFacts));
         return generated == null || generated.isBlank() ? fallback : generated.trim();
     }
 
@@ -283,7 +326,7 @@ public class AiClinicalService {
                 medications != null ? medications : "None",
                 allergies != null ? allergies : "None");
 
-        String rawSummaryText = askModel("pre-visit intake summary", systemPrompt, userPrompt, true,
+        String rawSummaryText = askModel("pre-visit intake summary", AiModelTier.FAST, systemPrompt, userPrompt, true,
                 systemPrompt + "\n\n" + userPrompt);
 
         String summaryText = "• **Chief Complaint:** " + (chiefComplaint != null ? chiefComplaint : "N/A") + " ("
@@ -393,7 +436,7 @@ public class AiClinicalService {
                 liveTranscript != null && !liveTranscript.isBlank() ? liveTranscript
                         : "No additional live transcript.");
 
-        String jsonResponse = askModel("SOAP draft", systemPrompt, userPrompt, true,
+        String jsonResponse = askModel("SOAP draft", AiModelTier.SMART, systemPrompt, userPrompt, true,
                 systemPrompt + "\n\n" + userPrompt);
 
         SoapReportDto dto = SoapReportDto.builder()
@@ -475,24 +518,61 @@ public class AiClinicalService {
      * Groq first; Gemini when Groq is not configured, fails or answers empty. Null when neither answers.
      * Groq takes a system and a user prompt; Gemini takes one combined prompt.
      */
-    private String askModel(String task, String groqSystemPrompt, String groqUserPrompt, boolean jsonMode,
-            String geminiPrompt) {
+    private String askModel(String task, AiModelTier tier, String groqSystemPrompt, String groqUserPrompt,
+            boolean jsonMode, String geminiPrompt) {
+        long start = System.currentTimeMillis();
+        lastModel.remove();
+        lastUsage.remove();
         String answer = null;
+        String model = null;
+        AiUsage usage = AiUsage.NONE;
+        String error = null;
         if (groqClient != null && groqClient.isConfigured()) {
             try {
-                answer = groqClient.callGroq(groqSystemPrompt, groqUserPrompt, jsonMode);
+                answer = groqClient.callGroq(groqSystemPrompt, groqUserPrompt, jsonMode, tier);
+                model = groqClient.getLastUsedModel();
+                usage = orNone(groqClient.getLastUsage());
+            } catch (AiQuotaExceededException e) {
+                // The user's allowance is used up: Gemini would count against the same allowance
+                log.info("AI {} skipped: user's AI allowance used up", task);
+                audit(task, null, AiUsage.NONE, false, "AI allowance used up", start);
+                return null;
             } catch (Exception e) {
+                error = e.getClass().getSimpleName();
                 log.warn("Groq {} failed: {}", task, e.getMessage());
             }
         }
         if ((answer == null || answer.isBlank()) && geminiClient != null && geminiClient.isConfigured()) {
             try {
                 answer = geminiClient.generateContent(geminiPrompt);
+                model = geminiClient.getModel();
+                usage = orNone(geminiClient.getLastUsage());
+            } catch (AiQuotaExceededException e) {
+                log.info("AI {} skipped: user's AI allowance used up", task);
             } catch (Exception e) {
+                error = e.getClass().getSimpleName();
                 log.warn("Gemini {} failed: {}", task, e.getMessage());
             }
         }
+        boolean ok = answer != null && !answer.isBlank();
+        lastModel.set(model);
+        lastUsage.set(usage);
+        audit(task, model, usage, ok, ok ? null : error, start);
         return answer;
+    }
+
+    private static AiUsage orNone(AiUsage usage) {
+        return usage != null ? usage : AiUsage.NONE;
+    }
+
+    /** One audit row per model call: task, model, tokens, time. Never the prompt or answer (health details). */
+    private void audit(String task, String model, AiUsage usage, boolean success, String error, long start) {
+        if (Boolean.TRUE.equals(CALLER_AUDITS.get()) || aiAuditService == null) {
+            return;
+        }
+        aiAuditService.logInteraction(task.toUpperCase().replace(' ', '_').replace('-', '_'), model,
+                System.currentTimeMillis() - start, success, usage.promptTokens(), usage.completionTokens(),
+                usage.totalTokens(), "NONE", error, null, null);
     }
 
     /** Empty or placeholder answers ("Not recorded", "N/A") are treated as not documented. */

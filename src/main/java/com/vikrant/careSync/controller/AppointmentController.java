@@ -223,7 +223,12 @@ public class AppointmentController {
     @PreAuthorize("hasAnyRole('DOCTOR', 'ADMIN', 'PATIENT') and @access.canAccessAppointment(#id)")
     public ResponseEntity<?> getSoapDraft(@PathVariable Long id) {
         try {
-            com.vikrant.careSync.dto.SoapReportDto response = appointmentService.getSoapDraft(id);
+            // Patients get only the signed report; doctors and admins also see (and may trigger) the AI draft
+            boolean patientView = currentUserService.current()
+                    .map(user -> user.role() == com.vikrant.careSync.entity.User.Role.PATIENT).orElse(false);
+            com.vikrant.careSync.dto.SoapReportDto response = patientView
+                    ? appointmentService.getSignedReportForPatient(id)
+                    : appointmentService.getSoapDraft(id);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));

@@ -23,7 +23,8 @@ import com.vikrant.careSync.service.ai.AiClinicalService;
 import com.vikrant.careSync.service.ai.AiConversationMemoryService;
 import com.vikrant.careSync.service.ai.GeminiClient;
 import com.vikrant.careSync.service.ai.GroqClient;
-import com.vikrant.careSync.service.ai.GrokClient;
+import com.vikrant.careSync.service.ai.AiQuotaExceededException;
+import com.vikrant.careSync.service.ai.AiUsage;
 import com.vikrant.careSync.service.ai.AiAuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,7 +48,6 @@ import com.vikrant.careSync.service.ai.AiAuditService;
 public class AiService {
 
     private final GroqClient groqClient;
-    private final GrokClient grokClient;
     private final AiBookingService aiBookingService;
     private final AiClinicalService aiClinicalService;
     private final AiConversationMemoryService memoryService;
@@ -60,6 +60,7 @@ public class AiService {
 
     public AiChatResponse getResponse(AiChatRequest request) {
         long startTime = System.currentTimeMillis();
+        groqClient.resetLastCall();
         String bookingActionProduced = "NONE";
         boolean success = false;
         String errorMessage = null;
@@ -67,10 +68,9 @@ public class AiService {
         try {
             AiChatResponse finalResponse = null;
 
-            // Conversation ID generation/retrieval
-            String conversationId = (request.getConversationId() != null && !request.getConversationId().isBlank())
-                    ? request.getConversationId()
-                    : UUID.randomUUID().toString();
+            // Conversation ID: reuse a well-formed id from the client, otherwise start a new conversation
+            String conversationId = validConversationIdOrNew(request.getConversationId());
+            boolean turnSaved = false;
 
             // 1. Emergency Triage Safety Check
             if (isEmergencySymptom(userMessage)) {
@@ -130,12 +130,12 @@ public class AiService {
                         }
                     }
 
-                    // 5. Check if user sent direct date/time text or let Grok/Groq handle
+                    // 5. Check if user sent direct date/time text or let the AI model handle
                     // structured intent
                     // (Naive keyword matching for "book" was removed to prevent hijacking natural
                     // language inputs like "book an appointment with her at 10am tomorrow")
 
-                    // 6. Groq / xAI Fallback Call
+                    // 6. AI model call (Groq)
                     if (finalResponse == null) {
                         boolean isDoctor = SecurityContextHolder.getContext().getAuthentication().getAuthorities()
                                 .stream().anyMatch(a -> a.getAuthority().equals("ROLE_DOCTOR"));
@@ -150,7 +150,7 @@ public class AiService {
                                     + "- For clinical topics: provide evidence-based insights.\n"
                                     + "- Always include a medical disclaimer in 'reply'.";
                         } else {
-                            systemInstructions = "You are CareSync AI health assistant powered by Groq/xAI. "
+                            systemInstructions = "You are CareSync AI health assistant. "
                                     + "Respond STRICTLY in JSON format matching this schema:\n" + "{\n"
                                     + "  \"reply\": \"Detailed user-facing empathetic health advice and medical disclaimer\",\n"
                                     + "  \"intent\": \"BOOK_APPOINTMENT\" | \"CANCEL_APPOINTMENT\" | \"RESCHEDULE_APPOINTMENT\" | \"GENERAL_CONSULT\",\n"
@@ -182,7 +182,7 @@ public class AiService {
                         }
 
                         List<Map<String, String>> conversationHistory = memoryService.getRecentHistory(conversationId);
-                        String rawJson = grokClient.callGrok(systemInstructions + context, conversationHistory,
+                        String rawJson = groqClient.callGroq(systemInstructions + context, conversationHistory,
                                 userMessage, true, conversationId);
 
                         if (rawJson != null && !rawJson.isBlank()) {
@@ -216,6 +216,7 @@ public class AiService {
 
                                     finalResponse.setConversationId(conversationId);
                                     memoryService.saveTurn(conversationId, userMessage, reply);
+                                    turnSaved = true;
                                 }
                             } catch (Exception parseEx) {
                                 log.warn("Failed to parse structured JSON response: {}", parseEx.getMessage());
@@ -237,8 +238,9 @@ public class AiService {
                 bookingActionProduced = finalResponse.getSuggestion().getType().name();
             }
 
-            // Save turn to memory if not saved earlier
-            if (finalResponse.getResponse() != null) {
+            // Save the turn once (the model path saves above). Button commands (ACTION_*) are not conversation, so
+            // they stay out of the model's memory.
+            if (!turnSaved && finalResponse.getResponse() != null && !userMessage.startsWith("ACTION_")) {
                 memoryService.saveTurn(conversationId, userMessage, finalResponse.getResponse());
             }
 
@@ -251,19 +253,26 @@ public class AiService {
             } catch (Exception ex) {
                 responseJson = finalResponse != null ? finalResponse.getResponse() : null;
             }
-            aiAuditService.logInteraction("CHAT", grokClient.getLastUsedModel(), latencyMs, success,
-                    null, null, null, bookingActionProduced, errorMessage, userMessage, responseJson);
+            AiUsage usage = groqClient.getLastUsage();
+            aiAuditService.logInteraction("CHAT", groqClient.getLastUsedModel(), latencyMs, success,
+                    usage.promptTokens(), usage.completionTokens(), usage.totalTokens(), bookingActionProduced,
+                    errorMessage, userMessage, responseJson);
 
             return finalResponse;
+        } catch (AiQuotaExceededException e) {
+            long latencyMs = System.currentTimeMillis() - startTime;
+            aiAuditService.logInteraction("CHAT", null, latencyMs, false,
+                    null, null, null, "NONE", "AI allowance used up", userMessage, null);
+            return AiChatResponse.builder().response(e.userMessage()).success(false).build();
         } catch (Exception e) {
             log.error("AI Error: {}", e.getMessage(), e);
             errorMessage = e.getMessage();
             long latencyMs = System.currentTimeMillis() - startTime;
-            aiAuditService.logInteraction("CHAT", grokClient.getLastUsedModel(), latencyMs, false,
+            aiAuditService.logInteraction("CHAT", groqClient.getLastUsedModel(), latencyMs, false,
                     null, null, null, "NONE", errorMessage, userMessage, null);
 
             return AiChatResponse.builder()
-                    .response("I apologize, but I encountered an error processing your request: " + e.getMessage())
+                    .response("Sorry, the AI assistant is unavailable right now. Please try again in a moment.")
                     .success(false)
                     .build();
         }
@@ -271,6 +280,7 @@ public class AiService {
 
     public void streamResponse(AiChatRequest request, java.util.function.Consumer<String> chunkConsumer) {
         long startTime = System.currentTimeMillis();
+        groqClient.resetLastCall();
         boolean success = true;
         String errorMessage = null;
         String conversationId = request.getConversationId();
@@ -283,13 +293,13 @@ public class AiService {
         StringBuilder fullResponse = new StringBuilder();
 
         String specializationsList = String.join(", ", aiBookingService.getAvailableSpecializations());
-        String systemInstructions = "You are CareSync AI health assistant powered by Grok/xAI. "
+        String systemInstructions = "You are CareSync AI health assistant. "
                 + "Provide concise, empathetic medical and appointment guidance. "
                 + "Available specializations: [" + specializationsList + "].";
 
         final String activeConversationId = conversationId;
         try {
-            grokClient.streamGrok(systemInstructions, conversationHistory, userMessage, false, activeConversationId,
+            groqClient.streamGroq(systemInstructions, conversationHistory, userMessage, false, activeConversationId,
                     chunk -> {
                         fullResponse.append(chunk);
                         chunkConsumer.accept(chunk);
@@ -304,9 +314,16 @@ public class AiService {
             throw e;
         } finally {
             long latencyMs = System.currentTimeMillis() - startTime;
-            aiAuditService.logInteraction("STREAM", grokClient.getModel(), latencyMs, success,
+            aiAuditService.logInteraction("STREAM", groqClient.getModel(), latencyMs, success,
                     null, null, null, "STREAM_CHAT", errorMessage, userMessage, fullResponse.toString());
         }
+    }
+
+    /** Client-supplied ids are reused only when they look like ours (letters, digits, dashes); otherwise a new one */
+    static String validConversationIdOrNew(String conversationId) {
+        return conversationId != null && conversationId.matches("[A-Za-z0-9-]{8,64}")
+                ? conversationId
+                : UUID.randomUUID().toString();
     }
 
     private String extractJson(String text) {
@@ -319,7 +336,7 @@ public class AiService {
         String errorMessage = null;
         MedicalSummaryResponse response = null;
         try {
-            response = aiClinicalService.summarizePatientHistory(patientId);
+            response = aiClinicalService.withCallerAudit(() -> aiClinicalService.summarizePatientHistory(patientId));
             if (response != null) {
                 success = response.isSuccess();
                 if (!success)
@@ -341,8 +358,10 @@ public class AiService {
             } catch (Exception ex) {
                 respText = response != null ? response.getSummary() : null;
             }
-            aiAuditService.logInteraction("SUMMARIZE", grokClient.getModel(), latencyMs, success,
-                    null, null, null, "SUMMARIZE_PATIENT", errorMessage, promptText, respText);
+            AiUsage usage = aiClinicalService.lastUsage();
+            aiAuditService.logInteraction("SUMMARIZE", aiClinicalService.lastModel(), latencyMs, success,
+                    usage.promptTokens(), usage.completionTokens(), usage.totalTokens(), "SUMMARIZE_PATIENT",
+                    errorMessage, promptText, respText);
         }
     }
 
@@ -352,7 +371,7 @@ public class AiService {
         String errorMessage = null;
         DiagnosisSuggestionDto response = null;
         try {
-            response = aiClinicalService.suggestDiagnosis(symptoms);
+            response = aiClinicalService.withCallerAudit(() -> aiClinicalService.suggestDiagnosis(symptoms));
             if (response == null || response.getSuggestions() == null) {
                 success = false;
                 errorMessage = "No diagnosis suggestions returned";
@@ -372,8 +391,10 @@ public class AiService {
             } catch (Exception ex) {
                 respText = null;
             }
-            aiAuditService.logInteraction("SUGGEST_DIAGNOSIS", grokClient.getModel(), latencyMs, success,
-                    null, null, null, "SUGGEST_DIAGNOSIS", errorMessage, symptoms, respText);
+            AiUsage usage = aiClinicalService.lastUsage();
+            aiAuditService.logInteraction("SUGGEST_DIAGNOSIS", aiClinicalService.lastModel(), latencyMs, success,
+                    usage.promptTokens(), usage.completionTokens(), usage.totalTokens(), "SUGGEST_DIAGNOSIS",
+                    errorMessage, symptoms, respText);
         }
     }
 
@@ -418,6 +439,7 @@ public class AiService {
 
     public VisionScanResponse scanMedicalDocument(MultipartFile file) {
         long startTime = System.currentTimeMillis();
+        geminiClient.resetLastCall();
         boolean success = true;
         String errorMessage = null;
         VisionScanResponse scanResponse = null;
@@ -460,7 +482,7 @@ public class AiService {
 
             String visionResult = null;
             if (geminiClient != null && geminiClient.isConfigured()) {
-                log.info("Analyzing medical document using Gemini 1.5 Flash Vision AI...");
+                log.info("Analyzing medical document with Gemini ({})", geminiClient.getModel());
                 visionResult = geminiClient.generateVisionContent(fileBytes, contentType, prompt);
             } else {
                 log.warn("Gemini Vision AI is not configured. Returning default fallback summary.");
@@ -480,12 +502,15 @@ public class AiService {
             errorMessage = e.getMessage();
             scanResponse = VisionScanResponse.builder()
                     .success(false)
-                    .error("Failed to scan document: " + e.getMessage())
+                    .error(e instanceof AiQuotaExceededException quota ? quota.userMessage()
+                            : "Could not read this document right now. Please try again.")
                     .build();
         } finally {
             long latencyMs = System.currentTimeMillis() - startTime;
-            aiAuditService.logInteraction("VISION_SCAN", "gemini-1.5-flash", latencyMs, success,
-                    null, null, null, "VISION_DOCUMENT_SCAN", errorMessage, file.getOriginalFilename(),
+            AiUsage usage = geminiClient.getLastUsage();
+            aiAuditService.logInteraction("VISION_SCAN", geminiClient.getModel(), latencyMs, success,
+                    usage.promptTokens(), usage.completionTokens(), usage.totalTokens(), "VISION_DOCUMENT_SCAN",
+                    errorMessage, file.getOriginalFilename(),
                     scanResponse != null ? scanResponse.getRawSummary() : null);
         }
 
@@ -494,8 +519,12 @@ public class AiService {
 
     public ClinicalDictationResponse structureClinicalDictation(String transcript) {
         long startTime = System.currentTimeMillis();
+        groqClient.resetLastCall();
+        geminiClient.resetLastCall();
         boolean success = true;
         String errorMessage = null;
+        String dictationModel = "none";
+        AiUsage dictationUsage = AiUsage.NONE;
         ClinicalDictationResponse dictationResponse = null;
 
         if (transcript == null || transcript.isBlank()) {
@@ -531,12 +560,14 @@ public class AiService {
                     + "2. If a section was not mentioned in dictation, provide a reasonable clinical inference or null.";
 
             String aiResult = null;
-            if (grokClient != null && grokClient.isConfigured()) {
-                log.info("Structuring doctor dictation notes using Groq/xAI LLM...");
-                aiResult = grokClient.callGrok("You are CareSync AI Clinical Dictation Specialist.", prompt, true);
+            if (groqClient != null && groqClient.isConfigured()) {
+                aiResult = groqClient.callGroq("You are CareSync AI Clinical Dictation Specialist.", prompt, true);
+                dictationModel = groqClient.getLastUsedModel();
+                dictationUsage = groqClient.getLastUsage();
             } else if (geminiClient != null && geminiClient.isConfigured()) {
-                log.info("Structuring doctor dictation notes using Gemini 1.5 Flash LLM...");
-                aiResult = geminiClient.generateVisionContent(null, null, prompt);
+                aiResult = geminiClient.generateContent(prompt);
+                dictationModel = geminiClient.getModel();
+                dictationUsage = geminiClient.getLastUsage();
             } else {
                 // No AI configured: return the dictation as-is; never invent vitals or an assessment
                 aiResult = new ObjectMapper().writeValueAsString(java.util.Map.of(
@@ -559,12 +590,14 @@ public class AiService {
             errorMessage = e.getMessage();
             dictationResponse = ClinicalDictationResponse.builder()
                     .success(false)
-                    .error("Failed to structure dictation: " + e.getMessage())
+                    .error(e instanceof AiQuotaExceededException quota ? quota.userMessage()
+                            : "Could not structure the dictation right now. Please try again.")
                     .build();
         } finally {
             long latencyMs = System.currentTimeMillis() - startTime;
-            aiAuditService.logInteraction("CLINICAL_DICTATION", "groq-llama-3.3-70b", latencyMs, success,
-                    null, null, null, "CLINICAL_DICTATION", errorMessage, transcript,
+            aiAuditService.logInteraction("CLINICAL_DICTATION", dictationModel, latencyMs, success,
+                    dictationUsage.promptTokens(), dictationUsage.completionTokens(), dictationUsage.totalTokens(),
+                    "CLINICAL_DICTATION", errorMessage, transcript,
                     dictationResponse != null ? dictationResponse.getDiagnosis() : null);
         }
 

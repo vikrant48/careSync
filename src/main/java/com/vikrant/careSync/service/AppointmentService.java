@@ -1196,6 +1196,17 @@ public class AppointmentService {
         return aiClinicalService.generateSoapDraft(appointment, "");
     }
 
+    /**
+     * The visit report as a patient may see it: only once the doctor has signed it. An unsigned (AI) draft is
+     * never shown to the patient, and a patient's request never generates one.
+     */
+    public SoapReportDto getSignedReportForPatient(Long appointmentId) {
+        medicalHistoryRepository.findByAppointmentId(appointmentId)
+                .filter(record -> Boolean.TRUE.equals(record.getIsSigned()))
+                .orElseThrow(() -> new RuntimeException("The visit report is not available yet"));
+        return getSoapDraft(appointmentId);
+    }
+
     public SoapReportDto saveReviewedSoapDraft(Long appointmentId, SoapReportDto reportDto, Long doctorId) {
         Appointment appointment = appointmentRepository.findByIdWithDetails(appointmentId)
                 .orElseThrow(() -> new RuntimeException("Appointment not found with ID: " + appointmentId));

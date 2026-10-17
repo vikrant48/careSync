@@ -108,6 +108,32 @@ class RecordIntegrityEndpointTest {
     }
 
     @Test
+    @WithMockUser(username = "patientA", roles = "PATIENT")
+    void patientSeesTheSignedReportButNeverAnUnsignedDraft() throws Exception {
+        Long signedVisit = appointment(Appointment.Status.COMPLETED);
+        record(signedVisit, true);
+        mvc.perform(get("/api/appointments/" + signedVisit + "/soap-draft"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.diagnosis").value("bronchitis"));
+
+        Long draftVisit = appointment(Appointment.Status.REPORT_DRAFTED);
+        record(draftVisit, false);
+        mvc.perform(get("/api/appointments/" + draftVisit + "/soap-draft"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.diagnosis").doesNotExist());
+    }
+
+    @Test
+    @WithMockUser(username = "patientA", roles = "PATIENT")
+    void patientRequestNeverGeneratesAnAiDraft() throws Exception {
+        Long visit = appointment(Appointment.Status.IN_PROGRESS);
+        long recordsBefore = medicalHistoryRepository.count();
+
+        mvc.perform(get("/api/appointments/" + visit + "/soap-draft")).andExpect(status().isBadRequest());
+        assertEquals(recordsBefore, medicalHistoryRepository.count());
+    }
+
+    @Test
     @WithMockUser(username = "doctorX", roles = "DOCTOR")
     void signedRecordCannotBeDeletedThroughMedicalHistoryEndpoint() throws Exception {
         Long id = record(appointment(Appointment.Status.MEDICAL_RECORD), true);

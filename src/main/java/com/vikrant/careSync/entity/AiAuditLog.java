@@ -25,7 +25,7 @@ public class AiAuditLog {
     private String promptType; // CHAT, SUMMARIZE, SUGGEST_DIAGNOSIS, STREAM
 
     @Column(nullable = false)
-    private String selectedModel; // llama-3.3-70b-versatile, etc.
+    private String selectedModel; // e.g. openai/gpt-oss-120b, gemini-2.5-flash
 
     @Column(nullable = false)
     private Long latencyMs;

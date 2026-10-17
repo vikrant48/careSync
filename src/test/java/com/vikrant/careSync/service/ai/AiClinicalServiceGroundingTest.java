@@ -33,7 +33,8 @@ class AiClinicalServiceGroundingTest {
         when(geminiClient.isConfigured()).thenReturn(false);
         AppointmentIntakeRepository intakeRepository = mock(AppointmentIntakeRepository.class);
         service = new AiClinicalService(groqClient, geminiClient, mock(AppointmentRepository.class),
-                mock(MedicalHistoryRepository.class), intakeRepository);
+                mock(MedicalHistoryRepository.class), intakeRepository, mock(AiAuditService.class),
+                mock(AiResponseCache.class));
 
         appointment = Appointment.builder().id(500L)
                 .patient(Patient.builder().id(201L).firstName("Pat").lastName("A").build())
@@ -65,7 +66,7 @@ class AiClinicalServiceGroundingTest {
     @Test
     void placeholderAnswersFromTheModelAreTreatedAsNotDocumented() {
         when(groqClient.isConfigured()).thenReturn(true);
-        when(groqClient.callGroq(anyString(), anyString(), eq(true))).thenReturn(
+        when(groqClient.callGroq(anyString(), anyString(), eq(true), any())).thenReturn(
                 "{\"subjective\":\"Cough for 5 days\",\"objective\":\"Not recorded\",\"assessment\":\"\","
                         + "\"plan\":\"Review in 1 week\",\"diagnosis\":\"N/A\",\"medicine\":\"\",\"doses\":\"\"}");
 
@@ -82,12 +83,13 @@ class AiClinicalServiceGroundingTest {
     @Test
     void promptForbidsInventedFindings() {
         when(groqClient.isConfigured()).thenReturn(true);
-        when(groqClient.callGroq(anyString(), anyString(), eq(true))).thenReturn("{}");
+        when(groqClient.callGroq(anyString(), anyString(), eq(true), any())).thenReturn("{}");
 
         service.generateSoapDraft(appointment, "");
 
         verify(groqClient).callGroq(argThat(prompt -> prompt.contains("Do NOT invent vital signs")
-                && !prompt.contains("MUST provide meaningful, realistic clinical values")), anyString(), eq(true));
+                && !prompt.contains("MUST provide meaningful, realistic clinical values")), anyString(), eq(true),
+                eq(AiModelTier.SMART));
     }
 
     @Test

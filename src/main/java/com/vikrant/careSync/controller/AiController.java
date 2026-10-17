@@ -19,7 +19,14 @@ import org.springframework.web.multipart.MultipartFile;
 
 import org.springframework.http.MediaType;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import java.util.concurrent.Executors;
+import org.springframework.security.concurrent.DelegatingSecurityContextExecutorService;
+import com.vikrant.careSync.service.ai.AiQuotaExceededException;
+import jakarta.annotation.PreDestroy;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.Map;
 
 @RestController
@@ -28,6 +35,23 @@ import java.util.Map;
 public class AiController {
 
     private final AiService aiService;
+
+    /**
+     * Shared pool for streaming replies (it used to create a thread per request and never stop it). Small and
+     * bounded: extra requests are refused instead of piling up. Each task runs as the user who started it.
+     */
+    private final ExecutorService streamExecutor = new DelegatingSecurityContextExecutorService(
+            new ThreadPoolExecutor(4, 4, 60, TimeUnit.SECONDS, new ArrayBlockingQueue<>(20),
+                    runnable -> {
+                        Thread thread = new Thread(runnable, "ai-stream");
+                        thread.setDaemon(true);
+                        return thread;
+                    }));
+
+    @PreDestroy
+    void shutdownStreams() {
+        streamExecutor.shutdownNow();
+    }
 
     @PostMapping("/chat")
     @PreAuthorize("hasAnyRole('PATIENT', 'DOCTOR')")
@@ -39,21 +63,37 @@ public class AiController {
     @PreAuthorize("hasAnyRole('PATIENT', 'DOCTOR')")
     public SseEmitter streamChat(@Valid @RequestBody AiChatRequest request) {
         SseEmitter emitter = new SseEmitter(60000L);
-        Executors.newSingleThreadExecutor().execute(() -> {
-            try {
-                aiService.streamResponse(request, chunk -> {
-                    try {
-                        emitter.send(SseEmitter.event().data(chunk));
-                    } catch (Exception e) {
-                        emitter.completeWithError(e);
-                    }
-                });
-                emitter.complete();
-            } catch (Exception e) {
-                emitter.completeWithError(e);
-            }
-        });
+        try {
+            streamExecutor.execute(() -> {
+                try {
+                    aiService.streamResponse(request, chunk -> {
+                        try {
+                            emitter.send(SseEmitter.event().data(chunk));
+                        } catch (Exception e) {
+                            emitter.completeWithError(e);
+                        }
+                    });
+                    emitter.complete();
+                } catch (AiQuotaExceededException e) {
+                    sendErrorAndClose(emitter, e.userMessage());
+                } catch (Exception e) {
+                    sendErrorAndClose(emitter, "The AI assistant is unavailable right now. Please try again.");
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            sendErrorAndClose(emitter, "The AI assistant is busy right now. Please try again in a moment.");
+        }
         return emitter;
+    }
+
+    /** Ends the stream with an "error" event carrying a message safe to show */
+    private static void sendErrorAndClose(SseEmitter emitter, String message) {
+        try {
+            emitter.send(SseEmitter.event().name("error").data(message));
+            emitter.complete();
+        } catch (Exception ignored) {
+            emitter.complete();
+        }
     }
 
     @GetMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
