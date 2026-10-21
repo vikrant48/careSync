@@ -26,6 +26,8 @@ public class LabReportExplainerService {
 
     public static final String NOT_A_DIAGNOSIS = "This explanation is not a diagnosis. Only your doctor can "
             + "interpret these results together with your symptoms and health history.";
+    public static final String NOT_A_LAB_REPORT_NOTE = "This file is not a lab report, so it was not explained. "
+            + "Upload the lab report itself, or ask your doctor about this file.";
     static final long MAX_FILE_BYTES = 8_000_000L;
     private static final Set<String> READABLE_TYPES = Set.of("application/pdf", "image/png", "image/jpeg",
             "image/jpg", "image/webp");
@@ -50,7 +52,9 @@ public class LabReportExplainerService {
      * The explanation of a lab report: the saved one, or a new one made now and saved. Only the report's own
      * patient can ask for one (it uses their AI allowance).
      *
-     * @throws IllegalArgumentException the file is not a lab report the AI can read (nothing saved)
+     * When the file is not a lab report, the AI's own description of it is returned (not saved).
+     *
+     * @throws IllegalArgumentException the file type can't be read (only PDF or images)
      * @throws IllegalStateException    the file or the AI is unavailable right now (nothing saved; try again)
      */
     public Explanation explain(Long documentId) {
@@ -76,8 +80,11 @@ public class LabReportExplainerService {
             throw new IllegalStateException("The explanation is unavailable right now. Please try again later.");
         }
         if (answer.contains(AiClinicalService.NOT_A_LAB_REPORT)) {
-            throw new IllegalArgumentException("This file doesn't look like a lab report that can be read. "
-                    + "Please ask your doctor about it.");
+            // Show what the AI says the file is; not saved, so a corrected upload can still be explained
+            String said = answer.replace(AiClinicalService.NOT_A_LAB_REPORT, "").replaceFirst("^[\\s:.\\-]+", "").trim();
+            return new Explanation(documentId,
+                    said.isBlank() ? "This file doesn't look like a lab report, so it can't be explained." : said,
+                    NOT_A_LAB_REPORT_NOTE, null);
         }
         Document fresh = documentRepository.findById(documentId).orElseThrow(this::notFound);
         if (fresh.getAiExplanation() == null) {

@@ -34,6 +34,8 @@ public class SoapReportDto {
     private String treatment;
     private String medicine;
     private String doses;
+    private Boolean prescriptionSuggested;
+    private String prescriptionNote;
     private String notes;
     private String transcript;
 

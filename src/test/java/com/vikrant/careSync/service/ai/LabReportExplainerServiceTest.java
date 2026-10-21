@@ -70,10 +70,15 @@ class LabReportExplainerServiceTest {
     @Test
     void somethingThatIsNotALabReportIsNotSaved() {
         when(storage.readOwnFile(any(), any(), anyLong())).thenReturn(Optional.of(new byte[] { 1 }));
-        when(clinical.explainLabReport(any(), any())).thenReturn(AiClinicalService.NOT_A_LAB_REPORT);
+        when(clinical.explainLabReport(any(), any())).thenReturn(
+                AiClinicalService.NOT_A_LAB_REPORT + ": This looks like a payment receipt, not a lab report.");
 
-        assertThrows(IllegalArgumentException.class, () -> explainer.explain(55L));
-        assertNull(report.getAiExplanation());
+        LabReportExplainerService.Explanation result = explainer.explain(55L);
+
+        assertEquals("This looks like a payment receipt, not a lab report.", result.explanation(),
+                "the patient sees what the AI says the file is");
+        assertEquals(LabReportExplainerService.NOT_A_LAB_REPORT_NOTE, result.note());
+        assertNull(report.getAiExplanation(), "not saved, so a corrected upload can still be explained");
     }
 
     @Test

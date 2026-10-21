@@ -128,7 +128,10 @@ class AiClinicalServiceGroundingTest {
 
         service.generateSoapDraft(appointment, "");
 
-        verify(groqClient).callGroq(argThat(prompt -> prompt.contains("EXCEPTION for assessment and plan only")
+        verify(groqClient).callGroq(argThat(prompt -> prompt.contains("current medications from the intake are NOT prescriptions")
+                && prompt.contains("Never suggest a medicine the patient is allergic to")
+                && prompt.contains("no controlled substances")
+                && prompt.contains("EXCEPTION for assessment and plan only")
                 && prompt.contains(AiClinicalService.SOAP_SUGGESTION_PREFIX)
                 && prompt.contains("never medicines or doses")), anyString(), eq(true), eq(AiModelTier.SMART));
     }
