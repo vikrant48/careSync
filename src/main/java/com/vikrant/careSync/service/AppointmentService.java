@@ -239,9 +239,10 @@ public class AppointmentService {
             throw new RuntimeException("Doctor is currently on leave");
         }
 
-        // Set appointment time to client time if provided, otherwise fallback to server
-        // time
-        LocalDateTime emergencyTime = (clientTime != null) ? clientTime : LocalDateTime.now();
+        // Client time only if within 10 minutes of server time, otherwise server time
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime emergencyTime = (clientTime != null
+                && Math.abs(java.time.Duration.between(now, clientTime).toMinutes()) <= 10) ? clientTime : now;
 
         // Create emergency appointment with BOOKED status
         Appointment appointment = Appointment.builder()
