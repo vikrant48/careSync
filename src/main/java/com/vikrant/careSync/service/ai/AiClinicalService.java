@@ -15,6 +15,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import com.vikrant.careSync.util.ErrorLog;
 
@@ -30,6 +32,7 @@ public class AiClinicalService {
     private final AppointmentIntakeRepository appointmentIntakeRepository;
     private final AiAuditService aiAuditService;
     private final AiResponseCache aiResponseCache;
+    private final com.vikrant.careSync.repository.VitalRepository vitalRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** How long a history summary is reused (a changed history makes a new cache key anyway) */
@@ -477,9 +480,13 @@ public class AiClinicalService {
 
         String systemPrompt = "You are CareSync AI Clinical Ambient Scribe. "
                 + "Generate a complete clinical SOAP note (Subjective, Objective, Assessment, Plan) and recommended prescriptions based on patient intake and consultation transcript.\n"
-                + "STRICT RULES: Use only facts stated in the intake or the transcript. Do NOT invent vital signs, "
+                + "STRICT RULES: Use only facts stated in the intake, the recorded vitals or the transcript. Do NOT invent vital signs, "
                 + "examination findings, diagnoses, medicines or doses. For any field the sources do not support, "
-                + "return an empty string \"\". Medicines and doses only if the clinician said them in the transcript.\n"
+                + "return an empty string \"\". Medicines and doses only if the clinician said them in the transcript. "
+                + "The diagnosis field only if the clinician stated it.\n"
+                + "EXCEPTION for assessment and plan only: if the transcript does not state them, write a short provisional "
+                + "suggestion from the reported symptoms that starts exactly with \"" + SOAP_SUGGESTION_PREFIX + "\" "
+                + "(conditions to consider; tests, general care and follow-up to consider; never medicines or doses).\n"
                 + "Respond STRICTLY in JSON matching this exact schema:\n"
                 + "{\n"
                 + "  \"subjective\": \"Detailed patient symptoms, onset, history, and chief complaint\",\n"
@@ -489,13 +496,15 @@ public class AiClinicalService {
                 + "  \"symptoms\": \"Bullet or comma-separated list of reported symptoms\",\n"
                 + "  \"diagnosis\": \"Primary provisional medical diagnosis\",\n"
                 + "  \"treatment\": \"Non-pharmacological management and supportive care advice\",\n"
-                + "  \"medicine\": \"Recommended or prescribed medications with strength\",\n"
-                + "  \"doses\": \"Exact dosage frequency, instructions, and duration (e.g., 1 tablet twice daily after meals for 5 days)\",\n"
+                + "  \"medicine\": \"One medicine per line with strength, e.g. Paracetamol 500 mg\\nCetirizine 10 mg\",\n"
+                + "  \"doses\": \"One line per medicine in the same order, e.g. 1 tablet twice daily after meals for 5 days\\n1 tablet at night for 5 days\",\n"
                 + "  \"notes\": \"Important clinical safety notes, red flags, or follow-up warnings\"\n"
                 + "}";
 
+        String recordedVitals = recentVitals(appointment);
+
         String userPrompt = String.format(
-                "Patient: %s\nChief Complaint: %s\nDuration: %s\nSeverity: %s\nPre-Visit Symptoms: %s\nMedications: %s\nAllergies: %s\nPre-Visit AI Summary: %s\n\nLive Consultation Transcript:\n%s",
+                "Patient: %s\nChief Complaint: %s\nDuration: %s\nSeverity: %s\nPre-Visit Symptoms: %s\nMedications: %s\nAllergies: %s\nRecorded Vitals: %s\nPre-Visit AI Summary: %s\n\nLive Consultation Transcript:\n%s",
                 patientName,
                 !chiefComplaint.isBlank() ? chiefComplaint : "Not specified",
                 !preVisitDuration.isBlank() ? preVisitDuration : "Not specified",
@@ -503,6 +512,7 @@ public class AiClinicalService {
                 !preVisitSymptoms.isBlank() ? preVisitSymptoms : "Not specified",
                 !preVisitMedications.isBlank() ? preVisitMedications : "None",
                 !preVisitAllergies.isBlank() ? preVisitAllergies : "None",
+                recordedVitals != null ? recordedVitals : "None recorded",
                 !preVisitSummary.isBlank() ? preVisitSummary : "None",
                 liveTranscript != null && !liveTranscript.isBlank() ? liveTranscript
                         : "No additional live transcript.");
@@ -544,9 +554,9 @@ public class AiClinicalService {
                 if (node.has("treatment") && !node.get("treatment").asText().isBlank())
                     dto.setTreatment(node.get("treatment").asText());
                 if (node.has("medicine") && !node.get("medicine").asText().isBlank())
-                    dto.setMedicine(node.get("medicine").asText());
+                    dto.setMedicine(onePerLine(node.get("medicine").asText()));
                 if (node.has("doses") && !node.get("doses").asText().isBlank())
-                    dto.setDoses(node.get("doses").asText());
+                    dto.setDoses(onePerLine(node.get("doses").asText()));
                 if (node.has("notes") && !node.get("notes").asText().isBlank())
                     dto.setNotes(node.get("notes").asText());
             } catch (Exception e) {
@@ -576,10 +586,15 @@ public class AiClinicalService {
         if (dto.getSymptoms() == null && !preVisitSymptoms.isBlank()) {
             dto.setSymptoms(preVisitSymptoms);
         }
+        // Objective: the patient's real recorded vitals when the notes have no exam findings
+        if (dto.getObjective() == null && recordedVitals != null) {
+            dto.setObjective(recordedVitals);
+        }
 
         String reviewNote = jsonResponse == null || jsonResponse.isBlank()
                 ? "AI draft unavailable. Please complete the clinical sections manually."
-                : "AI-generated draft. Verify every section before signing; fields left empty were not documented.";
+                : "AI-generated draft. Verify every section before signing; fields left empty were not documented, "
+                        + "and text starting with \"" + SOAP_SUGGESTION_PREFIX.trim() + "\" is a suggestion, not a finding.";
         dto.setNotes(dto.getNotes() == null ? reviewNote : dto.getNotes() + "\n\n" + reviewNote);
 
         return dto;
@@ -647,6 +662,48 @@ public class AiClinicalService {
     }
 
     /** Empty or placeholder answers ("Not recorded", "N/A") are treated as not documented. */
+    /** Start of an AI-suggested (not documented) assessment or plan in a SOAP draft */
+    static final String SOAP_SUGGESTION_PREFIX = "AI suggestion - verify: ";
+    /** Vitals older than this before the visit are not shown as the visit's objective findings */
+    private static final int SOAP_VITALS_MAX_AGE_DAYS = 7;
+
+    /** The patient's latest vitals recorded up to 7 days before the visit (or on the day), as one line; else null */
+    private String recentVitals(Appointment appointment) {
+        if (vitalRepository == null || appointment.getPatient() == null || appointment.getPatient().getId() == null) {
+            return null;
+        }
+        LocalDateTime visit = appointment.getAppointmentDateTime() != null ? appointment.getAppointmentDateTime()
+                : LocalDateTime.now();
+        return vitalRepository.findByPatientIdOrderByRecordedAtDesc(appointment.getPatient().getId()).stream()
+                .filter(v -> v.getRecordedAt() != null && !v.getRecordedAt().isAfter(visit.plusDays(1))
+                        && !v.getRecordedAt().isBefore(visit.minusDays(SOAP_VITALS_MAX_AGE_DAYS)))
+                .findFirst()
+                .map(v -> {
+                    List<String> parts = new ArrayList<>();
+                    if (v.getSystolicBP() != null && v.getDiastolicBP() != null) {
+                        parts.add("BP " + num(v.getSystolicBP()) + "/" + num(v.getDiastolicBP()) + " mmHg");
+                    }
+                    if (v.getHeartRate() != null) parts.add("HR " + num(v.getHeartRate()) + " bpm");
+                    if (v.getTemperature() != null) parts.add("Temp " + num(v.getTemperature()));
+                    if (v.getRespiratoryRate() != null) parts.add("RR " + num(v.getRespiratoryRate()) + "/min");
+                    if (v.getSugarLevel() != null) parts.add("Sugar " + num(v.getSugarLevel()) + " mg/dL");
+                    if (v.getWeight() != null) parts.add("Weight " + num(v.getWeight()) + " kg");
+                    return parts.isEmpty() ? null : "Recorded vitals ("
+                            + v.getRecordedAt().format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm"))
+                            + "): " + String.join(", ", parts) + ".";
+                })
+                .orElse(null);
+    }
+
+    private static String num(Double value) {
+        return value % 1 == 0 ? String.valueOf(value.longValue()) : String.valueOf(value);
+    }
+
+    /** Medicines and doses: one item per line (the AI sometimes separates them with ";" instead) */
+    static String onePerLine(String value) {
+        return value.replace("\r", "").replaceAll("\\s*;\\s*", "\n").replaceAll("\n{2,}", "\n").trim();
+    }
+
     private static String groundedOrNull(String value) {
         if (value == null) {
             return null;

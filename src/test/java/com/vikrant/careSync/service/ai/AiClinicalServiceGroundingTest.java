@@ -9,10 +9,13 @@ import com.vikrant.careSync.entity.Patient;
 import com.vikrant.careSync.repository.AppointmentIntakeRepository;
 import com.vikrant.careSync.repository.AppointmentRepository;
 import com.vikrant.careSync.repository.MedicalHistoryRepository;
+import com.vikrant.careSync.repository.VitalRepository;
+import com.vikrant.careSync.entity.Vital;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -23,6 +26,7 @@ import static org.mockito.Mockito.*;
 class AiClinicalServiceGroundingTest {
 
     private GroqClient groqClient;
+    private VitalRepository vitalRepository;
     private AiClinicalService service;
     private Appointment appointment;
 
@@ -32,9 +36,11 @@ class AiClinicalServiceGroundingTest {
         GeminiClient geminiClient = mock(GeminiClient.class);
         when(geminiClient.isConfigured()).thenReturn(false);
         AppointmentIntakeRepository intakeRepository = mock(AppointmentIntakeRepository.class);
+        vitalRepository = mock(VitalRepository.class);
+        AiResponseCache cache = mock(AiResponseCache.class);
         service = new AiClinicalService(groqClient, geminiClient, mock(AppointmentRepository.class),
                 mock(MedicalHistoryRepository.class), intakeRepository, mock(AiAuditService.class),
-                mock(AiResponseCache.class));
+                cache, vitalRepository);
 
         appointment = Appointment.builder().id(500L)
                 .patient(Patient.builder().id(201L).firstName("Pat").lastName("A").build())
@@ -90,6 +96,53 @@ class AiClinicalServiceGroundingTest {
         verify(groqClient).callGroq(argThat(prompt -> prompt.contains("Do NOT invent vital signs")
                 && !prompt.contains("MUST provide meaningful, realistic clinical values")), anyString(), eq(true),
                 eq(AiModelTier.SMART));
+    }
+
+    @Test
+    void objectiveUsesTheVisitsRecordedVitalsNeverInventedOnes() {
+        when(groqClient.isConfigured()).thenReturn(false);
+        when(vitalRepository.findByPatientIdOrderByRecordedAtDesc(201L)).thenReturn(List.of(Vital.builder()
+                .systolicBP(150.0).diastolicBP(95.0).heartRate(88.0)
+                .recordedAt(appointment.getAppointmentDateTime().minusHours(1)).build()));
+
+        SoapReportDto draft = service.generateSoapDraft(appointment, "");
+
+        assertTrue(draft.getObjective().startsWith("Recorded vitals ("), draft.getObjective());
+        assertTrue(draft.getObjective().contains("BP 150/95 mmHg, HR 88 bpm"), draft.getObjective());
+    }
+
+    @Test
+    void oldVitalsAreNotShownAsTodaysFindings() {
+        when(groqClient.isConfigured()).thenReturn(false);
+        when(vitalRepository.findByPatientIdOrderByRecordedAtDesc(201L)).thenReturn(List.of(Vital.builder()
+                .systolicBP(150.0).diastolicBP(95.0)
+                .recordedAt(appointment.getAppointmentDateTime().minusDays(30)).build()));
+
+        assertNull(service.generateSoapDraft(appointment, "").getObjective());
+    }
+
+    @Test
+    void promptAllowsOnlyMarkedSuggestionsForAssessmentAndPlan() {
+        when(groqClient.isConfigured()).thenReturn(true);
+        when(groqClient.callGroq(anyString(), anyString(), eq(true), any())).thenReturn("{}");
+
+        service.generateSoapDraft(appointment, "");
+
+        verify(groqClient).callGroq(argThat(prompt -> prompt.contains("EXCEPTION for assessment and plan only")
+                && prompt.contains(AiClinicalService.SOAP_SUGGESTION_PREFIX)
+                && prompt.contains("never medicines or doses")), anyString(), eq(true), eq(AiModelTier.SMART));
+    }
+
+    @Test
+    void medicinesAndDosesComeBackOnePerLine() {
+        when(groqClient.isConfigured()).thenReturn(true);
+        when(groqClient.callGroq(anyString(), anyString(), eq(true), any())).thenReturn(
+                "{\"medicine\":\"Paracetamol 500 mg; Cetirizine 10 mg\",\"doses\":\"1 tablet twice daily; 1 tablet at night\"}");
+
+        SoapReportDto draft = service.generateSoapDraft(appointment, "doctor prescribed paracetamol and cetirizine");
+
+        assertEquals("Paracetamol 500 mg\nCetirizine 10 mg", draft.getMedicine());
+        assertEquals("1 tablet twice daily\n1 tablet at night", draft.getDoses());
     }
 
     @Test
