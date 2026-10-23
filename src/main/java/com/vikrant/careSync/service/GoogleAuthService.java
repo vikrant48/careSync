@@ -81,6 +81,10 @@ public class GoogleAuthService {
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             throw new RuntimeException("Your account is inactive. Please contact an administrator.");
         }
+        // Admins must use password + emailed code; Google sign-in would skip the second step
+        if (user.getRole() == User.Role.ADMIN) {
+            throw new RuntimeException("Admin accounts can't use Google sign-in. Please sign in with your username and password.");
+        }
 
         String roleStr = user.getRole() != null ? user.getRole().name() : AppConstants.Roles.PATIENT;
 

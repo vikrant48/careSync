@@ -51,7 +51,8 @@ public class SecurityConfig {
                                                 // same request, which carries no login of its own. The request was
                                                 // already authorized on its first pass, so this only finishes it.
                                                 .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
-                                                .requestMatchers("/api/auth/login", "/api/auth/register",
+                                                .requestMatchers("/api/auth/login", "/api/auth/login/verify-code",
+                                                                "/api/auth/register",
                                                                 "/api/auth/google",
                                                                 "/api/auth/refresh",
                                                                 "/api/auth/logout", "/api/auth/forgot-password",

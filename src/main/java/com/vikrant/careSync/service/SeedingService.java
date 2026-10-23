@@ -117,8 +117,6 @@ public class SeedingService implements ISeedingService {
             doctor.setIsVerified(true);
             doctor.setIsActive(true);
             return doctorRepository.save(doctor);
-        } else if (role == User.Role.ADMIN) {
-            return savedUser;
         } else {
             Patient patient = new Patient();
             patient.setUser(savedUser);

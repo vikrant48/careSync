@@ -19,12 +19,15 @@ public class TokenIssuer {
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
     private final SecurityService securityService;
+    private final DeviceSessionService deviceSessionService;
 
     public record IssuedTokens(String accessToken, String refreshToken) {
     }
 
     /** Login: a new session, an access token bound to it and a refresh token for it. */
     public IssuedTokens startSession(UserDetails user, String role, String ipAddress, String userAgent) {
+        // Before the session is saved, so this sign-in is not counted as a known device
+        deviceSessionService.alertIfNewDevice(user.getUsername(), userAgent, ipAddress);
         String sessionId = securityService.createUserSession(user.getUsername(), ipAddress, userAgent, role)
                 .getSessionId();
         return issue(user, role, sessionId);

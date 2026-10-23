@@ -8,6 +8,7 @@ import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.PatientRepository;
 import com.vikrant.careSync.repository.UserRepository;
 import com.vikrant.careSync.security.JwtService;
+import com.vikrant.careSync.security.service.AdminLoginCodeService;
 import com.vikrant.careSync.security.dto.*;
 import com.vikrant.careSync.security.service.OtpAttemptLimiter;
 import com.vikrant.careSync.security.service.RefreshTokenService;
@@ -25,6 +26,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.security.authentication.DisabledException;
 
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,6 +61,7 @@ public class AuthenticationService implements IAuthenticationService {
     private final EmailVerificationService emailVerificationService;
     private final OtpAttemptLimiter otpAttemptLimiter;
     private final UserIdGenerator userIdGenerator;
+    private final AdminLoginCodeService adminLoginCodeService;
 
     static final String OTP_PURPOSE_PASSWORD_RESET = "pwd_reset";
     static final String TOO_MANY_OTP_ATTEMPTS =
@@ -72,7 +75,8 @@ public class AuthenticationService implements IAuthenticationService {
             PasswordResetTokenRepository passwordResetTokenRepository,
             PasswordResetOtpRepository passwordResetOtpRepository, EmailService emailService,
             EmailVerificationService emailVerificationService, OtpAttemptLimiter otpAttemptLimiter,
-            UserIdGenerator userIdGenerator) {
+            UserIdGenerator userIdGenerator, AdminLoginCodeService adminLoginCodeService) {
+        this.adminLoginCodeService = adminLoginCodeService;
         this.otpAttemptLimiter = otpAttemptLimiter;
         this.userIdGenerator = userIdGenerator;
         this.userRepository = userRepository;
@@ -252,10 +256,17 @@ public class AuthenticationService implements IAuthenticationService {
 
             String roleStr = user.getRole() != null ? user.getRole().name() : AppConstants.Roles.PATIENT;
 
+            // Admins: the password alone is not enough; a one-time code goes to their email
+            if (user.getRole() == User.Role.ADMIN) {
+                return startAdminSecondStep(user);
+            }
+
             return generateAuthResponse(user.getUsername(), roleStr,
                     "Login successful as " + roleStr + ".", ipAddress, userAgent);
 
-        } catch (org.springframework.security.authentication.DisabledException e) {
+        } catch (AdminLoginException e) {
+            throw e;
+        } catch (DisabledException e) {
             ErrorLog.log(e);
             securityService.recordLoginAttempt(request.getUsername(), ipAddress, false, userAgent);
             // Spring checks "disabled" before the password; only reveal the account state to the real owner
@@ -270,6 +281,57 @@ public class AuthenticationService implements IAuthenticationService {
             // Record failed login attempt
             securityService.recordLoginAttempt(request.getUsername(), ipAddress, false, userAgent);
             throw new RuntimeException("Invalid username or password");
+        }
+    }
+
+    /** Admin password was right: email a one-time code; no tokens until the code is entered */
+    private AuthenticationResponse startAdminSecondStep(User admin) {
+        if (admin.getEmail() == null || admin.getEmail().isBlank()) {
+            // Without an email the second step is impossible: refuse rather than skip it
+            throw new AdminLoginException("This admin account has no email for the login code. Add one in the database.");
+        }
+        com.vikrant.careSync.security.service.AdminLoginCodeService.Issued issued =
+                adminLoginCodeService.issue(admin.getUsername(), admin.getEmail());
+        try {
+            emailService.sendAdminLoginCode(admin.getEmail(), admin.getUsername(), issued.code());
+        } catch (Exception e) {
+            ErrorLog.error(e, "Could not email the admin login code");
+            throw new AdminLoginException("We couldn't send your login code. Please try again in a minute.");
+        }
+        return AuthenticationResponse.builder()
+                .username(admin.getUsername())
+                .mfaRequired(true)
+                .mfaChallengeId(issued.challengeId())
+                .message("We sent a 6-digit code to " + maskEmail(admin.getEmail()) + ". Enter it to finish signing in.")
+                .build();
+    }
+
+    /** Second step for admins: the emailed code finishes the login and starts the session */
+    public AuthenticationResponse completeAdminLogin(String challengeId, String code, String ipAddress,
+            String userAgent) {
+        if (securityService.isIPBlocked(ipAddress)) {
+            throw new RuntimeException("Access denied: IP address is blocked");
+        }
+        String username = adminLoginCodeService.verify(challengeId, code);
+        User user = userRepository.findByUsername(username)
+                .filter(u -> u.getRole() == User.Role.ADMIN && Boolean.TRUE.equals(u.getIsActive()))
+                .orElseThrow(() -> new IllegalArgumentException("This account can no longer sign in."));
+        updateLastLogin(username);
+        return generateAuthResponse(user.getUsername(), User.Role.ADMIN.name(), "Login successful as ADMIN.",
+                ipAddress, userAgent);
+    }
+
+    /** "a****@example.com": enough for the admin to recognise it, not enough to reveal the address */
+    static String maskEmail(String email) {
+        int at = email.indexOf('@');
+        if (at <= 1) return "your email";
+        return email.charAt(0) + "****" + email.substring(at);
+    }
+
+    /** Admin-login problems whose message must reach the user (not the generic "invalid password") */
+    static class AdminLoginException extends RuntimeException {
+        AdminLoginException(String message) {
+            super(message);
         }
     }
 

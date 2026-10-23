@@ -17,6 +17,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.util.HashMap;
 import java.util.List;
@@ -44,6 +45,8 @@ public class AppointmentActionController {
                     .anyMatch(a -> a.getAuthority().equals("ROLE_DOCTOR"));
             boolean isPatient = authentication.getAuthorities().stream()
                     .anyMatch(a -> a.getAuthority().equals("ROLE_PATIENT"));
+            boolean isAdmin = authentication.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
 
             if (isDoctor) {
                 Doctor doctor = doctorRepository.findByUsername(username)
@@ -53,12 +56,13 @@ public class AppointmentActionController {
                 Patient patient = patientRepository.findByUsername(username)
                         .orElseThrow(() -> new RuntimeException("Patient not found: " + username));
                 return patient.getUser();
-            } else {
+            } else if (isAdmin) {
                 User user = new User();
                 user.setUsername(username);
                 user.setRole(User.Role.ADMIN);
                 return user;
             }
+            throw new AccessDeniedException("Access denied");
         }
         throw new RuntimeException("User not authenticated");
     }

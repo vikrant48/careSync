@@ -56,7 +56,8 @@ class AuthenticationServiceOtpTest {
         service = new AuthenticationService(userRepository, mock(DoctorRepository.class), mock(PatientRepository.class),
                 passwordEncoder, mock(com.vikrant.careSync.security.service.TokenIssuer.class), authenticationManager, refreshTokenService, securityService,
                 mock(PasswordResetTokenRepository.class), otpRepository, emailService,
-                mock(EmailVerificationService.class), limiter, mock(UserIdGenerator.class));
+                mock(EmailVerificationService.class), limiter, mock(UserIdGenerator.class),
+                mock(com.vikrant.careSync.security.service.AdminLoginCodeService.class));
     }
 
     private PasswordResetOtp otp(String code) {

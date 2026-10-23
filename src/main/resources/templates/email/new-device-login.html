@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>New sign-in to your CareSync account</title>
+    <style>
+      body { font-family: Arial, sans-serif; background: #f6f8fa; color: #333; }
+      .wrap { max-width: 600px; margin: 20px auto; background: #fff; border: 1px solid #e1e4e8; border-radius: 6px; }
+      .hd { background: #2c3e50; color: #fff; padding: 16px 24px; border-top-left-radius: 6px; border-top-right-radius: 6px; }
+      .ct { padding: 24px; }
+      .box { background: #ecf0f1; padding: 12px 16px; border-radius: 4px; line-height: 1.7; }
+      .ft { padding: 16px 24px; font-size: 12px; color: #586069; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="hd"><h2>New sign-in</h2></div>
+      <div class="ct">
+        <p>Hi {{name}},</p>
+        <p>Your CareSync account was just signed in from a device we haven't seen before:</p>
+        <p class="box">
+          <strong>Device:</strong> {{device}}<br/>
+          <strong>Network (IP):</strong> {{ip}}<br/>
+          <strong>Time:</strong> {{when}} (IST)
+        </p>
+        <p>If this was you, there's nothing to do.</p>
+        <p><strong>If it wasn't you:</strong> change your password now, then open <em>Settings &rarr; Signed-in devices</em>
+          and choose <em>Sign out all other devices</em>.</p>
+        <p>Thanks,<br/>CareSync Support Team</p>
+      </div>
+      <div class="ft">
+        <p>We send this to protect your health records. CareSync will never ask for your password.</p>
+      </div>
+    </div>
+  </body>
+</html>

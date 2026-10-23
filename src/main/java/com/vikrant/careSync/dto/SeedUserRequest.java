@@ -17,7 +17,7 @@ public class SeedUserRequest {
     private String username;
     private String password;
     private String email;
-    private String role; // "PATIENT", "DOCTOR", "ADMIN" (defaults to PATIENT if omitted)
+    private String role; // "PATIENT" or "DOCTOR" (defaults to PATIENT); ADMIN is refused: admins are created in the DB only
     private String firstName;
     private String lastName;
     private LocalDate dateOfBirth;

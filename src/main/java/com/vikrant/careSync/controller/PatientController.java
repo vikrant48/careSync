@@ -56,6 +56,7 @@ public class PatientController {
     private final AccessGuard accessGuard;
     private final com.vikrant.careSync.security.access.CurrentUserService currentUserService;
     private final com.vikrant.careSync.service.PatientDataExportService patientDataExportService;
+    private final com.vikrant.careSync.service.FhirExportService fhirExportService;
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Get paginated patients", description = "Retrieves a paginated list of registered patients with windowed Redis caching (Doctor/Admin only)")
     @GetMapping
@@ -83,6 +84,18 @@ public class PatientController {
                 .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"caresync-my-data-" + java.time.LocalDate.now() + ".json\"")
                 .body(patientDataExportService.export(patient));
+    }
+
+    /** The patient's own health record as a FHIR R4 Bundle, for other health apps (and ABHA later) */
+    @GetMapping("/me/export/fhir")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<Map<String, Object>> exportMyFhirRecord() {
+        Patient patient = currentUserService.requirePatient();
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"caresync-health-record-fhir-" + java.time.LocalDate.now() + ".json\"")
+                .contentType(org.springframework.http.MediaType.parseMediaType("application/fhir+json"))
+                .body(fhirExportService.export(patient));
     }
 
     @GetMapping("/{id}")

@@ -17,7 +17,15 @@ public interface UserSessionRepository extends JpaRepository<UserSession, Long> 
     Optional<UserSession> findBySessionIdAndActiveTrue(String sessionId);
     
     List<UserSession> findByUsernameAndActiveTrue(String username);
-    
+
+    List<UserSession> findByUsernameAndActiveTrueOrderByLastActivityDesc(String username);
+
+    List<UserSession> findTop50ByUsernameOrderByLoginTimeDesc(String username);
+
+    @Modifying
+    @Query("UPDATE UserSession us SET us.active = false WHERE us.username = :username AND us.active = true "
+            + "AND us.sessionId <> :keepSessionId")
+    int deactivateOtherSessions(@Param("username") String username, @Param("keepSessionId") String keepSessionId);
     
     @Modifying
     @Query("UPDATE UserSession us SET us.lastActivity = :lastActivity WHERE us.sessionId = :sessionId")

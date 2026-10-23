@@ -17,6 +17,7 @@ import com.vikrant.careSync.security.ClientIpResolver;
 import com.vikrant.careSync.security.JwtService;
 import com.vikrant.careSync.repository.DoctorRepository;
 import com.vikrant.careSync.repository.PatientRepository;
+import com.vikrant.careSync.security.service.DeviceSessionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -50,6 +51,7 @@ public class AuthController {
     private final EmailVerificationService emailVerificationService;
     private final GoogleAuthService googleAuthService;
     private final ClientIpResolver clientIpResolver;
+    private final DeviceSessionService deviceSessionService;
 
     @io.swagger.v3.oas.annotations.Operation(summary = "Authenticate user with Google", description = "Verifies Google ID token and returns JWT access and refresh tokens")
     @PostMapping("/google")
@@ -145,6 +147,52 @@ public class AuthController {
             ErrorLog.log(e);
             return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
         }
+    }
+
+    /** Admins: second login step with the code emailed after a correct password */
+    @PostMapping("/login/verify-code")
+    public ResponseEntity<?> verifyAdminLoginCode(
+            @Valid @RequestBody com.vikrant.careSync.security.dto.LoginCodeRequest request,
+            HttpServletRequest httpRequest) {
+        try {
+            AuthenticationResponse response = authenticationService.completeAdminLogin(request.getChallengeId(),
+                    request.getCode(), getClientIPAddress(httpRequest), httpRequest.getHeader("User-Agent"));
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            ErrorLog.log(e);
+            return ResponseEntity.badRequest().body(ClientErrorMessages.errorBody(e));
+        }
+    }
+
+    // ---- Signed-in devices (the logged-in user's own sessions only)
+
+    @GetMapping("/sessions")
+    public ResponseEntity<?> mySessions(HttpServletRequest httpRequest) {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        return ResponseEntity.ok(deviceSessionService.mySessions(username, currentSessionId(httpRequest)));
+    }
+
+    @DeleteMapping("/sessions/{id}")
+    public ResponseEntity<?> signOutDevice(@PathVariable Long id) {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        deviceSessionService.signOut(username, id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/sessions/sign-out-others")
+    public ResponseEntity<?> signOutOtherDevices(HttpServletRequest httpRequest) {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        int count = deviceSessionService.signOutOthers(username, currentSessionId(httpRequest));
+        return ResponseEntity.ok(Map.of("signedOut", count));
+    }
+
+    /** The session of the device making this request (from its access token) */
+    private String currentSessionId(HttpServletRequest httpRequest) {
+        String header = httpRequest.getHeader("Authorization");
+        if (header == null || !header.startsWith("Bearer ")) {
+            return null;
+        }
+        return jwtService.extractSessionId(header.substring(7));
     }
 
     @PostMapping("/refresh")

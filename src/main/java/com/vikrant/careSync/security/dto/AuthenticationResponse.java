@@ -15,4 +15,6 @@ public class AuthenticationResponse {
     private String role;
     private String message;
     private Object user;
+    private Boolean mfaRequired;
+    private String mfaChallengeId;
 }

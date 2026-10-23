@@ -1,0 +1,23 @@
+# Weekly pull requests for outdated or vulnerable dependencies (security fixes come as soon as they are known)
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    target-branch: dev
+    groups:
+      spring:
+        patterns: ["org.springframework*"]
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    target-branch: dev
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    target-branch: dev

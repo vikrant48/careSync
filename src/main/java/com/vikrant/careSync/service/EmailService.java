@@ -124,6 +124,24 @@ public class EmailService {
         sendTemplateEmail(to, subject, "email/password-reset-otp.html", model);
     }
 
+    /** Second login step for admins: the one-time code after a correct password */
+    public void sendAdminLoginCode(String to, String name, String code) {
+        Map<String, String> model = new HashMap<>();
+        model.put("name", name);
+        model.put("otp", code);
+        sendTemplateEmail(to, "Your CareSync admin login code", "email/admin-login-code.html", model);
+    }
+
+    /** Someone signed in from a browser/system this account has not used before */
+    public void sendNewDeviceAlert(String to, String name, String device, String maskedIp, String when) {
+        Map<String, String> model = new HashMap<>();
+        model.put("name", name);
+        model.put("device", device);
+        model.put("ip", maskedIp);
+        model.put("when", when);
+        sendTemplateEmail(to, "New sign-in to your CareSync account", "email/new-device-login.html", model);
+    }
+
     private String truncate(String s, int maxLen) {
         if (s == null)
             return null;
