@@ -20,6 +20,9 @@ public interface ExperienceRepository extends JpaRepository<Experience, Long> {
     @Query("SELECT e FROM Experience e WHERE e.doctor.id IN :doctorIds")
     List<Experience> findByDoctorIdIn(@Param("doctorIds") List<Long> doctorIds);
 
+    @Query("SELECT COALESCE(SUM(e.yearsOfService), 0) FROM Experience e WHERE e.doctor.id = :doctorId")
+    long sumYearsOfServiceByDoctorId(@Param("doctorId") Long doctorId);
+
     @Override
     Optional<Experience> findById(Long id);
 

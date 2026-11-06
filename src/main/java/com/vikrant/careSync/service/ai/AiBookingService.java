@@ -9,6 +9,7 @@ import com.vikrant.careSync.entity.*;
 import com.vikrant.careSync.entity.master.SpecializationMaster;
 import com.vikrant.careSync.repository.AppointmentRepository;
 import com.vikrant.careSync.repository.DoctorRepository;
+import com.vikrant.careSync.repository.ExperienceRepository;
 import com.vikrant.careSync.repository.PatientRepository;
 import com.vikrant.careSync.repository.master.SpecializationMasterRepository;
 import com.vikrant.careSync.service.AppointmentService;
@@ -38,6 +39,7 @@ public class AiBookingService {
     private final DoctorLeaveService doctorLeaveService;
     private final SpecializationMasterRepository specializationMasterRepository;
     private final AccessGuard accessGuard;
+    private final ExperienceRepository experienceRepository;
 
     private static final Long DEFAULT_ORG_ID = 91L;
 
@@ -466,8 +468,7 @@ public class AiBookingService {
     }
 
     public AiBookingSuggestion.DoctorSuggestion mapToDoctorSuggestion(Doctor d) {
-        int totalExp = d.getExperiences() != null ? d.getExperiences().stream()
-                .mapToInt(Experience::getYearsOfService).sum() : 0;
+        int totalExp = (int) experienceRepository.sumYearsOfServiceByDoctorId(d.getId());
         boolean onLeave = doctorLeaveService.isDoctorOnLeave(d.getId(), LocalDate.now());
         return AiBookingSuggestion.DoctorSuggestion.builder()
                 .id(d.getId()).name(d.getName()).specialization(d.getSpecialization())
