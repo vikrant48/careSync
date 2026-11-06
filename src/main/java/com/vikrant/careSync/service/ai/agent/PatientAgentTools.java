@@ -127,7 +127,7 @@ public class PatientAgentTools implements AgentToolbox {
                             + "and shows them to the patient as cards.",
                     schema(Map.of(
                             "specialization", prop("string", "Exact name from the specialization list"),
-                            "name", prop("string", "Part of the doctor's name"),
+                            "name", prop("string", "Doctor's first name, last name or full name, without 'Dr.'"),
                             "gender", prop("string", "Doctor's gender, e.g. Female or Male"),
                             "max_fee", prop("number", "Highest consultation fee in rupees"),
                             "verified_only", prop("boolean", "Only doctors verified by CareSync"),
@@ -213,26 +213,28 @@ public class PatientAgentTools implements AgentToolbox {
 
     private AiToolResult searchDoctors(JsonNode args) {
         bookingService.currentPatient();
-        String specialization = text(args, "specialization");
-        if (specialization != null) {
-            String wanted = specialization;
-            specialization = bookingService.getAvailableSpecializations().stream()
-                    .filter(s -> s.equalsIgnoreCase(wanted)).findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            "Unknown specialization '" + wanted + "'. Use a name from the specialization list."));
-        }
+        String wantedSpecialization = text(args, "specialization");
+        List<String> specializations = wantedSpecialization == null ? java.util.Collections.singletonList(null)
+                : resolveSpecializations(wantedSpecialization, bookingService.getAvailableSpecializations());
         LocalDate date = optionalDate(args, "date");
         String from = optionalTime(args, "time_from");
         String to = optionalTime(args, "time_to");
         BigDecimal maxFee = args.hasNonNull("max_fee") ? BigDecimal.valueOf(args.get("max_fee").asDouble()) : null;
         boolean verifiedOnly = args.path("verified_only").asBoolean(false);
+        String name = text(args, "name");
 
-        List<Doctor> candidates = doctorRepository.searchDoctorsDynamic(SearchRequestDto.builder()
-                .query(text(args, "name"))
-                .specialization(specialization)
-                .gender(text(args, "gender"))
-                .verified(verifiedOnly ? Boolean.TRUE : null)
-                .page(0).size(40).build());
+        // "Cardiology" may be stored as both "Cardiology" and "Cardiologist": search each, keep each doctor once
+        Map<Long, Doctor> byId = new LinkedHashMap<>();
+        for (String specialization : specializations) {
+            doctorRepository.searchDoctorsDynamic(SearchRequestDto.builder()
+                    .query(name)
+                    .specialization(specialization)
+                    .gender(text(args, "gender"))
+                    .verified(verifiedOnly ? Boolean.TRUE : null)
+                    .page(0).size(40).build())
+                    .forEach(d -> byId.putIfAbsent(d.getId(), d));
+        }
+        List<Doctor> candidates = new ArrayList<>(byId.values());
 
         List<AiBookingSuggestion.DoctorSuggestion> cards = new ArrayList<>();
         List<Map<String, Object>> found = new ArrayList<>();
@@ -283,14 +285,73 @@ public class PatientAgentTools implements AgentToolbox {
         }
 
         if (found.isEmpty()) {
-            return AiToolResult.data(json(Map.of("doctors", List.of(),
-                    "note", "No bookable doctor matches these filters. Suggest loosening a filter.")));
+            return AiToolResult.data(json(Map.of("doctors", List.of(), "note", noMatchNote(candidates, name))));
         }
         return new AiToolResult(json(Map.of("doctors", found)), AiBookingSuggestion.builder()
                 .type(AiBookingSuggestion.SuggestionType.DOCTORS)
                 .doctors(cards)
                 .reason(reason(args))
                 .build());
+    }
+
+    /** Says why nothing came back, so the assistant can tell "no such doctor" from "no free time". */
+    private static String noMatchNote(List<Doctor> candidates, String name) {
+        List<String> active = candidates.stream().filter(Doctor::canAcceptAppointments)
+                .map(Doctor::getName).limit(MAX_DOCTORS).toList();
+        if (!active.isEmpty()) {
+            return "These doctors match but have no open slot for the requested time (next 14 days if no date "
+                    + "was given): " + String.join(", ", active)
+                    + ". Tell the patient and offer another date, or ask if they want another doctor.";
+        }
+        if (name != null) {
+            return "No doctor matches the name '" + name + "' with these filters. Try again with only the first or "
+                    + "last name and without other filters before telling the patient.";
+        }
+        return "No bookable doctor matches these filters. Suggest loosening a filter.";
+    }
+
+    /**
+     * The model may say "cardiology", "Cardiologist" or "cardio": map it to the names doctors are filed under.
+     * Exact (any case) first, then the same word stem, then a name containing the other.
+     */
+    static List<String> resolveSpecializations(String wanted, List<String> available) {
+        String w = wanted.trim();
+        List<String> exact = available.stream().filter(s -> s.equalsIgnoreCase(w)).toList();
+        if (!exact.isEmpty()) {
+            return exact;
+        }
+        String stem = specializationStem(w);
+        List<String> sameStem = available.stream().filter(s -> specializationStem(s).equals(stem)).toList();
+        if (!sameStem.isEmpty()) {
+            return sameStem;
+        }
+        String plain = lettersOnly(w);
+        List<String> containing = plain.length() < 4 ? List.of() : available.stream()
+                .filter(s -> lettersOnly(s).contains(plain) || plain.contains(lettersOnly(s))
+                        || lettersOnly(s).startsWith(stem))
+                .toList();
+        if (!containing.isEmpty()) {
+            return containing;
+        }
+        throw new IllegalArgumentException("Unknown specialization '" + wanted + "'. Use one of: "
+                + String.join(", ", available));
+    }
+
+    private static final List<String> SPECIALIZATION_SUFFIXES = List.of(
+            "ologists", "ologist", "ological", "ology", "icians", "ician", "ists", "ist", "ics", "ic", "y", "s");
+
+    static String specializationStem(String specialization) {
+        String s = lettersOnly(specialization);
+        for (String suffix : SPECIALIZATION_SUFFIXES) {
+            if (s.endsWith(suffix) && s.length() - suffix.length() >= 4) {
+                return s.substring(0, s.length() - suffix.length());
+            }
+        }
+        return s;
+    }
+
+    private static String lettersOnly(String text) {
+        return text.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z]", "");
     }
 
     private AiToolResult availableSlots(JsonNode args) {

@@ -11,6 +11,8 @@ import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 @Repository
 public class DoctorRepositoryImpl implements DoctorRepositoryCustom {
@@ -32,10 +34,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryCustom {
             if (searchDto.getQuery() != null && !searchDto.getQuery().trim().isEmpty()) {
                 // Doctor has no email attribute: matching on it made every text search fail. Names only, so the
                 // search cannot be used to test whether an email address belongs to a doctor.
-                String pattern = "%" + escapeLike(searchDto.getQuery().trim().toLowerCase()) + "%";
-                Predicate firstNameMatch = cb.like(cb.lower(doctor.get("firstName")), pattern, '\\');
-                Predicate lastNameMatch = cb.like(cb.lower(doctor.get("lastName")), pattern, '\\');
-                predicates.add(cb.or(firstNameMatch, lastNameMatch));
+                addNameFilter(cb, doctor, searchDto.getQuery(), predicates);
             }
 
             // Specialization Filter
@@ -53,9 +52,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryCustom {
 
             // Gender Filter
             if (searchDto.getGender() != null && !searchDto.getGender().trim().isEmpty()) {
-                predicates.add(cb.equal(
-                        cb.lower(doctor.get("gender")),
-                        searchDto.getGender().trim().toLowerCase()));
+                addGenderFilter(cb, doctor, searchDto.getGender(), predicates);
             }
 
             addVerifiedFilter(cb, doctor, searchDto, predicates);
@@ -114,10 +111,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryCustom {
             if (searchDto.getQuery() != null && !searchDto.getQuery().trim().isEmpty()) {
                 // Doctor has no email attribute: matching on it made every text search fail. Names only, so the
                 // search cannot be used to test whether an email address belongs to a doctor.
-                String pattern = "%" + escapeLike(searchDto.getQuery().trim().toLowerCase()) + "%";
-                Predicate firstNameMatch = cb.like(cb.lower(doctor.get("firstName")), pattern, '\\');
-                Predicate lastNameMatch = cb.like(cb.lower(doctor.get("lastName")), pattern, '\\');
-                predicates.add(cb.or(firstNameMatch, lastNameMatch));
+                addNameFilter(cb, doctor, searchDto.getQuery(), predicates);
             }
 
             if (searchDto.getSpecialization() != null && !searchDto.getSpecialization().trim().isEmpty()) {
@@ -132,9 +126,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryCustom {
             }
 
             if (searchDto.getGender() != null && !searchDto.getGender().trim().isEmpty()) {
-                predicates.add(cb.equal(
-                        cb.lower(doctor.get("gender")),
-                        searchDto.getGender().trim().toLowerCase()));
+                addGenderFilter(cb, doctor, searchDto.getGender(), predicates);
             }
 
             addVerifiedFilter(cb, doctor, searchDto, predicates);
@@ -158,6 +150,51 @@ public class DoctorRepositoryImpl implements DoctorRepositoryCustom {
         predicates.add(searchDto.getVerified()
                 ? cb.isTrue(doctor.get("isVerified"))
                 : cb.or(cb.isFalse(doctor.get("isVerified")), cb.isNull(doctor.get("isVerified"))));
+    }
+
+    /** Titles people type before a name ("Dr. Sheetal Rangar"); ignored when other words are present. */
+    private static final Set<String> NAME_TITLES = Set.of("dr", "doctor", "doc", "prof", "professor");
+
+    /**
+     * Every word must match the first or the last name, so a full name ("Sheetal Rangar"), a first or last name
+     * alone, and a title in front ("Dr. Sheetal") all find the doctor. Matching the whole text against one name
+     * column made every two-word search fail.
+     */
+    private static void addNameFilter(CriteriaBuilder cb, Root<Doctor> doctor, String text,
+            List<Predicate> predicates) {
+        for (String word : nameWords(text)) {
+            String pattern = "%" + escapeLike(word) + "%";
+            predicates.add(cb.or(
+                    cb.like(cb.lower(doctor.get("firstName")), pattern, '\\'),
+                    cb.like(cb.lower(doctor.get("lastName")), pattern, '\\')));
+        }
+    }
+
+    static List<String> nameWords(String text) {
+        List<String> words = new ArrayList<>();
+        for (String raw : text.trim().toLowerCase(Locale.ROOT).split("\\s+")) {
+            String word = raw.replaceAll("^[.,]+|[.,]+$", "");
+            if (!word.isEmpty()) {
+                words.add(word);
+            }
+        }
+        List<String> withoutTitles = words.stream().filter(w -> !NAME_TITLES.contains(w)).toList();
+        return withoutTitles.isEmpty() ? words : withoutTitles;
+    }
+
+    /** "female", "Female", "F" and "woman" find the same doctors, whichever way the gender was stored. */
+    private static void addGenderFilter(CriteriaBuilder cb, Root<Doctor> doctor, String gender,
+            List<Predicate> predicates) {
+        predicates.add(cb.lower(doctor.get("gender")).in(genderValues(gender)));
+    }
+
+    static List<String> genderValues(String gender) {
+        String g = gender.trim().toLowerCase(Locale.ROOT);
+        return switch (g) {
+            case "f", "female", "woman", "women", "lady", "ladies" -> List.of("female", "f");
+            case "m", "male", "man", "men", "gentleman" -> List.of("male", "m");
+            default -> List.of(g);
+        };
     }
 
     /** User text is matched literally: % and _ in a search box are not wildcards. */
